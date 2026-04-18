@@ -1,9 +1,4 @@
-"""Public Generator API — stub for Milestone 1.
-
-The Generator class is the primary entry point for programmatic dataset
-generation. It is fully specified in the architecture doc (§6) and will
-be implemented across Milestones 1–9.
-"""
+"""Public Generator API."""
 
 from __future__ import annotations
 
@@ -11,12 +6,13 @@ from typing import Any
 
 from leadforge.core.enums import DifficultyProfile, ExposureMode
 from leadforge.core.models import GenerationConfig, WorldBundle
+from leadforge.core.rng import RNGRoot
 
 
 class Generator:
     """High-level entry point for generating a synthetic CRM dataset bundle.
 
-    Usage (once implemented)::
+    Usage::
 
         gen = Generator.from_recipe(
             "b2b_saas_procurement_v1",
@@ -26,11 +22,17 @@ class Generator:
         bundle = gen.generate(n_leads=5000, difficulty="intermediate")
         bundle.save("./out/demo_bundle")
 
-    Implemented in Milestone 1 (config/recipe) through Milestone 9 (rendering).
+    ``from_recipe`` is implemented in Milestone 1. Full generation
+    (``generate``) is implemented across Milestones 2–9.
     """
 
     def __init__(self, config: GenerationConfig) -> None:
         self._config = config
+        self._rng = RNGRoot(config.seed)
+
+    @property
+    def config(self) -> GenerationConfig:
+        return self._config
 
     @classmethod
     def from_recipe(
@@ -39,15 +41,56 @@ class Generator:
         *,
         seed: int = 42,
         exposure_mode: str | ExposureMode = ExposureMode.student_public,
-        **kwargs: Any,
+        difficulty: str | DifficultyProfile = DifficultyProfile.intermediate,
+        n_accounts: int | None = None,
+        n_contacts: int | None = None,
+        n_leads: int | None = None,
+        horizon_days: int | None = None,
+        output_path: str = "./out",
+        override: dict[str, Any] | None = None,
     ) -> Generator:
-        """Create a Generator from a recipe ID.
+        """Create a :class:`Generator` from a recipe ID, applying config precedence.
 
-        Not yet implemented — available in v0.2.0.
+        Args:
+            recipe_id: Identifier of a registered recipe (e.g.
+                ``"b2b_saas_procurement_v1"``).
+            seed: Master RNG seed. Defaults to ``42``.
+            exposure_mode: ``"student_public"`` or ``"research_instructor"``.
+            difficulty: ``"intro"``, ``"intermediate"``, or ``"advanced"``.
+            n_accounts: Override recipe default account count.
+            n_contacts: Override recipe default contact count.
+            n_leads: Override recipe default lead count.
+            horizon_days: Override recipe default simulation horizon.
+            output_path: Directory where the bundle will be saved.
+            override: Optional dict of overrides (mirrors a ``--override`` file).
+                Applied after recipe defaults but before explicit kwargs.
+
+        Returns:
+            A configured :class:`Generator` instance ready to call
+            :meth:`generate` on.
+
+        Raises:
+            :class:`~leadforge.core.exceptions.InvalidRecipeError`: if the
+                recipe does not exist, is malformed, or the requested
+                exposure mode / difficulty is not supported.
         """
-        raise NotImplementedError(
-            "Generator.from_recipe() is not yet implemented. Coming in v0.2.0."
+        from leadforge.api.recipes import Recipe
+        from leadforge.recipes.registry import load_recipe
+
+        raw = load_recipe(recipe_id)
+        recipe = Recipe.from_dict(raw)
+        config = recipe.resolve_config(
+            seed=seed,
+            exposure_mode=exposure_mode,
+            difficulty=difficulty,
+            n_accounts=n_accounts,
+            n_contacts=n_contacts,
+            n_leads=n_leads,
+            horizon_days=horizon_days,
+            output_path=output_path,
+            override=override,
         )
+        return cls(config)
 
     def generate(
         self,
@@ -60,6 +103,6 @@ class Generator:
     ) -> WorldBundle:
         """Run the world simulation and return a bundle.
 
-        Not yet implemented — available in v0.2.0.
+        Not yet implemented — available in v0.3.0+.
         """
-        raise NotImplementedError("Generator.generate() is not yet implemented. Coming in v0.2.0.")
+        raise NotImplementedError("Generator.generate() is not yet implemented. Coming in v0.3.0.")
