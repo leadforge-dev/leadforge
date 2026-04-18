@@ -1,0 +1,20 @@
+id: b2b_saas_procurement_v1
+title: "Mid-market B2B SaaS — Procurement & AP Automation"
+vertical: mid_market_b2b_saas
+description: >
+  A mid-market B2B SaaS company selling procurement and AP workflow
+  automation software to 200–2,000 employee firms in the US and UK,
+  through a mixed inbound, SDR-assisted, and partner-driven GTM motion.
+primary_task: converted_within_90_days
+supported_modes:
+  - student_public
+  - research_instructor
+supported_difficulty:
+  - intro
+  - intermediate
+  - advanced
+default_population:
+  n_accounts: 1500
+  n_contacts: 4200
+  n_leads: 5000
+horizon_days: 90
