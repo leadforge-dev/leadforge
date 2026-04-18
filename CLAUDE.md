@@ -9,8 +9,36 @@
 3. Do the work; commit to the branch.
 4. Update `.agent-plan.md` to reflect project state *after* the PR merges; commit that update to the same branch (same PR).
 5. Open a PR against `main` on GitHub with a detailed description.
+6. Apply the appropriate **labels** to the PR (create new ones if none fit — see label taxonomy below).
+7. Assign the PR to the appropriate **milestone** (create a new one on GitHub if none fits).
 
 Never use `git push origin main`, `git push --force`, or any variant that targets `main` directly.
+
+### Label taxonomy
+
+**Type** (one required):
+`type: feature` · `type: bugfix` · `type: docs` · `type: test` · `type: refactor` · `type: ci` · `type: chore`
+
+**Layer** (one or more, when touching package code):
+`layer: core` · `layer: narrative` · `layer: schema` · `layer: structure` · `layer: mechanisms` · `layer: simulation` · `layer: render` · `layer: exposure` · `layer: validation` · `layer: cli` · `layer: api` · `layer: recipes`
+
+**Status** (optional):
+`status: in progress` · `status: needs review` · `status: blocked`
+
+Existing labels that predate this taxonomy: `bug` · `documentation` · `enhancement` · `good first issue` · `help wanted` · `foundation` — use when appropriate.
+
+### Milestone map
+
+| Milestone | Covers | Roadmap |
+|---|---|---|
+| v0.1.0 — Repo & CLI skeleton | M0 | Foundation, CI, package scaffold |
+| v0.2.0 — First end-to-end world | M1–M3 | Config/recipe, narrative, schema |
+| v0.3.0 — Motif variability + exposure modes | M4–M6 | Structure, mechanisms, exposure |
+| v0.4.0 — Polished relational output + task export | M7–M10 | Simulation, observation, render, task |
+| v0.5.0 — CLI-complete release candidate | M11–M13 | CLI, validation harness |
+| v1.0.0 — Polished OSS release | M14–M15 | Sample data, notebooks, docs polish |
+
+If work spans multiple milestones, assign to the earliest one it unblocks.
 
 ---
 
