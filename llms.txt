@@ -1,0 +1,198 @@
+# llms.txt — leadforge
+
+> High-density index for AI coding agents. Code does not yet exist; this maps the *intended* structure from the architecture spec.
+
+---
+
+## Project Summary
+
+`leadforge` is an opinionated open-source Python framework + CLI that generates synthetic CRM/GTM datasets from simulated commercial worlds. v1 targets one vertical (mid-market procurement / AP automation SaaS) and one primary supervised task (`converted_within_90_days`).
+
+---
+
+## Documentation Map
+
+| Topic | File |
+|---|---|
+| Product decisions, design principles, priorities | `docs/leadforge_design_doc.md` |
+| Architecture, module contracts, schemas, API spec | `docs/leadforge_architecture_spec.md` |
+| Milestone-by-milestone implementation plan | `docs/leadforge_implementation_plan.md` |
+| Operational rules for agents (tech stack, invariants, CLI) | `CLAUDE.md` |
+| This index | `llms.txt` |
+
+---
+
+## Planned Directory Structure
+
+```
+leadforge/                         # Python package root
+│
+├── __init__.py
+├── version.py
+│
+├── api/                           # Public high-level surface
+│   ├── generator.py               # Generator class (from_recipe, generate)
+│   ├── recipes.py                 # list_recipes(), load_recipe()
+│   └── bundle.py                  # WorldBundle definition
+│
+├── cli/                           # CLI entrypoint and commands
+│   ├── main.py                    # CLI app root
+│   └── commands/
+│       ├── generate.py            # leadforge generate
+│       ├── list_recipes.py        # leadforge list-recipes
+│       ├── inspect.py             # leadforge inspect
+│       └── validate.py            # leadforge validate
+│
+├── core/                          # Framework primitives
+│   ├── rng.py                     # Seeded RNG root + deterministic substreams
+│   ├── ids.py                     # Entity ID generation (acct_, cnt_, lead_, ...)
+│   ├── time.py                    # Time utilities, horizon constants
+│   ├── enums.py                   # Shared enums (ExposureMode, Difficulty, etc.)
+│   ├── paths.py                   # Bundle path constants
+│   ├── hashing.py                 # File/artifact hashing
+│   ├── serialization.py           # JSON/Parquet/YAML helpers
+│   ├── models.py                  # GenerationConfig, WorldSpec placeholder
+│   └── exceptions.py              # Structured exception hierarchy
+│
+├── narrative/                     # Vertical story layer
+│   ├── spec.py                    # NarrativeSpec type
+│   ├── company.py                 # Company/seller narrative models
+│   ├── product.py                 # Product narrative models
+│   ├── personas.py                # Buyer persona definitions
+│   ├── market.py                  # Market context models
+│   ├── funnel.py                  # Funnel stage vocabulary
+│   └── dataset_card.py            # Dataset card renderer → dataset_card.md
+│
+├── schema/                        # Internal relational schema contracts
+│   ├── entities.py                # Typed row models: Account, Contact, Lead, ...
+│   ├── relationships.py           # FK relationships and cardinalities
+│   ├── events.py                  # Touch, Session, SalesActivity event types
+│   ├── features.py                # Feature metadata and groupings
+│   ├── tasks.py                   # Task definition (converted_within_90_days)
+│   └── dictionaries.py            # Controlled vocabulary / categorical values
+│
+├── structure/                     # Hidden world variability
+│   ├── node_types.py              # Graph node category definitions
+│   ├── graph.py                   # Typed DiGraph wrapper (networkx)
+│   ├── motifs.py                  # Named motif family implementations (5 families)
+│   ├── templates.py               # Motif template configs
+│   ├── rewiring.py                # Stochastic rewiring under constraints
+│   ├── sampler.py                 # sample_hidden_graph(recipe, seed, ...)
+│   └── constraints.py             # Graph validity rules (acyclicity, reachability, ...)
+│
+├── mechanisms/                    # Conditional generators / transition rules
+│   ├── base.py                    # Mechanism ABC: sample(context, rng)
+│   ├── static.py                  # Categorical, ordinal, bounded numeric draws
+│   ├── transitions.py             # Discrete-time hazard / state-jump transitions
+│   ├── counts.py                  # Event count intensity functions
+│   ├── categorical.py             # Categorical/channel selection mechanisms
+│   ├── scores.py                  # Latent score propagation (additive/logistic)
+│   ├── hazards.py                 # Survival / dwell-time mechanisms
+│   ├── measurement.py             # Noise, missingness, proxy compression, duplication
+│   └── policies.py                # Sales/marketing policy logic
+│
+├── simulation/                    # Hybrid discrete-time world engine
+│   ├── world.py                   # build_world_spec(), top-level world object
+│   ├── state.py                   # WorldState container
+│   ├── population.py              # Account/contact/lead population builder
+│   ├── scheduler.py               # Daily-step discrete time scheduler
+│   ├── engine.py                  # simulate_world(world_spec) → populates all tables
+│   └── interventions.py           # Optional intervention hooks (future extensibility)
+│
+├── render/                        # Bundle artifact rendering
+│   ├── relational.py              # Write relational Parquet tables
+│   ├── snapshots.py               # Flat ML snapshot derivation (task exports)
+│   ├── metadata.py                # render_bundle(), public_summary, world_spec JSON
+│   ├── manifests.py               # manifest.json, task_manifest.json
+│   ├── graph_export.py            # graph.json + graph.graphml
+│   └── notebooks.py               # Notebook stub generation helpers
+│
+├── exposure/                      # Truth exposure filtering
+│   ├── modes.py                   # ExposureMode enum and mode rules
+│   ├── filters.py                 # File/field inclusion/exclusion logic
+│   └── redaction.py               # Metadata redaction helpers
+│
+├── validation/                    # Post-generation integrity checks
+│   ├── invariants.py              # Graph/schema structural invariants
+│   ├── artifact_checks.py         # File presence, schema, FK, manifest consistency
+│   ├── realism.py                 # Base rate, event count, distribution sanity
+│   ├── difficulty.py              # Difficulty profile constraint validation
+│   └── drift.py                   # Train/test distribution shift checks
+│
+├── recipes/                       # Recipe registry and v1 recipe assets
+│   ├── registry.py                # Recipe registry and loader
+│   └── b2b_saas_procurement_v1/
+│       ├── recipe.yaml            # Recipe metadata
+│       ├── narrative.yaml         # Narrative defaults (company, product, personas)
+│       ├── schema.yaml            # Schema overrides / extensions
+│       ├── motifs.yaml            # Motif family configs
+│       └── difficulty_profiles.yaml  # intro / intermediate / advanced presets
+│
+├── examples/
+│   ├── notebooks/                 # Jupyter notebooks (4 planned)
+│   └── configs/                   # Example override YAML configs
+│
+└── sample_data/
+    ├── public/                    # Committed student_public bundle
+    └── instructor/                # Committed research_instructor bundle
+
+tests/                             # Mirror package structure
+docs/                              # Human-readable design, spec, roadmap
+```
+
+---
+
+## Key Generated Bundle Layout
+
+```
+bundle_root/
+  manifest.json                    # Always present; includes version, seed, mode
+  dataset_card.md                  # Human-readable narrative + task description
+  feature_dictionary.csv           # Machine-readable feature metadata
+  tables/
+    accounts.parquet
+    contacts.parquet
+    leads.parquet
+    touches.parquet
+    sessions.parquet
+    sales_activities.parquet
+    opportunities.parquet
+    customers.parquet
+    subscriptions.parquet
+  tasks/
+    converted_within_90_days/
+      train.parquet
+      valid.parquet
+      test.parquet
+      task_manifest.json
+  metadata/                        # Contents vary by exposure mode
+    public_summary.json            # Always in public mode
+    graph.graphml                  # research_instructor only
+    graph.json                     # research_instructor only
+    world_spec.json                # research_instructor only
+    latent_registry.json           # research_instructor only
+    mechanism_summary.json         # research_instructor only
+    provenance.json                # research_instructor only
+```
+
+---
+
+## Context Pointers for Deep Dives
+
+| Question | Read |
+|---|---|
+| What is this project and why? | `docs/leadforge_design_doc.md` §2–§8 |
+| Full module contracts and schemas | `docs/leadforge_architecture_spec.md` §4–§16 |
+| Public Python API shape | `docs/leadforge_architecture_spec.md` §6 |
+| CLI command spec | `docs/leadforge_architecture_spec.md` §7 |
+| Hidden motif families (5 types) | `docs/leadforge_architecture_spec.md` §11.2 |
+| Mechanism type families | `docs/leadforge_architecture_spec.md` §12 |
+| Difficulty profiles (intro/intermediate/advanced) | `docs/leadforge_architecture_spec.md` §19 |
+| Exposure mode filtering rules | `docs/leadforge_architecture_spec.md` §18 |
+| Flat task export / leakage rules | `docs/leadforge_architecture_spec.md` §15 |
+| Relational table schemas | `docs/leadforge_architecture_spec.md` §16 |
+| Metadata file specs | `docs/leadforge_architecture_spec.md` §17 |
+| Milestone ordering and dependencies | `docs/leadforge_implementation_plan.md` §4–§6 |
+| Testing strategy by layer | `docs/leadforge_implementation_plan.md` §8 |
+| Release gates | `docs/leadforge_implementation_plan.md` §9 |
+| What is deferred to post-v1 | `docs/leadforge_implementation_plan.md` §10 |
