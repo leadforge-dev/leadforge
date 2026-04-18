@@ -1,0 +1,31 @@
+name: PR agent context
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: pr-agent-context-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-agent-context:
+    name: PR agent context
+    uses: shaypal5/pr-agent-context/.github/workflows/pr-agent-context.yml@v4
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: write
+    with:
+      tool_ref: v4
+      execution_mode: ci
+      publish_mode: append
+      include_review_comments: true
+      include_outdated_review_threads: true
+      include_failing_checks: true
+      include_failed_step_output: true
+      include_patch_coverage: true
+      target_patch_coverage: "100"
+      coverage_artifact_prefix: pr-agent-context-coverage
+      enable_cross_run_coverage_lookup: true
+      debug_artifacts: true

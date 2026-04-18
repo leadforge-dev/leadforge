@@ -1,5 +1,49 @@
 # CLAUDE.md — leadforge
 
+## Branch & PR Workflow (mandatory)
+
+**Never push directly to `main`.** Every piece of work — feature, bugfix, doc update, plan update — follows this sequence:
+
+1. `git checkout main && git pull` — ensure main is up to date.
+2. `git checkout -b <descriptive-branch-name>` — branch from latest main.
+3. Do the work; commit to the branch.
+4. Update `.agent-plan.md` to reflect project state *after* the PR merges; commit that update to the same branch (same PR).
+5. Open a PR against `main` on GitHub with a detailed description.
+6. Apply the appropriate **labels** to the PR (create new ones if none fit — see label taxonomy below).
+7. Assign the PR to the appropriate **milestone** (create a new one on GitHub if none fits).
+
+Never use `git push origin main`, `git push --force origin main`, or any variant that targets `main` directly.
+
+> **Team enforcement:** The above is reinforced by GitHub branch protection on `main`. The local `.git/hooks/pre-push` hook installed in this repo is a personal convenience only — it is not versioned and will not be present for other contributors.
+
+### Label taxonomy
+
+**Type** (one required):
+`type: feature` · `type: bugfix` · `type: docs` · `type: test` · `type: refactor` · `type: ci` · `type: chore`
+
+**Layer** (one or more, when touching package code):
+`layer: core` · `layer: narrative` · `layer: schema` · `layer: structure` · `layer: mechanisms` · `layer: simulation` · `layer: render` · `layer: exposure` · `layer: validation` · `layer: cli` · `layer: api` · `layer: recipes`
+
+**Status** (optional):
+`status: in progress` · `status: needs review` · `status: blocked`
+
+Existing labels that predate this taxonomy: `bug` · `documentation` · `enhancement` · `good first issue` · `help wanted` · `foundation` — use when appropriate.
+
+### Milestone map
+
+| Milestone | Covers | Roadmap |
+|---|---|---|
+| v0.1.0 — Repo & CLI skeleton | M0 | Foundation, CI, package scaffold |
+| v0.2.0 — First end-to-end world | M1–M3 | Config/recipe, narrative, schema |
+| v0.3.0 — Motif variability + exposure modes | M4–M6 | Structure, mechanisms, exposure |
+| v0.4.0 — Polished relational output + task export | M7–M10 | Simulation, observation, render, task |
+| v0.5.0 — CLI-complete release candidate | M11–M13 | CLI, validation harness |
+| v1.0.0 — Polished OSS release | M14–M15 | Sample data, notebooks, docs polish |
+
+If work spans multiple milestones, assign to the earliest one it unblocks.
+
+---
+
 ## Project Identity
 - Package / repo / CLI: `leadforge`
 - License: MIT
