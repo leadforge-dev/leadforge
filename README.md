@@ -29,23 +29,23 @@ pre-commit install
 # List available recipes
 leadforge list-recipes
 
-# Generate a dataset bundle
-leadforge generate \
-  --recipe b2b_saas_procurement_v1 \
-  --seed 42 \
-  --mode student_public \
-  --difficulty intermediate \
-  --n-leads 5000 \
-  --out ./out/demo_bundle
+# Coming in v0.2.0: generate a dataset bundle
+# leadforge generate \
+#   --recipe b2b_saas_procurement_v1 \
+#   --seed 42 \
+#   --mode student_public \
+#   --difficulty intermediate \
+#   --n-leads 5000 \
+#   --out ./out/demo_bundle
 
-# Inspect a generated bundle
-leadforge inspect ./out/demo_bundle
+# Coming in v0.4.0: inspect a generated bundle
+# leadforge inspect ./out/demo_bundle
 
-# Validate a generated bundle
-leadforge validate ./out/demo_bundle
+# Coming in v0.5.0: validate a generated bundle
+# leadforge validate ./out/demo_bundle
 ```
 
-**Python API:**
+**Python API** (coming in v0.2.0):
 
 ```python
 from leadforge.api import Generator
