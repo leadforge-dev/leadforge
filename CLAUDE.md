@@ -1,5 +1,19 @@
 # CLAUDE.md — leadforge
 
+## Branch & PR Workflow (mandatory)
+
+**Never push directly to `main`.** Every piece of work — feature, bugfix, doc update, plan update — follows this sequence:
+
+1. `git checkout main && git pull` — ensure main is up to date.
+2. `git checkout -b <descriptive-branch-name>` — branch from latest main.
+3. Do the work; commit to the branch.
+4. Update `.agent-plan.md` to reflect project state *after* the PR merges; commit that update to the same branch (same PR).
+5. Open a PR against `main` on GitHub with a detailed description.
+
+Never use `git push origin main`, `git push --force`, or any variant that targets `main` directly.
+
+---
+
 ## Project Identity
 - Package / repo / CLI: `leadforge`
 - License: MIT
