@@ -12,7 +12,9 @@
 6. Apply the appropriate **labels** to the PR (create new ones if none fit — see label taxonomy below).
 7. Assign the PR to the appropriate **milestone** (create a new one on GitHub if none fits).
 
-Never use `git push origin main`, `git push --force`, or any variant that targets `main` directly.
+Never use `git push origin main`, `git push --force origin main`, or any variant that targets `main` directly.
+
+> **Team enforcement:** The above is reinforced by GitHub branch protection on `main`. The local `.git/hooks/pre-push` hook installed in this repo is a personal convenience only — it is not versioned and will not be present for other contributors.
 
 ### Label taxonomy
 
