@@ -39,8 +39,9 @@ def load_recipe(recipe_id: str) -> dict[str, Any]:
             or the recipe file is malformed.
     """
     # Guard against path traversal (e.g. recipe_id = "../secret")
-    recipe_dir = (_RECIPES_DIR / recipe_id).resolve()
-    if not str(recipe_dir).startswith(str(_RECIPES_DIR.resolve())):
+    base_dir = _RECIPES_DIR.resolve()
+    recipe_dir = (base_dir / recipe_id).resolve()
+    if not recipe_dir.is_relative_to(base_dir):
         raise InvalidRecipeError(f"Recipe ID '{recipe_id}' is invalid.")
 
     recipe_file = recipe_dir / "recipe.yaml"
