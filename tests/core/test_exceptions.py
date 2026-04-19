@@ -52,3 +52,34 @@ def test_invalid_config_error_on_bool_count() -> None:
 
     with pytest.raises(InvalidConfigError, match="n_accounts"):
         GenerationConfig(n_accounts=True)  # type: ignore[arg-type]
+
+
+def test_invalid_config_error_on_bad_exposure_mode() -> None:
+    """Invalid exposure_mode string must raise InvalidConfigError, not ValueError."""
+    from leadforge.core.exceptions import InvalidConfigError
+    from leadforge.core.models import GenerationConfig
+
+    with pytest.raises(InvalidConfigError, match="exposure_mode"):
+        GenerationConfig(exposure_mode="not_a_mode")  # type: ignore[arg-type]
+
+
+def test_invalid_config_error_on_bad_difficulty() -> None:
+    """Invalid difficulty string must raise InvalidConfigError, not ValueError."""
+    from leadforge.core.exceptions import InvalidConfigError
+    from leadforge.core.models import GenerationConfig
+
+    with pytest.raises(InvalidConfigError, match="difficulty"):
+        GenerationConfig(difficulty="super_hard")  # type: ignore[arg-type]
+
+
+def test_missing_sentinel_repr() -> None:
+    """_MISSING sentinel must have a readable repr for help() / docs."""
+    from leadforge.core.sentinels import _MISSING
+
+    assert repr(_MISSING) == "<default>"
+
+
+def test_missing_sentinel_is_singleton() -> None:
+    from leadforge.core.sentinels import _MISSING, _MissingType
+
+    assert _MissingType() is _MISSING

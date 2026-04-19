@@ -53,9 +53,21 @@ class GenerationConfig:
         _require_positive_int(self.horizon_days, "horizon_days")
         # Coerce string enums supplied as plain strings
         if not isinstance(self.exposure_mode, ExposureMode):
-            self.exposure_mode = ExposureMode(self.exposure_mode)
+            try:
+                self.exposure_mode = ExposureMode(self.exposure_mode)
+            except ValueError as exc:
+                raise InvalidConfigError(
+                    f"exposure_mode has invalid value {self.exposure_mode!r}. "
+                    f"Valid values: {[m.value for m in ExposureMode]}"
+                ) from exc
         if not isinstance(self.difficulty, DifficultyProfile):
-            self.difficulty = DifficultyProfile(self.difficulty)
+            try:
+                self.difficulty = DifficultyProfile(self.difficulty)
+            except ValueError as exc:
+                raise InvalidConfigError(
+                    f"difficulty has invalid value {self.difficulty!r}. "
+                    f"Valid values: {[d.value for d in DifficultyProfile]}"
+                ) from exc
 
 
 @dataclass

@@ -78,7 +78,9 @@ class Recipe:
             raise InvalidRecipeError(f"Invalid difficulty profile in recipe: {exc}") from exc
 
         pop = data["default_population"]
-        if not isinstance(pop, dict) or not all(isinstance(v, int) for v in pop.values()):
+        if not isinstance(pop, dict) or not all(
+            isinstance(v, int) and not isinstance(v, bool) for v in pop.values()
+        ):
             raise InvalidRecipeError(
                 f"'default_population' must be a mapping of str→int, got: {pop!r}"
             )
@@ -181,8 +183,20 @@ class Recipe:
         if horizon_days is not None:
             resolved["horizon_days"] = horizon_days
 
-        mode = ExposureMode(resolved["exposure_mode"])
-        diff = DifficultyProfile(resolved["difficulty"])
+        try:
+            mode = ExposureMode(resolved["exposure_mode"])
+        except ValueError as exc:
+            raise InvalidRecipeError(
+                f"Invalid exposure_mode {resolved['exposure_mode']!r} for recipe '{self.id}'. "
+                f"Supported values: {[m.value for m in ExposureMode]}"
+            ) from exc
+        try:
+            diff = DifficultyProfile(resolved["difficulty"])
+        except ValueError as exc:
+            raise InvalidRecipeError(
+                f"Invalid difficulty {resolved['difficulty']!r} for recipe '{self.id}'. "
+                f"Supported values: {[d.value for d in DifficultyProfile]}"
+            ) from exc
 
         if mode not in self.supported_modes:
             raise InvalidRecipeError(

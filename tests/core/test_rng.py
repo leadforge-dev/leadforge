@@ -48,5 +48,15 @@ def test_rng_root_rejects_non_int_seed() -> None:
         RNGRoot(3.14)  # type: ignore[arg-type]
 
 
+def test_rng_root_rejects_bool_seed() -> None:
+    with pytest.raises(TypeError, match="seed must be an int"):
+        RNGRoot(True)  # type: ignore[arg-type]
+
+
+def test_rng_root_rejects_negative_seed() -> None:
+    with pytest.raises(ValueError, match="non-negative"):
+        RNGRoot(-1)
+
+
 def test_rng_root_repr() -> None:
     assert repr(RNGRoot(42)) == "RNGRoot(seed=42)"

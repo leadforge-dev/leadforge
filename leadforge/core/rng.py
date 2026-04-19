@@ -25,8 +25,10 @@ class RNGRoot:
     """
 
     def __init__(self, seed: int) -> None:
-        if not isinstance(seed, int):
-            raise TypeError(f"seed must be an int, got {type(seed).__name__}")
+        if isinstance(seed, bool) or not isinstance(seed, int):
+            raise TypeError(f"seed must be an int, got {type(seed).__name__!r}")
+        if seed < 0:
+            raise ValueError(f"seed must be non-negative, got {seed}")
         self._seed = seed
 
     @property

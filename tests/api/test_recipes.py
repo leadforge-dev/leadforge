@@ -63,6 +63,27 @@ def test_from_dict_invalid_population_raises() -> None:
         Recipe.from_dict(bad)
 
 
+def test_from_dict_bool_population_raises() -> None:
+    """bool values in default_population must be rejected (bool is int subclass)."""
+    bad = {**VALID_DICT, "default_population": {"n_leads": True}}
+    with pytest.raises(InvalidRecipeError, match="default_population"):
+        Recipe.from_dict(bad)
+
+
+def test_resolve_config_invalid_override_mode_raises() -> None:
+    """Invalid exposure_mode in override must raise InvalidRecipeError, not ValueError."""
+    recipe = Recipe.from_dict(VALID_DICT)
+    with pytest.raises(InvalidRecipeError, match="exposure_mode"):
+        recipe.resolve_config(override={"exposure_mode": "not_a_mode"})
+
+
+def test_resolve_config_invalid_override_difficulty_raises() -> None:
+    """Invalid difficulty in override must raise InvalidRecipeError, not ValueError."""
+    recipe = Recipe.from_dict(VALID_DICT)
+    with pytest.raises(InvalidRecipeError, match="difficulty"):
+        recipe.resolve_config(override={"difficulty": "super_hard"})
+
+
 # ---------------------------------------------------------------------------
 # Config resolution / precedence
 # ---------------------------------------------------------------------------
