@@ -81,6 +81,28 @@ def test_from_recipe_override_dict() -> None:
     assert gen.config.n_leads == 9999
 
 
+def test_from_recipe_override_dict_applies_exposure_and_difficulty() -> None:
+    """Layer 2: override dict sets exposure_mode / difficulty when not explicit."""
+    gen = Generator.from_recipe(
+        "b2b_saas_procurement_v1",
+        override={"exposure_mode": "research_instructor", "difficulty": "intro"},
+    )
+    assert gen.config.exposure_mode == ExposureMode.research_instructor
+    assert gen.config.difficulty == DifficultyProfile.intro
+
+
+def test_from_recipe_explicit_exposure_beats_override() -> None:
+    """Layer 1: explicit exposure_mode / difficulty kwargs beat override dict."""
+    gen = Generator.from_recipe(
+        "b2b_saas_procurement_v1",
+        override={"exposure_mode": "research_instructor", "difficulty": "intro"},
+        exposure_mode="student_public",
+        difficulty="advanced",
+    )
+    assert gen.config.exposure_mode == ExposureMode.student_public
+    assert gen.config.difficulty == DifficultyProfile.advanced
+
+
 def test_from_recipe_override_dict_applies_seed_and_output_path() -> None:
     """Layer 2: override dict should set seed / output_path when not explicitly passed."""
     gen = Generator.from_recipe(

@@ -131,6 +131,28 @@ def test_resolve_config_explicit_seed_beats_override_dict() -> None:
     assert config.output_path == "/tmp/explicit"
 
 
+def test_resolve_config_override_dict_applies_exposure_and_difficulty() -> None:
+    """Layer 2: override dict sets exposure_mode / difficulty when not explicit."""
+    recipe = Recipe.from_dict(VALID_DICT)
+    config = recipe.resolve_config(
+        override={"exposure_mode": "research_instructor", "difficulty": "intro"}
+    )
+    assert config.exposure_mode == ExposureMode.research_instructor
+    assert config.difficulty == DifficultyProfile.intro
+
+
+def test_resolve_config_explicit_exposure_and_difficulty_beat_override() -> None:
+    """Layer 1: explicit exposure_mode / difficulty kwargs beat override dict."""
+    recipe = Recipe.from_dict(VALID_DICT)
+    config = recipe.resolve_config(
+        override={"exposure_mode": "research_instructor", "difficulty": "intro"},
+        exposure_mode="student_public",
+        difficulty="advanced",
+    )
+    assert config.exposure_mode == ExposureMode.student_public
+    assert config.difficulty == DifficultyProfile.advanced
+
+
 def test_resolve_config_unsupported_mode_raises() -> None:
     limited = {**VALID_DICT, "supported_modes": ["student_public"]}
     recipe = Recipe.from_dict(limited)

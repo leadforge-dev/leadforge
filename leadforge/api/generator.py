@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from leadforge.api.recipes import _MISSING
 from leadforge.core.enums import DifficultyProfile, ExposureMode
 from leadforge.core.models import GenerationConfig, WorldBundle
 from leadforge.core.rng import RNGRoot
+from leadforge.core.sentinels import _MISSING
 
 
 class Generator:
@@ -41,8 +41,8 @@ class Generator:
         recipe_id: str,
         *,
         seed: int = _MISSING,  # type: ignore[assignment]
-        exposure_mode: str | ExposureMode = ExposureMode.student_public,
-        difficulty: str | DifficultyProfile = DifficultyProfile.intermediate,
+        exposure_mode: str | ExposureMode = _MISSING,  # type: ignore[assignment]
+        difficulty: str | DifficultyProfile = _MISSING,  # type: ignore[assignment]
         n_accounts: int | None = None,
         n_contacts: int | None = None,
         n_leads: int | None = None,
@@ -57,7 +57,9 @@ class Generator:
                 ``"b2b_saas_procurement_v1"``).
             seed: Master RNG seed. Defaults to the package default (42).
             exposure_mode: ``"student_public"`` or ``"research_instructor"``.
+                Defaults to the package default (``student_public``).
             difficulty: ``"intro"``, ``"intermediate"``, or ``"advanced"``.
+                Defaults to the package default (``intermediate``).
             n_accounts: Override recipe default account count.
             n_contacts: Override recipe default contact count.
             n_leads: Override recipe default lead count.

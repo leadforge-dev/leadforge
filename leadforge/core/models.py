@@ -3,10 +3,23 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from leadforge.core.enums import DifficultyProfile, ExposureMode
 from leadforge.core.exceptions import InvalidConfigError
 from leadforge.version import __version__
+
+
+def _require_positive_int(value: Any, name: str) -> None:
+    """Raise ``InvalidConfigError`` unless *value* is a positive plain ``int``.
+
+    ``bool`` is rejected because it is an ``int`` subclass and would otherwise
+    silently pass numeric comparisons (``True > 0`` is ``True``).
+    """
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise InvalidConfigError(f"{name} must be a positive int, got {type(value).__name__!r}")
+    if value <= 0:
+        raise InvalidConfigError(f"{name} must be positive, got {value}")
 
 
 @dataclass
@@ -30,18 +43,14 @@ class GenerationConfig:
     package_version: str = field(default_factory=lambda: __version__)
 
     def __post_init__(self) -> None:
-        if not isinstance(self.seed, int):
-            raise InvalidConfigError(f"seed must be int, got {type(self.seed).__name__}")
+        if isinstance(self.seed, bool) or not isinstance(self.seed, int):
+            raise InvalidConfigError(f"seed must be an int, got {type(self.seed).__name__!r}")
         if self.seed < 0:
             raise InvalidConfigError(f"seed must be non-negative, got {self.seed}")
-        if self.n_accounts <= 0:
-            raise InvalidConfigError(f"n_accounts must be positive, got {self.n_accounts}")
-        if self.n_contacts <= 0:
-            raise InvalidConfigError(f"n_contacts must be positive, got {self.n_contacts}")
-        if self.n_leads <= 0:
-            raise InvalidConfigError(f"n_leads must be positive, got {self.n_leads}")
-        if self.horizon_days <= 0:
-            raise InvalidConfigError(f"horizon_days must be positive, got {self.horizon_days}")
+        _require_positive_int(self.n_accounts, "n_accounts")
+        _require_positive_int(self.n_contacts, "n_contacts")
+        _require_positive_int(self.n_leads, "n_leads")
+        _require_positive_int(self.horizon_days, "horizon_days")
         # Coerce string enums supplied as plain strings
         if not isinstance(self.exposure_mode, ExposureMode):
             self.exposure_mode = ExposureMode(self.exposure_mode)

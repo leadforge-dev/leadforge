@@ -8,7 +8,8 @@ Config precedence (highest → lowest):
   1. Explicit kwargs passed to ``from_recipe`` / ``resolve_config``
   2. Override dict (e.g. loaded from a ``--override`` YAML/JSON file)
   3. Recipe defaults (``default_population``, ``horizon_days``)
-  4. Package defaults (defined in ``GenerationConfig`` field defaults)
+  4. Package defaults (defined in ``GenerationConfig`` field defaults —
+     the single source of truth; never duplicated here)
 """
 
 from __future__ import annotations
@@ -20,12 +21,8 @@ from typing import Any
 
 from leadforge.core.enums import DifficultyProfile, ExposureMode
 from leadforge.core.exceptions import InvalidRecipeError
+from leadforge.core.sentinels import _MISSING
 from leadforge.core.serialization import load_yaml
-
-# Sentinel: distinguishes "caller did not pass this kwarg" from any real value.
-# Used for seed and output_path so override-dict values are not silently shadowed
-# by the function-signature default.
-_MISSING: Any = object()
 
 _RECIPES_DIR = Path(__file__).parent.parent / "recipes"
 
@@ -106,8 +103,8 @@ class Recipe:
         self,
         *,
         seed: int = _MISSING,  # type: ignore[assignment]
-        exposure_mode: str | ExposureMode = ExposureMode.student_public,
-        difficulty: str | DifficultyProfile = DifficultyProfile.intermediate,
+        exposure_mode: str | ExposureMode = _MISSING,  # type: ignore[assignment]
+        difficulty: str | DifficultyProfile = _MISSING,  # type: ignore[assignment]
         n_accounts: int | None = None,
         n_contacts: int | None = None,
         n_leads: int | None = None,
@@ -121,13 +118,12 @@ class Recipe:
           1. Explicit kwargs — only values *actually passed* by the caller win.
           2. *override* dict — beats recipe and package defaults.
           3. Recipe defaults — ``default_population`` keys and ``horizon_days``.
-          4. Package defaults — ``GenerationConfig`` field defaults (single
-             source of truth; not duplicated here).
+          4. Package defaults — ``GenerationConfig`` field defaults (authoritative
+             source; never duplicated in this file).
         """
         from leadforge.core.models import GenerationConfig  # avoid circular import
 
-        # Layer 4 — package defaults: read directly from GenerationConfig fields
-        # so this file never duplicates magic numbers.
+        # Layer 4 — package defaults: read directly from GenerationConfig fields.
         pkg: dict[str, Any] = {
             f.name: f.default
             for f in dataclasses.fields(GenerationConfig)
@@ -135,6 +131,8 @@ class Recipe:
         }
         resolved: dict[str, Any] = {
             "seed": pkg["seed"],
+            "exposure_mode": pkg["exposure_mode"],
+            "difficulty": pkg["difficulty"],
             "output_path": pkg["output_path"],
             "n_accounts": pkg["n_accounts"],
             "n_contacts": pkg["n_contacts"],
@@ -149,7 +147,7 @@ class Recipe:
                 resolved[key] = pop[key]
         resolved["horizon_days"] = self.horizon_days
 
-        # Layer 2 — override dict
+        # Layer 2 — override dict (beats recipe/package defaults)
         if override:
             for key in (
                 "n_accounts",
@@ -158,18 +156,20 @@ class Recipe:
                 "horizon_days",
                 "seed",
                 "output_path",
+                "exposure_mode",
+                "difficulty",
             ):
                 if key in override:
                     resolved[key] = override[key]
-            if "exposure_mode" in override:
-                exposure_mode = override["exposure_mode"]
-            if "difficulty" in override:
-                difficulty = override["difficulty"]
 
-        # Layer 1 — explicit kwargs (sentinel guards seed / output_path so that
-        # passing no argument lets the override dict or recipe default stand)
+        # Layer 1 — explicit kwargs: only apply when the caller actually passed
+        # the argument (sentinel guards all params that have package defaults).
         if seed is not _MISSING:
             resolved["seed"] = seed
+        if exposure_mode is not _MISSING:
+            resolved["exposure_mode"] = exposure_mode
+        if difficulty is not _MISSING:
+            resolved["difficulty"] = difficulty
         if output_path is not _MISSING:
             resolved["output_path"] = output_path
         if n_accounts is not None:
@@ -181,8 +181,8 @@ class Recipe:
         if horizon_days is not None:
             resolved["horizon_days"] = horizon_days
 
-        mode = ExposureMode(exposure_mode)
-        diff = DifficultyProfile(difficulty)
+        mode = ExposureMode(resolved["exposure_mode"])
+        diff = DifficultyProfile(resolved["difficulty"])
 
         if mode not in self.supported_modes:
             raise InvalidRecipeError(
@@ -216,14 +216,30 @@ class Recipe:
         path = _RECIPES_DIR / self.id / "narrative.yaml"
         if not path.exists():
             return {}
-        return load_yaml(path) or {}  # type: ignore[return-value]
+        data = load_yaml(path)
+        if data is None:
+            return {}
+        if not isinstance(data, dict):
+            raise InvalidRecipeError(
+                f"narrative.yaml for recipe '{self.id}' must be a YAML mapping, "
+                f"got {type(data).__name__!r}"
+            )
+        return data  # type: ignore[return-value]
 
     def load_difficulty_profiles(self) -> dict[str, Any]:
         """Load the ``difficulty_profiles.yaml`` for this recipe, if present."""
         path = _RECIPES_DIR / self.id / "difficulty_profiles.yaml"
         if not path.exists():
             return {}
-        return load_yaml(path) or {}  # type: ignore[return-value]
+        data = load_yaml(path)
+        if data is None:
+            return {}
+        if not isinstance(data, dict):
+            raise InvalidRecipeError(
+                f"difficulty_profiles.yaml for recipe '{self.id}' must be a YAML mapping, "
+                f"got {type(data).__name__!r}"
+            )
+        return data  # type: ignore[return-value]
 
 
 # Forward reference resolution — GenerationConfig is used as a return type above.

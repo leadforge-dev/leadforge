@@ -34,3 +34,21 @@ def test_exception_message_preserved() -> None:
     msg = "recipe 'foo' not found"
     exc = InvalidRecipeError(msg)
     assert str(exc) == msg
+
+
+def test_invalid_config_error_on_string_count() -> None:
+    """__post_init__ must raise InvalidConfigError for non-int count fields."""
+    from leadforge.core.exceptions import InvalidConfigError
+    from leadforge.core.models import GenerationConfig
+
+    with pytest.raises(InvalidConfigError, match="n_leads"):
+        GenerationConfig(n_leads="five_thousand")  # type: ignore[arg-type]
+
+
+def test_invalid_config_error_on_bool_count() -> None:
+    """bool is an int subclass and must be explicitly rejected."""
+    from leadforge.core.exceptions import InvalidConfigError
+    from leadforge.core.models import GenerationConfig
+
+    with pytest.raises(InvalidConfigError, match="n_accounts"):
+        GenerationConfig(n_accounts=True)  # type: ignore[arg-type]
