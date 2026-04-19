@@ -79,3 +79,25 @@ def test_from_recipe_override_dict() -> None:
         n_leads=9999,
     )
     assert gen.config.n_leads == 9999
+
+
+def test_from_recipe_override_dict_applies_seed_and_output_path() -> None:
+    """Layer 2: override dict should set seed / output_path when not explicitly passed."""
+    gen = Generator.from_recipe(
+        "b2b_saas_procurement_v1",
+        override={"seed": 5678, "output_path": "/tmp/override"},
+    )
+    assert gen.config.seed == 5678
+    assert gen.config.output_path == "/tmp/override"
+
+
+def test_from_recipe_explicit_seed_beats_override_dict() -> None:
+    """Layer 1: explicit seed / output_path kwargs beat override dict."""
+    gen = Generator.from_recipe(
+        "b2b_saas_procurement_v1",
+        override={"seed": 5678, "output_path": "/tmp/override"},
+        seed=42,
+        output_path="/tmp/explicit",
+    )
+    assert gen.config.seed == 42
+    assert gen.config.output_path == "/tmp/explicit"

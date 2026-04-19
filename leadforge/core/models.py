@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from leadforge.core.enums import DifficultyProfile, ExposureMode
+from leadforge.core.exceptions import InvalidConfigError
 from leadforge.version import __version__
 
 
@@ -30,17 +31,17 @@ class GenerationConfig:
 
     def __post_init__(self) -> None:
         if not isinstance(self.seed, int):
-            raise TypeError(f"seed must be int, got {type(self.seed).__name__}")
+            raise InvalidConfigError(f"seed must be int, got {type(self.seed).__name__}")
         if self.seed < 0:
-            raise ValueError(f"seed must be non-negative, got {self.seed}")
+            raise InvalidConfigError(f"seed must be non-negative, got {self.seed}")
         if self.n_accounts <= 0:
-            raise ValueError(f"n_accounts must be positive, got {self.n_accounts}")
+            raise InvalidConfigError(f"n_accounts must be positive, got {self.n_accounts}")
         if self.n_contacts <= 0:
-            raise ValueError(f"n_contacts must be positive, got {self.n_contacts}")
+            raise InvalidConfigError(f"n_contacts must be positive, got {self.n_contacts}")
         if self.n_leads <= 0:
-            raise ValueError(f"n_leads must be positive, got {self.n_leads}")
+            raise InvalidConfigError(f"n_leads must be positive, got {self.n_leads}")
         if self.horizon_days <= 0:
-            raise ValueError(f"horizon_days must be positive, got {self.horizon_days}")
+            raise InvalidConfigError(f"horizon_days must be positive, got {self.horizon_days}")
         # Coerce string enums supplied as plain strings
         if not isinstance(self.exposure_mode, ExposureMode):
             self.exposure_mode = ExposureMode(self.exposure_mode)

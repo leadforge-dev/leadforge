@@ -8,11 +8,12 @@ Config precedence (highest → lowest):
   1. Explicit kwargs passed to ``from_recipe`` / ``resolve_config``
   2. Override dict (e.g. loaded from a ``--override`` YAML/JSON file)
   3. Recipe defaults (``default_population``, ``horizon_days``)
-  4. Package defaults (defined in ``GenerationConfig``)
+  4. Package defaults (defined in ``GenerationConfig`` field defaults)
 """
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -21,8 +22,10 @@ from leadforge.core.enums import DifficultyProfile, ExposureMode
 from leadforge.core.exceptions import InvalidRecipeError
 from leadforge.core.serialization import load_yaml
 
-# Sentinel for "not provided by caller" — distinct from None
-_MISSING = object()
+# Sentinel: distinguishes "caller did not pass this kwarg" from any real value.
+# Used for seed and output_path so override-dict values are not silently shadowed
+# by the function-signature default.
+_MISSING: Any = object()
 
 _RECIPES_DIR = Path(__file__).parent.parent / "recipes"
 
@@ -102,34 +105,49 @@ class Recipe:
     def resolve_config(
         self,
         *,
-        seed: int = 42,
+        seed: int = _MISSING,  # type: ignore[assignment]
         exposure_mode: str | ExposureMode = ExposureMode.student_public,
         difficulty: str | DifficultyProfile = DifficultyProfile.intermediate,
         n_accounts: int | None = None,
         n_contacts: int | None = None,
         n_leads: int | None = None,
         horizon_days: int | None = None,
-        output_path: str = "./out",
+        output_path: str = _MISSING,  # type: ignore[assignment]
         override: dict[str, Any] | None = None,
     ) -> GenerationConfig:
         """Resolve a :class:`GenerationConfig` applying config precedence rules.
 
         Precedence (highest → lowest):
-          1. Explicit kwargs (any non-None value passed by the caller)
-          2. *override* dict
-          3. Recipe defaults (``default_population``, ``horizon_days``)
-          4. Package defaults (``GenerationConfig`` field defaults)
+          1. Explicit kwargs — only values *actually passed* by the caller win.
+          2. *override* dict — beats recipe and package defaults.
+          3. Recipe defaults — ``default_population`` keys and ``horizon_days``.
+          4. Package defaults — ``GenerationConfig`` field defaults (single
+             source of truth; not duplicated here).
         """
         from leadforge.core.models import GenerationConfig  # avoid circular import
 
+        # Layer 4 — package defaults: read directly from GenerationConfig fields
+        # so this file never duplicates magic numbers.
+        pkg: dict[str, Any] = {
+            f.name: f.default
+            for f in dataclasses.fields(GenerationConfig)
+            if f.default is not dataclasses.MISSING
+        }
+        resolved: dict[str, Any] = {
+            "seed": pkg["seed"],
+            "output_path": pkg["output_path"],
+            "n_accounts": pkg["n_accounts"],
+            "n_contacts": pkg["n_contacts"],
+            "n_leads": pkg["n_leads"],
+            "horizon_days": pkg["horizon_days"],
+        }
+
         # Layer 3 — recipe defaults
         pop = self.default_population
-        resolved: dict[str, Any] = {
-            "n_accounts": pop.get("n_accounts", 1500),
-            "n_contacts": pop.get("n_contacts", 4200),
-            "n_leads": pop.get("n_leads", 5000),
-            "horizon_days": self.horizon_days,
-        }
+        for key in ("n_accounts", "n_contacts", "n_leads"):
+            if key in pop:
+                resolved[key] = pop[key]
+        resolved["horizon_days"] = self.horizon_days
 
         # Layer 2 — override dict
         if override:
@@ -148,7 +166,12 @@ class Recipe:
             if "difficulty" in override:
                 difficulty = override["difficulty"]
 
-        # Layer 1 — explicit kwargs
+        # Layer 1 — explicit kwargs (sentinel guards seed / output_path so that
+        # passing no argument lets the override dict or recipe default stand)
+        if seed is not _MISSING:
+            resolved["seed"] = seed
+        if output_path is not _MISSING:
+            resolved["output_path"] = output_path
         if n_accounts is not None:
             resolved["n_accounts"] = n_accounts
         if n_contacts is not None:
@@ -174,14 +197,14 @@ class Recipe:
 
         return GenerationConfig(
             recipe_id=self.id,
-            seed=seed,
+            seed=resolved["seed"],
             exposure_mode=mode,
             difficulty=diff,
             n_accounts=resolved["n_accounts"],
             n_contacts=resolved["n_contacts"],
             n_leads=resolved["n_leads"],
             horizon_days=resolved["horizon_days"],
-            output_path=output_path,
+            output_path=resolved["output_path"],
         )
 
     # ------------------------------------------------------------------ #
@@ -203,6 +226,5 @@ class Recipe:
         return load_yaml(path) or {}  # type: ignore[return-value]
 
 
-# Avoid a circular import — GenerationConfig is defined in core.models
-# but uses Recipe indirectly; we reference it via TYPE_CHECKING only.
+# Forward reference resolution — GenerationConfig is used as a return type above.
 from leadforge.core.models import GenerationConfig as GenerationConfig  # noqa: E402,F401

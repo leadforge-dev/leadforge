@@ -111,6 +111,26 @@ def test_resolve_config_seed_propagates() -> None:
     assert config.seed == 999
 
 
+def test_resolve_config_override_dict_applies_seed_and_output_path() -> None:
+    """Layer 2: override dict should set seed / output_path when not explicitly passed."""
+    recipe = Recipe.from_dict(VALID_DICT)
+    config = recipe.resolve_config(override={"seed": 1234, "output_path": "/tmp/override"})
+    assert config.seed == 1234
+    assert config.output_path == "/tmp/override"
+
+
+def test_resolve_config_explicit_seed_beats_override_dict() -> None:
+    """Layer 1: explicit seed / output_path kwargs beat override dict."""
+    recipe = Recipe.from_dict(VALID_DICT)
+    config = recipe.resolve_config(
+        override={"seed": 1234, "output_path": "/tmp/override"},
+        seed=999,
+        output_path="/tmp/explicit",
+    )
+    assert config.seed == 999
+    assert config.output_path == "/tmp/explicit"
+
+
 def test_resolve_config_unsupported_mode_raises() -> None:
     limited = {**VALID_DICT, "supported_modes": ["student_public"]}
     recipe = Recipe.from_dict(limited)

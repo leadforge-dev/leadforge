@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from leadforge.api.recipes import _MISSING
 from leadforge.core.enums import DifficultyProfile, ExposureMode
 from leadforge.core.models import GenerationConfig, WorldBundle
 from leadforge.core.rng import RNGRoot
@@ -39,14 +40,14 @@ class Generator:
         cls,
         recipe_id: str,
         *,
-        seed: int = 42,
+        seed: int = _MISSING,  # type: ignore[assignment]
         exposure_mode: str | ExposureMode = ExposureMode.student_public,
         difficulty: str | DifficultyProfile = DifficultyProfile.intermediate,
         n_accounts: int | None = None,
         n_contacts: int | None = None,
         n_leads: int | None = None,
         horizon_days: int | None = None,
-        output_path: str = "./out",
+        output_path: str = _MISSING,  # type: ignore[assignment]
         override: dict[str, Any] | None = None,
     ) -> Generator:
         """Create a :class:`Generator` from a recipe ID, applying config precedence.
@@ -54,7 +55,7 @@ class Generator:
         Args:
             recipe_id: Identifier of a registered recipe (e.g.
                 ``"b2b_saas_procurement_v1"``).
-            seed: Master RNG seed. Defaults to ``42``.
+            seed: Master RNG seed. Defaults to the package default (42).
             exposure_mode: ``"student_public"`` or ``"research_instructor"``.
             difficulty: ``"intro"``, ``"intermediate"``, or ``"advanced"``.
             n_accounts: Override recipe default account count.
