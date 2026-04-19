@@ -85,6 +85,14 @@ class Recipe:
                 f"'default_population' must be a mapping of str→int, got: {pop!r}"
             )
 
+        horizon_days = data["horizon_days"]
+        if isinstance(horizon_days, bool) or not isinstance(horizon_days, int):
+            raise InvalidRecipeError(
+                f"'horizon_days' must be a positive int, got {type(horizon_days).__name__!r}"
+            )
+        if horizon_days <= 0:
+            raise InvalidRecipeError(f"'horizon_days' must be positive, got {horizon_days}")
+
         return cls(
             id=data["id"],
             title=data["title"],
@@ -94,7 +102,7 @@ class Recipe:
             supported_modes=supported_modes,
             supported_difficulty=supported_difficulty,
             default_population=dict(pop),
-            horizon_days=int(data["horizon_days"]),
+            horizon_days=horizon_days,
         )
 
     # ------------------------------------------------------------------ #

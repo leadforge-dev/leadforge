@@ -63,6 +63,26 @@ def test_from_dict_invalid_population_raises() -> None:
         Recipe.from_dict(bad)
 
 
+def test_from_dict_bool_horizon_days_raises() -> None:
+    """bool horizon_days must be rejected (True → 1 would pass silently)."""
+    bad = {**VALID_DICT, "horizon_days": True}
+    with pytest.raises(InvalidRecipeError, match="horizon_days"):
+        Recipe.from_dict(bad)
+
+
+def test_from_dict_float_horizon_days_raises() -> None:
+    """Float horizon_days must be rejected (truncation would be silent)."""
+    bad = {**VALID_DICT, "horizon_days": 90.5}
+    with pytest.raises(InvalidRecipeError, match="horizon_days"):
+        Recipe.from_dict(bad)
+
+
+def test_from_dict_nonpositive_horizon_days_raises() -> None:
+    bad = {**VALID_DICT, "horizon_days": 0}
+    with pytest.raises(InvalidRecipeError, match="horizon_days"):
+        Recipe.from_dict(bad)
+
+
 def test_from_dict_bool_population_raises() -> None:
     """bool values in default_population must be rejected (bool is int subclass)."""
     bad = {**VALID_DICT, "default_population": {"n_leads": True}}
