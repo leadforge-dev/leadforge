@@ -1,0 +1,44 @@
+# Difficulty profiles for b2b_saas_procurement_v1
+# ---------------------------------------------------------------------------
+# Each profile controls the signal/noise characteristics of the generated
+# dataset. Higher difficulty = more realistic noise, missing data, and class
+# imbalance, making the supervised task harder.
+
+intro:
+  description: >
+    Clean signal, minimal noise. Suitable for learning basic ML concepts
+    and verifying that a pipeline runs end to end.
+  # Probability that the true mechanism drives the outcome (vs. noise)
+  signal_strength: 0.90
+  # Scale multiplier applied to additive Gaussian noise in continuous features
+  noise_scale: 0.10
+  # Fraction of feature values set to missing (NaN)
+  missing_rate: 0.02
+  # Fraction of rows that are statistical outliers
+  outlier_rate: 0.01
+  # Positive-class rate for converted_within_90_days
+  conversion_rate_range: [0.30, 0.45]
+  # Strength of buying-committee-friction effects
+  committee_friction: 0.10
+
+intermediate:
+  description: >
+    Realistic signal-to-noise ratio. Suitable for portfolio projects,
+    courses, and kaggle-style competitions.
+  signal_strength: 0.70
+  noise_scale: 0.30
+  missing_rate: 0.08
+  outlier_rate: 0.04
+  conversion_rate_range: [0.18, 0.28]
+  committee_friction: 0.30
+
+advanced:
+  description: >
+    High noise, realistic class imbalance, and significant missing data.
+    Suitable for ML research and realistic benchmark construction.
+  signal_strength: 0.50
+  noise_scale: 0.55
+  missing_rate: 0.18
+  outlier_rate: 0.08
+  conversion_rate_range: [0.08, 0.15]
+  committee_friction: 0.55
