@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from leadforge.core.enums import DifficultyProfile, ExposureMode
 from leadforge.core.exceptions import InvalidConfigError
 from leadforge.version import __version__
+
+if TYPE_CHECKING:
+    from leadforge.narrative.spec import NarrativeSpec
 
 
 def _require_positive_int(value: Any, name: str) -> None:
@@ -74,10 +77,13 @@ class GenerationConfig:
 class WorldSpec:
     """Fully instantiated hidden world specification (post-sampling, pre-simulation).
 
-    Populated in Milestone 2 (narrative/schema) through Milestone 6 (mechanisms).
+    Populated incrementally across milestones:
+    - M2: config + narrative
+    - M3–M6: schema, structure, mechanisms
     """
 
     config: GenerationConfig = field(default_factory=GenerationConfig)
+    narrative: NarrativeSpec | None = None
 
 
 @dataclass

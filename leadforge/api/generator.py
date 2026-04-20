@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from leadforge.core.enums import DifficultyProfile, ExposureMode
-from leadforge.core.models import GenerationConfig, WorldBundle
+from leadforge.core.models import GenerationConfig, WorldBundle, WorldSpec
 from leadforge.core.rng import RNGRoot
 from leadforge.core.sentinels import _MISSING
 
@@ -23,17 +23,23 @@ class Generator:
         bundle = gen.generate(n_leads=5000, difficulty="intermediate")
         bundle.save("./out/demo_bundle")
 
-    ``from_recipe`` is implemented in Milestone 1. Full generation
-    (``generate``) is implemented across Milestones 2–9.
+    ``from_recipe`` is implemented in Milestone 1–2. Full generation
+    (``generate``) is implemented across Milestones 3–9.
     """
 
-    def __init__(self, config: GenerationConfig) -> None:
+    def __init__(self, config: GenerationConfig, world_spec: WorldSpec) -> None:
         self._config = config
+        self._world_spec = world_spec
         self._rng = RNGRoot(config.seed)
 
     @property
     def config(self) -> GenerationConfig:
         return self._config
+
+    @property
+    def world_spec(self) -> WorldSpec:
+        """The resolved world specification, including narrative."""
+        return self._world_spec
 
     @classmethod
     def from_recipe(
@@ -69,8 +75,8 @@ class Generator:
                 Applied after recipe defaults but before explicit kwargs.
 
         Returns:
-            A configured :class:`Generator` instance ready to call
-            :meth:`generate` on.
+            A configured :class:`Generator` with a populated
+            :attr:`world_spec` (narrative resolved from the recipe).
 
         Raises:
             :class:`~leadforge.core.exceptions.InvalidRecipeError`: if the
@@ -78,6 +84,7 @@ class Generator:
                 exposure mode / difficulty is not supported.
         """
         from leadforge.api.recipes import Recipe
+        from leadforge.narrative.spec import NarrativeSpec
         from leadforge.recipes.registry import load_recipe
 
         raw = load_recipe(recipe_id)
@@ -93,7 +100,12 @@ class Generator:
             output_path=output_path,
             override=override,
         )
-        return cls(config)
+
+        narrative_data = recipe.load_narrative()
+        narrative = NarrativeSpec.from_dict(narrative_data) if narrative_data else None
+        world_spec = WorldSpec(config=config, narrative=narrative)
+
+        return cls(config, world_spec)
 
     def generate(
         self,
