@@ -89,7 +89,7 @@ def render_dataset_card(world_spec: WorldSpec) -> str:
             )
         lines.append("")
     else:
-        lines += ["*Narrative not available for this exposure mode.*", ""]
+        lines += ["*Narrative unavailable for this dataset.*", ""]
 
     # ------------------------------------------------------------------
     # Primary task

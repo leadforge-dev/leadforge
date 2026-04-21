@@ -99,6 +99,11 @@ class ProductSpec:
             raise InvalidRecipeError(
                 f"product.contract_terms_months must be a list of ints, got {terms!r}"
             )
+        for field_name in ("free_trial_available", "demo_available"):
+            if not isinstance(data[field_name], bool):
+                raise InvalidRecipeError(
+                    f"product.{field_name} must be a bool, got {type(data[field_name]).__name__!r}"
+                )
         return cls(
             name=str(data["name"]),
             category=str(data["category"]),
@@ -106,8 +111,8 @@ class ProductSpec:
             pricing_model=str(data["pricing_model"]),
             acv_range_usd=(int(acv[0]), int(acv[1])),
             contract_terms_months=tuple(int(t) for t in terms),
-            free_trial_available=bool(data["free_trial_available"]),
-            demo_available=bool(data["demo_available"]),
+            free_trial_available=data["free_trial_available"],
+            demo_available=data["demo_available"],
         )
 
 
@@ -143,10 +148,28 @@ class MarketSpec:
             raise InvalidRecipeError(
                 f"market.icp_employee_range must be a [min, max] int pair, got {er!r}"
             )
+        industries = data["icp_industries"]
+        if not isinstance(industries, (list, tuple)):
+            raise InvalidRecipeError(
+                f"market.icp_industries must be a list of strings, got {industries!r}"
+            )
+        if not all(isinstance(i, str) for i in industries):
+            raise InvalidRecipeError(
+                f"market.icp_industries must contain only strings, got {industries!r}"
+            )
+        geographies = data["geographies"]
+        if not isinstance(geographies, (list, tuple)):
+            raise InvalidRecipeError(
+                f"market.geographies must be a list of strings, got {geographies!r}"
+            )
+        if not all(isinstance(g, str) for g in geographies):
+            raise InvalidRecipeError(
+                f"market.geographies must contain only strings, got {geographies!r}"
+            )
         return cls(
             icp_employee_range=(int(er[0]), int(er[1])),
-            icp_industries=tuple(str(i) for i in data["icp_industries"]),
-            geographies=tuple(str(g) for g in data["geographies"]),
+            icp_industries=tuple(industries),
+            geographies=tuple(geographies),
             avg_deal_size_usd=_pos_int(data["avg_deal_size_usd"], "market.avg_deal_size_usd"),
             avg_sales_cycle_days=_pos_int(
                 data["avg_sales_cycle_days"], "market.avg_sales_cycle_days"
@@ -170,8 +193,21 @@ class GtmMotionSpec:
             {"channels", "inbound_share", "outbound_share", "partner_share"},
             "gtm_motion",
         )
+        channels = data["channels"]
+        if not isinstance(channels, (list, tuple)) or not all(isinstance(c, str) for c in channels):
+            raise InvalidRecipeError(
+                f"gtm_motion.channels must be a list of strings, got {channels!r}"
+            )
+        for share_name in ("inbound_share", "outbound_share", "partner_share"):
+            v = data[share_name]
+            if isinstance(v, bool) or not isinstance(v, (int, float)):
+                raise InvalidRecipeError(
+                    f"gtm_motion.{share_name} must be a float in [0, 1], got {type(v).__name__!r}"
+                )
+            if not (0.0 <= float(v) <= 1.0):
+                raise InvalidRecipeError(f"gtm_motion.{share_name} must be in [0, 1], got {v!r}")
         return cls(
-            channels=tuple(str(c) for c in data["channels"]),
+            channels=tuple(channels),
             inbound_share=float(data["inbound_share"]),
             outbound_share=float(data["outbound_share"]),
             partner_share=float(data["partner_share"]),
@@ -194,9 +230,17 @@ class PersonaSpec:
             {"role", "title_variants", "decision_authority", "typical_involvement"},
             "personas[]",
         )
+        title_variants = data["title_variants"]
+        if not (
+            isinstance(title_variants, (list, tuple))
+            and all(isinstance(t, str) for t in title_variants)
+        ):
+            raise InvalidRecipeError(
+                f"personas[].title_variants must be a list of strings, got {title_variants!r}"
+            )
         return cls(
             role=str(data["role"]),
-            title_variants=tuple(str(t) for t in data["title_variants"]),
+            title_variants=tuple(title_variants),
             decision_authority=str(data["decision_authority"]),
             typical_involvement=str(data["typical_involvement"]),
         )
@@ -248,11 +292,21 @@ class NarrativeSpec:
             raise InvalidRecipeError(
                 f"narrative.personas must be a list, got {type(personas_raw).__name__!r}"
             )
+        for i, item in enumerate(personas_raw):
+            if not isinstance(item, dict):
+                raise InvalidRecipeError(
+                    f"narrative.personas[{i}] must be a mapping, got {type(item).__name__!r}"
+                )
         funnel_raw = data["funnel_stages"]
         if not isinstance(funnel_raw, list):
             raise InvalidRecipeError(
                 f"narrative.funnel_stages must be a list, got {type(funnel_raw).__name__!r}"
             )
+        for i, item in enumerate(funnel_raw):
+            if not isinstance(item, dict):
+                raise InvalidRecipeError(
+                    f"narrative.funnel_stages[{i}] must be a mapping, got {type(item).__name__!r}"
+                )
 
         return cls(
             company=CompanySpec.from_dict(data["company"]),
@@ -269,7 +323,11 @@ class NarrativeSpec:
 # ---------------------------------------------------------------------------
 
 
-def _require_keys(data: dict[str, Any], required: set[str], context: str) -> None:
+def _require_keys(data: Any, required: set[str], context: str) -> None:
+    if not isinstance(data, dict):
+        raise InvalidRecipeError(
+            f"Narrative section '{context}' must be a mapping, got {type(data).__name__!r}"
+        )
     missing = required - data.keys()
     if missing:
         raise InvalidRecipeError(

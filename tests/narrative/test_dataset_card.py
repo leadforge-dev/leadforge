@@ -58,7 +58,7 @@ def test_card_contains_caveats() -> None:
 
 def test_card_no_narrative_shows_stub() -> None:
     spec = WorldSpec(config=GenerationConfig(), narrative=None)
-    assert "not available" in render_dataset_card(spec).lower()
+    assert "unavailable" in render_dataset_card(spec).lower()
 
 
 # ---------------------------------------------------------------------------

@@ -27,14 +27,13 @@ class Generator:
     (``generate``) is implemented across Milestones 3–9.
     """
 
-    def __init__(self, config: GenerationConfig, world_spec: WorldSpec) -> None:
-        self._config = config
+    def __init__(self, world_spec: WorldSpec) -> None:
         self._world_spec = world_spec
-        self._rng = RNGRoot(config.seed)
+        self._rng = RNGRoot(world_spec.config.seed)
 
     @property
     def config(self) -> GenerationConfig:
-        return self._config
+        return self._world_spec.config
 
     @property
     def world_spec(self) -> WorldSpec:
@@ -105,7 +104,7 @@ class Generator:
         narrative = NarrativeSpec.from_dict(narrative_data) if narrative_data else None
         world_spec = WorldSpec(config=config, narrative=narrative)
 
-        return cls(config, world_spec)
+        return cls(world_spec)
 
     def generate(
         self,
