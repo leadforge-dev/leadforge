@@ -32,8 +32,10 @@ def feature_dictionary_df(
             objects.  Defaults to the canonical lead snapshot feature list.
 
     Returns:
-        A ``pd.DataFrame`` with one row per feature, string columns for
-        categorical fields and boolean columns for flag fields.
+        A ``pd.DataFrame`` with one row per feature.  String columns
+        (``name``, ``dtype``, ``description``, ``category``) use
+        ``pd.StringDtype``; flag columns (``is_target``, ``leakage_risk``)
+        use ``pd.BooleanDtype``.
     """
     rows = [
         {
@@ -47,6 +49,8 @@ def feature_dictionary_df(
         for f in features
     ]
     df = pd.DataFrame(rows, columns=list(_COLUMNS))
+    for col in ("name", "dtype", "description", "category"):
+        df[col] = df[col].astype("string")
     df["is_target"] = df["is_target"].astype("boolean")
     df["leakage_risk"] = df["leakage_risk"].astype("boolean")
     return df

@@ -166,8 +166,8 @@ class TouchRow:
         "touch_timestamp": "string",
         "touch_type": "string",
         "touch_channel": "string",
-        "campaign_id": "string",
         "touch_direction": "string",
+        "campaign_id": "string",
     }
 
     touch_id: str

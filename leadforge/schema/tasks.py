@@ -28,6 +28,13 @@ class SplitSpec:
     test: float
 
     def __post_init__(self) -> None:
+        import math
+
+        for name, value in (("train", self.train), ("valid", self.valid), ("test", self.test)):
+            if not isinstance(value, (int, float)) or math.isnan(value) or math.isinf(value):  # noqa: UP038
+                raise ValueError(f"SplitSpec.{name} must be a finite number, got {value!r}")
+            if not (0.0 <= value <= 1.0):
+                raise ValueError(f"SplitSpec.{name} must be in [0, 1], got {value}")
         total = self.train + self.valid + self.test
         if abs(total - 1.0) > 1e-6:
             raise ValueError(f"SplitSpec fractions must sum to 1.0, got {total:.6f}")

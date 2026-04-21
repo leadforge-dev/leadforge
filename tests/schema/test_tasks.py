@@ -21,6 +21,16 @@ def test_split_spec_rejects_bad_sum() -> None:
         SplitSpec(train=0.6, valid=0.2, test=0.1)
 
 
+def test_split_spec_rejects_negative_component() -> None:
+    with pytest.raises(ValueError, match=r"\[0, 1\]"):
+        SplitSpec(train=1.2, valid=-0.1, test=-0.1)
+
+
+def test_split_spec_rejects_component_above_one() -> None:
+    with pytest.raises(ValueError, match=r"\[0, 1\]"):
+        SplitSpec(train=1.1, valid=0.0, test=0.0)
+
+
 def test_split_spec_frozen() -> None:
     s = SplitSpec(0.7, 0.15, 0.15)
     with pytest.raises(dataclasses.FrozenInstanceError):
