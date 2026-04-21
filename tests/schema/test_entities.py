@@ -145,7 +145,7 @@ def test_lead_rows_parquet_roundtrip(tmp_path: Path) -> None:
     write_parquet(df, path)
     restored = read_parquet(path)
     assert restored["lead_id"].iloc[0] == "lead_000001"
-    assert restored["is_mql"].iloc[0] is True or restored["is_mql"].iloc[0]
+    assert bool(restored["is_mql"].iloc[0]) is True
 
 
 # ---------------------------------------------------------------------------

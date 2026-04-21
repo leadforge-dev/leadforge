@@ -77,11 +77,11 @@ jobs:
 
             const defaultBranch = context.payload.repository.default_branch;
 
-            // List open PRs in this repository (same-repo only).
-            const { data: pulls } = await github.rest.pulls.list({
+            // List ALL open PRs in this repository via pagination (same-repo only).
+            const pulls = await github.paginate(github.rest.pulls.list, {
               ...context.repo,
               state: 'open',
-              per_page: 50,
+              per_page: 100,
             });
 
             for (const pr of pulls) {

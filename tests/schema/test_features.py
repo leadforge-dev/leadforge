@@ -86,7 +86,7 @@ def test_feature_dictionary_df_columns() -> None:
 
 def test_feature_dictionary_df_target_row() -> None:
     df = feature_dictionary_df()
-    target_rows = df[df["is_target"] == True]  # noqa: E712
+    target_rows = df[df["is_target"]]
     assert len(target_rows) == 1
     assert target_rows.iloc[0]["name"] == "converted_within_90_days"
 

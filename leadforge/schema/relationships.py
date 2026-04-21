@@ -57,11 +57,17 @@ def validate_fk(
     Raises:
         FKViolationError: if any child value is absent from *parent_values*.
     """
-    orphans = [v for v in child_values if v not in parent_values]
-    if orphans:
-        sample = orphans[:5]
+    _max_sample = 5
+    orphan_count = 0
+    orphan_sample: list[str] = []
+    for v in child_values:
+        if v not in parent_values:
+            orphan_count += 1
+            if len(orphan_sample) < _max_sample:
+                orphan_sample.append(v)
+    if orphan_count:
         raise FKViolationError(
             f"FK violation: {constraint.child_table}.{constraint.child_column} "
             f"→ {constraint.parent_table}.{constraint.parent_column}: "
-            f"{len(orphans)} orphan(s), e.g. {sample}"
+            f"{orphan_count} orphan(s), e.g. {orphan_sample}"
         )
