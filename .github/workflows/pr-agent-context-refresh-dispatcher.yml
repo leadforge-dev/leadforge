@@ -2,18 +2,41 @@ name: PR agent context refresh dispatcher
 
 # Runs on a schedule and dispatches pr-agent-context-refresh for any open
 # same-repo PR that had recent review activity but no corresponding in-flight
-# or recently-completed refresh run.
+# or recently-succeeded refresh run.
 #
-# This is the approval-gated fallback: when a bot (e.g. Copilot) submits a
-# review, the pull_request_review event may trigger a run that is held for
-# approval, or may be skipped entirely in certain org configurations.  This
-# dispatcher ensures those PRs are not left stale indefinitely.
+# WHY THIS EXISTS
+# ---------------
+# When a bot (e.g. Copilot / copilot-pull-request-reviewer[bot]) submits a
+# review, the pull_request_review / pull_request_review_comment events fire
+# and trigger pr-agent-context-refresh — but the triggered run is immediately
+# blocked by GitHub's approval gate for bot/external actors:
+#
+#   • status=action_required  → waiting for maintainer approval (never runs)
+#   • conclusion=startup_failure → workflow could not start (counts as blocked)
+#   • conclusion=action_required → was approval-gated, later auto-cancelled
+#
+# None of those outcomes produce a refresh comment.  This dispatcher fires
+# from the default branch (where it is active), bypasses the approval gate
+# by using the schedule's GITHUB_TOKEN, and dispatches a workflow_dispatch
+# run that executes with full repo permissions.
+#
+# DEDUPE CONTRACT
+# ---------------
+# A dispatch is suppressed only when there is already meaningful coverage for
+# the PR's current head SHA:
+#   • run is in_progress, queued, waiting, or requested  →  suppress
+#   • run completed with conclusion=success or =neutral recently  →  suppress
+#
+# Blocked / non-executed conclusions (startup_failure, action_required,
+# failure, cancelled, timed_out, skipped) do NOT count as coverage and do
+# NOT suppress a fallback dispatch.
 
 on:
   schedule:
-    # Every 15 minutes during business hours (UTC).
-    # Adjust or extend to '*/15 * * * *' if 24/7 coverage is needed.
-    - cron: '*/15 7-23 * * 1-5'
+    # Every 15 minutes, all day every day.
+    # Bot reviews can arrive at any hour; restrict to business hours only if
+    # cost is a concern (e.g. '*/15 7-23 * * 1-5' for Mon-Fri 07-23 UTC).
+    - cron: '*/15 * * * *'
 
 permissions:
   actions: write
@@ -29,15 +52,27 @@ jobs:
         with:
           script: |
             const REFRESH_WORKFLOW = 'pr-agent-context-refresh.yml';
-            // Only look at activity in the last N minutes to avoid spurious dispatches.
+
+            // Only look at review activity in the last N minutes.
             const LOOKBACK_MINUTES = 20;
-            // Skip dispatch if a run completed within the last N minutes.
-            const RECENT_COMPLETED_WINDOW_MINUTES = 10;
+            // A successfully-completed run within this window suppresses redispatch.
+            const RECENT_SUCCESS_WINDOW_MINUTES = 10;
+
+            // Conclusions that mean the run was BLOCKED and never produced a
+            // refresh comment.  These must NOT suppress a fallback dispatch.
+            const BLOCKED_CONCLUSIONS = new Set([
+              'startup_failure',
+              'action_required',
+              'failure',
+              'cancelled',
+              'timed_out',
+              'skipped',
+            ]);
 
             const now = Date.now();
             const since = new Date(now - LOOKBACK_MINUTES * 60 * 1000).toISOString();
-            const recentCompletedSince = new Date(
-              now - RECENT_COMPLETED_WINDOW_MINUTES * 60 * 1000
+            const recentSuccessSince = new Date(
+              now - RECENT_SUCCESS_WINDOW_MINUTES * 60 * 1000
             ).toISOString();
 
             const defaultBranch = context.payload.repository.default_branch;
@@ -78,7 +113,9 @@ jobs:
 
                 if (!hasRecentActivity) continue;
 
-                // --- In-flight / recent-completion dedupe ---
+                // --- In-flight / recent-success dedupe ---
+                // Fetch runs for this exact head SHA so stale runs from
+                // earlier commits don't suppress dispatch for the new SHA.
                 const { data: { workflow_runs: runs } } =
                   await github.rest.actions.listWorkflowRuns({
                     ...context.repo,
@@ -87,17 +124,37 @@ jobs:
                     per_page: 10,
                   });
 
-                const isRunningOrRecent = runs.some(
-                  (r) =>
+                const hasValidCoverage = runs.some((r) => {
+                  // Approval-gated status: the run is waiting and will never
+                  // execute — do NOT treat this as coverage.
+                  if (r.status === 'action_required') return false;
+
+                  // Actively working toward a refresh — don't interrupt.
+                  if (
                     r.status === 'in_progress' ||
                     r.status === 'queued' ||
                     r.status === 'waiting' ||
-                    (r.status === 'completed' && r.updated_at >= recentCompletedSince)
-                );
+                    r.status === 'requested'
+                  ) {
+                    return true;
+                  }
 
-                if (isRunningOrRecent) {
+                  // Completed: only suppress if the run actually succeeded
+                  // recently.  Blocked / failed conclusions are transparent.
+                  if (r.status === 'completed') {
+                    if (BLOCKED_CONCLUSIONS.has(r.conclusion)) return false;
+                    return (
+                      (r.conclusion === 'success' || r.conclusion === 'neutral') &&
+                      r.updated_at >= recentSuccessSince
+                    );
+                  }
+
+                  return false;
+                });
+
+                if (hasValidCoverage) {
                   console.log(
-                    `PR #${pr.number}: refresh already running or recently completed — skipping.`
+                    `PR #${pr.number}: valid refresh already running or recently succeeded — skipping.`
                   );
                   continue;
                 }
