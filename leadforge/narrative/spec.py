@@ -37,7 +37,7 @@ class CompanySpec:
         )
         er = data["employee_range"]
         if not (
-            isinstance(er, (list, tuple))
+            isinstance(er, list | tuple)
             and len(er) == 2
             and all(isinstance(v, int) and not isinstance(v, bool) for v in er)
         ):
@@ -85,7 +85,7 @@ class ProductSpec:
         )
         acv = data["acv_range_usd"]
         if not (
-            isinstance(acv, (list, tuple))
+            isinstance(acv, list | tuple)
             and len(acv) == 2
             and all(isinstance(v, int) and not isinstance(v, bool) for v in acv)
         ):
@@ -93,7 +93,7 @@ class ProductSpec:
                 f"product.acv_range_usd must be a [min, max] int pair, got {acv!r}"
             )
         terms = data["contract_terms_months"]
-        if not isinstance(terms, (list, tuple)) or not all(
+        if not isinstance(terms, list | tuple) or not all(
             isinstance(v, int) and not isinstance(v, bool) for v in terms
         ):
             raise InvalidRecipeError(
@@ -141,7 +141,7 @@ class MarketSpec:
         )
         er = data["icp_employee_range"]
         if not (
-            isinstance(er, (list, tuple))
+            isinstance(er, list | tuple)
             and len(er) == 2
             and all(isinstance(v, int) and not isinstance(v, bool) for v in er)
         ):
@@ -149,7 +149,7 @@ class MarketSpec:
                 f"market.icp_employee_range must be a [min, max] int pair, got {er!r}"
             )
         industries = data["icp_industries"]
-        if not isinstance(industries, (list, tuple)):
+        if not isinstance(industries, list | tuple):
             raise InvalidRecipeError(
                 f"market.icp_industries must be a list of strings, got {industries!r}"
             )
@@ -158,7 +158,7 @@ class MarketSpec:
                 f"market.icp_industries must contain only strings, got {industries!r}"
             )
         geographies = data["geographies"]
-        if not isinstance(geographies, (list, tuple)):
+        if not isinstance(geographies, list | tuple):
             raise InvalidRecipeError(
                 f"market.geographies must be a list of strings, got {geographies!r}"
             )
@@ -194,13 +194,13 @@ class GtmMotionSpec:
             "gtm_motion",
         )
         channels = data["channels"]
-        if not isinstance(channels, (list, tuple)) or not all(isinstance(c, str) for c in channels):
+        if not isinstance(channels, list | tuple) or not all(isinstance(c, str) for c in channels):
             raise InvalidRecipeError(
                 f"gtm_motion.channels must be a list of strings, got {channels!r}"
             )
         for share_name in ("inbound_share", "outbound_share", "partner_share"):
             v = data[share_name]
-            if isinstance(v, bool) or not isinstance(v, (int, float)):
+            if isinstance(v, bool) or not isinstance(v, int | float):
                 raise InvalidRecipeError(
                     f"gtm_motion.{share_name} must be a float in [0, 1], got {type(v).__name__!r}"
                 )
@@ -232,7 +232,7 @@ class PersonaSpec:
         )
         title_variants = data["title_variants"]
         if not (
-            isinstance(title_variants, (list, tuple))
+            isinstance(title_variants, list | tuple)
             and all(isinstance(t, str) for t in title_variants)
         ):
             raise InvalidRecipeError(
