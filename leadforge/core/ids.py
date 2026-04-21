@@ -7,6 +7,9 @@ All IDs are stable, opaque, namespace-unique, and deterministic for a given
 
 Canonical prefixes
 ------------------
+The following nine prefixes correspond directly to the nine relational tables
+defined in ``schema/entities.py``:
+
 acct_   — Account
 cnt_    — Contact
 lead_   — Lead
@@ -16,7 +19,10 @@ act_    — SalesActivity
 opp_    — Opportunity
 cust_   — Customer
 sub_    — Subscription
-rep_    — Sales rep (internal)
+
+The ``rep_`` prefix is an internal-only namespace used for sales-rep entities
+that participate in simulation mechanics but do **not** have a corresponding
+standalone relational table in the v1 output bundle.
 """
 
 from __future__ import annotations

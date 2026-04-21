@@ -16,6 +16,11 @@ def test_split_spec_valid() -> None:
     assert s.train == pytest.approx(0.7)
 
 
+def test_split_spec_rejects_bool_component() -> None:
+    with pytest.raises(ValueError, match="finite number"):
+        SplitSpec(train=True, valid=0.15, test=0.15)  # type: ignore[arg-type]
+
+
 def test_split_spec_rejects_bad_sum() -> None:
     with pytest.raises(ValueError, match="sum"):
         SplitSpec(train=0.6, valid=0.2, test=0.1)

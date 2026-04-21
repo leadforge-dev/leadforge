@@ -8,14 +8,10 @@ of the three files required in every bundle output mode (§14.1).
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import pandas as pd
 
 from leadforge.schema.features import LEAD_SNAPSHOT_FEATURES, FeatureSpec
-
-if TYPE_CHECKING:
-    pass
 
 _COLUMNS = ("name", "dtype", "description", "category", "is_target", "leakage_risk")
 
