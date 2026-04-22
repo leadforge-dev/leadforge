@@ -27,6 +27,8 @@ dependencies = [
     "pyyaml>=6.0",
     "pandas>=2.0",
     "pyarrow>=14.0",
+    "networkx>=3.2",
+    "numpy>=1.26",
 ]
 
 [project.optional-dependencies]
@@ -69,6 +71,10 @@ no_implicit_optional = true
 
 [[tool.mypy.overrides]]
 module = ["pandas", "pandas.*", "pyarrow", "pyarrow.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["networkx", "networkx.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
