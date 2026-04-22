@@ -19,7 +19,7 @@ Forbidden variability (hard constraints enforced here):
 
 from __future__ import annotations
 
-import copy
+from copy import deepcopy
 from typing import TYPE_CHECKING
 
 from leadforge.structure.graph import EdgeSpec, NodeSpec
@@ -65,8 +65,14 @@ def rewire(
         A ``(nodes, edges)`` tuple suitable for passing to
         :class:`~leadforge.structure.graph.WorldGraph`.
     """
-    nodes: list[NodeSpec] = [copy.copy(n) for n in motif.canonical_nodes]
-    edges: list[EdgeSpec] = [copy.copy(e) for e in motif.canonical_edges]
+    # deepcopy metadata dicts so mutations never alias the canonical motif specs.
+    nodes: list[NodeSpec] = [
+        NodeSpec(n.node_id, n.node_type, n.label, deepcopy(n.metadata))
+        for n in motif.canonical_nodes
+    ]
+    edges: list[EdgeSpec] = [
+        EdgeSpec(e.source, e.target, e.weight, deepcopy(e.metadata)) for e in motif.canonical_edges
+    ]
 
     # Step 1 — drop optional nodes
     dropped: set[str] = set()

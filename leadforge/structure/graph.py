@@ -30,7 +30,9 @@ class NodeSpec:
         node_type: Semantic category of the node.
         label: Human-readable name used in exports.
         metadata: Arbitrary extra attributes (e.g. prior strength, proxy
-            accuracy).  Serialised as JSON in GraphML export.
+            accuracy).  Stored as raw node attributes; primitive values
+            are emitted directly in GraphML, non-primitive values are
+            JSON-encoded under a ``_json`` suffix key.
     """
 
     node_id: str
@@ -56,6 +58,24 @@ class EdgeSpec:
     target: str
     weight: float = 1.0
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+def _make_graphml_safe(attrs: dict[str, Any]) -> dict[str, Any]:
+    """Return a copy of *attrs* where non-primitive values are JSON-encoded.
+
+    GraphML only supports string, int, float, and bool attribute values.
+    Any dict or list value is serialised to a JSON string stored under a
+    key with a ``_json`` suffix so that ``networkx.generate_graphml``
+    does not raise ``TypeError``.
+    """
+    _primitive = (str, int, float, bool)
+    result: dict[str, Any] = {}
+    for k, v in attrs.items():
+        if isinstance(v, _primitive):  # noqa: UP038
+            result[k] = v
+        else:
+            result[f"{k}_json"] = json.dumps(v)
+    return result
 
 
 class WorldGraph:
@@ -189,9 +209,20 @@ class WorldGraph:
         return json.dumps(self.to_dict(), indent=2)
 
     def to_graphml(self) -> str:
-        """Return a GraphML string representation."""
-        lines = nx.generate_graphml(self._graph)
-        return "\n".join(lines)
+        """Return a GraphML string representation.
+
+        Non-primitive node/edge attribute values (dicts, lists, etc.) are
+        JSON-encoded into a string attribute with a ``_json`` suffix so that
+        NetworkX's GraphML writer does not raise ``TypeError``.
+        """
+        exportable = nx.DiGraph()
+        for node_id, attrs in self._graph.nodes(data=True):
+            safe = _make_graphml_safe(attrs)
+            exportable.add_node(node_id, **safe)
+        for u, v, attrs in self._graph.edges(data=True):
+            safe = _make_graphml_safe(attrs)
+            exportable.add_edge(u, v, **safe)
+        return "\n".join(nx.generate_graphml(exportable))
 
     # ------------------------------------------------------------------
     # Validation
