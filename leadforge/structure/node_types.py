@@ -6,15 +6,15 @@ constrains how it participates in mechanisms, rewiring, and exports.
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 
 
-class NodeType(str, Enum):
+class NodeType(StrEnum):
     """Semantic category of a hidden-graph node.
 
     Values mirror the nine categories specified in §11.1 of the
-    architecture spec.  Using ``str`` as a mixin makes serialisation
-    (JSON, GraphML) straightforward without extra conversion.
+    architecture spec.  ``StrEnum`` makes serialisation (JSON, GraphML)
+    straightforward without extra conversion.
     """
 
     GLOBAL_CONTEXT = "global_context"

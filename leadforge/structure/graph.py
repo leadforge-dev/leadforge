@@ -84,12 +84,21 @@ class WorldGraph:
         self._motif_family = motif_family
         self._graph: nx.DiGraph = nx.DiGraph()
 
+        # Reserved node attribute keys — metadata must not override these.
+        _reserved_node_keys = frozenset({"node_type", "label"})
+
         # Add nodes
         seen_ids: set[str] = set()
         for n in nodes:
             if n.node_id in seen_ids:
                 raise GraphValidationError(f"Duplicate node_id: {n.node_id!r}")
             seen_ids.add(n.node_id)
+            reserved_clash = _reserved_node_keys & n.metadata.keys()
+            if reserved_clash:
+                raise GraphValidationError(
+                    f"Node {n.node_id!r} metadata contains reserved key(s): "
+                    f"{sorted(reserved_clash)}"
+                )
             self._graph.add_node(
                 n.node_id,
                 node_type=n.node_type.value,
@@ -103,6 +112,15 @@ class WorldGraph:
                 raise GraphValidationError(f"Edge source {e.source!r} not in node set")
             if e.target not in seen_ids:
                 raise GraphValidationError(f"Edge target {e.target!r} not in node set")
+            if "weight" in e.metadata:
+                raise GraphValidationError(
+                    f"Edge {e.source!r}→{e.target!r} metadata contains reserved key 'weight'; "
+                    f"use the EdgeSpec.weight field instead"
+                )
+            if not (-1.0 <= e.weight <= 1.0):
+                raise GraphValidationError(
+                    f"Edge {e.source!r}→{e.target!r} weight {e.weight} is outside [-1, 1]"
+                )
             self._graph.add_edge(
                 e.source,
                 e.target,
@@ -140,19 +158,23 @@ class WorldGraph:
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-serialisable dict representation."""
+        _reserved_node = {"node_type", "label"}
         nodes = [
             {
                 "node_id": n,
-                "node_type": self._graph.nodes[n]["node_type"],
-                "label": self._graph.nodes[n].get("label", ""),
+                "node_type": attrs["node_type"],
+                "label": attrs.get("label", ""),
+                "metadata": {k: v for k, v in attrs.items() if k not in _reserved_node},
             }
             for n in self.topological_order()
+            for attrs in (self._graph.nodes[n],)
         ]
         edges = [
             {
                 "source": u,
                 "target": v,
                 "weight": data.get("weight", 1.0),
+                "metadata": {k: v for k, v in data.items() if k != "weight"},
             }
             for u, v, data in self._graph.edges(data=True)
         ]

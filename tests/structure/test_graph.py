@@ -146,7 +146,8 @@ def test_no_outcome_node_raises() -> None:
         WorldGraph(nodes=nodes, edges=edges, motif_family="test")
 
 
-def test_unreachable_outcome_raises() -> None:
+def test_outcome_reachable_from_different_root_passes() -> None:
+    # 'out' is reachable from 'root2', even though 'lead' has no path to it.
     nodes = [
         NodeSpec("root", NodeType.ACCOUNT_LATENT),
         NodeSpec("lead", NodeType.LEAD_STATE),
@@ -155,10 +156,8 @@ def test_unreachable_outcome_raises() -> None:
     ]
     edges = [
         EdgeSpec("root", "lead"),
-        EdgeSpec("root2", "out"),  # out reachable from root2 only
-        # lead has no path to out
+        EdgeSpec("root2", "out"),
     ]
-    # out IS reachable from root2 so this should pass
     g = WorldGraph(nodes=nodes, edges=edges, motif_family="test")
     assert g.graph.number_of_nodes() == 4
 
@@ -166,6 +165,42 @@ def test_unreachable_outcome_raises() -> None:
 # ---------------------------------------------------------------------------
 # Duplicate node IDs
 # ---------------------------------------------------------------------------
+
+
+def test_reserved_node_metadata_key_raises() -> None:
+    nodes = [
+        NodeSpec("root", NodeType.ACCOUNT_LATENT, metadata={"node_type": "bad"}),
+        NodeSpec("lead", NodeType.LEAD_STATE),
+        NodeSpec("out", NodeType.OUTCOME),
+    ]
+    edges = [EdgeSpec("root", "lead"), EdgeSpec("lead", "out")]
+    with pytest.raises(GraphValidationError, match="reserved key"):
+        WorldGraph(nodes=nodes, edges=edges, motif_family="test")
+
+
+def test_reserved_edge_weight_key_raises() -> None:
+    nodes = [
+        NodeSpec("root", NodeType.ACCOUNT_LATENT),
+        NodeSpec("lead", NodeType.LEAD_STATE),
+        NodeSpec("out", NodeType.OUTCOME),
+    ]
+    edges = [
+        EdgeSpec("root", "lead", metadata={"weight": 0.5}),
+        EdgeSpec("lead", "out"),
+    ]
+    with pytest.raises(GraphValidationError, match="reserved key 'weight'"):
+        WorldGraph(nodes=nodes, edges=edges, motif_family="test")
+
+
+def test_edge_weight_out_of_range_raises() -> None:
+    nodes = [
+        NodeSpec("root", NodeType.ACCOUNT_LATENT),
+        NodeSpec("lead", NodeType.LEAD_STATE),
+        NodeSpec("out", NodeType.OUTCOME),
+    ]
+    edges = [EdgeSpec("root", "lead", weight=1.5), EdgeSpec("lead", "out")]
+    with pytest.raises(GraphValidationError, match="outside \\[-1, 1\\]"):
+        WorldGraph(nodes=nodes, edges=edges, motif_family="test")
 
 
 def test_duplicate_node_id_raises() -> None:

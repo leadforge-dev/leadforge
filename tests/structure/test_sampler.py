@@ -41,6 +41,10 @@ def test_same_seed_same_graph() -> None:
     assert g1.motif_family == g2.motif_family
     assert sorted(g1.graph.nodes) == sorted(g2.graph.nodes)
     assert sorted(g1.graph.edges) == sorted(g2.graph.edges)
+    # Edge weights must also be identical — catches regressions in weight jitter.
+    weights1 = {(u, v): d["weight"] for u, v, d in g1.graph.edges(data=True)}
+    weights2 = {(u, v): d["weight"] for u, v, d in g2.graph.edges(data=True)}
+    assert weights1 == weights2
 
 
 def test_different_seeds_can_differ() -> None:
@@ -64,6 +68,16 @@ def test_pinned_motif_family(name: str) -> None:
 def test_unknown_motif_family_raises() -> None:
     with pytest.raises(KeyError, match="bad_family"):
         sample_hidden_graph(seed=0, motif_family_name="bad_family")
+
+
+def test_bool_seed_raises() -> None:
+    with pytest.raises(ValueError, match="non-negative int"):
+        sample_hidden_graph(seed=True)  # type: ignore[arg-type]
+
+
+def test_negative_seed_raises() -> None:
+    with pytest.raises(ValueError, match="non-negative int"):
+        sample_hidden_graph(seed=-1)
 
 
 # ---------------------------------------------------------------------------

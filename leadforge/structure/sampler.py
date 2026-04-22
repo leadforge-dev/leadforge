@@ -1,16 +1,16 @@
 """World graph sampler — draw a concrete hidden world from a motif + seed.
 
 :func:`sample_hidden_graph` is the single entry point consumed by the
-simulation layer.  It selects a motif family (deterministically from the
-recipe, or randomly from the seed), applies stochastic rewiring, and
-returns a validated :class:`~leadforge.structure.graph.WorldGraph`.
+simulation layer.  It selects a motif family (pinned by name or chosen
+at random from the seed), applies stochastic rewiring, and returns a
+validated :class:`~leadforge.structure.graph.WorldGraph`.
 """
 
 from __future__ import annotations
 
 import numpy as np
 
-from leadforge.structure.graph import WorldGraph
+from leadforge.structure.graph import GraphValidationError, WorldGraph
 from leadforge.structure.motifs import (
     ALL_MOTIF_FAMILIES,
     MotifFamily,
@@ -43,11 +43,14 @@ def sample_hidden_graph(
         A validated :class:`~leadforge.structure.graph.WorldGraph`.
 
     Raises:
+        ValueError: If *seed* is a ``bool`` or a negative integer.
         KeyError: If *motif_family_name* is not a known motif family name.
         RuntimeError: If :data:`_MAX_ATTEMPTS` rewiring attempts all
             produce graphs that fail structural validation (should not
             happen in practice with well-formed motifs).
     """
+    if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
+        raise ValueError(f"seed must be a non-negative int, got {seed!r}")
     rng = np.random.default_rng(seed)
 
     motif = _select_motif(motif_family_name, rng)
@@ -61,7 +64,7 @@ def sample_hidden_graph(
         nodes, edges = rewire(motif, attempt_rng)
         try:
             return WorldGraph(nodes=nodes, edges=edges, motif_family=motif.name)
-        except Exception as exc:  # noqa: BLE001
+        except GraphValidationError as exc:
             last_exc = exc
             continue
 

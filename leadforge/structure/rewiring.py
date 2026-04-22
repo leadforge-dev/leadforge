@@ -10,7 +10,6 @@ Permitted variability (§11.3 of architecture spec):
 - dropping optional mediator nodes (and their incident edges)
 - perturbing edge weights within a bounded range
 - adding an optional latent confounder node
-- swapping one optional node for an alternate proxy
 
 Forbidden variability (hard constraints enforced here):
 - chronologically impossible edges (validated downstream in WorldGraph)
