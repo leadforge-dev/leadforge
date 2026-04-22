@@ -116,7 +116,7 @@ jobs:
                 // Fetch runs for this exact head SHA so stale runs from
                 // earlier commits don't suppress dispatch for the new SHA.
                 const { data: { workflow_runs: runs } } =
-                  await github.rest.actions.listWorkflowRuns({
+                  await github.rest.actions.listWorkflowRunsForWorkflow({
                     ...context.repo,
                     workflow_id: REFRESH_WORKFLOW,
                     head_sha: pr.head.sha,
