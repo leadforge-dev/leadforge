@@ -18,7 +18,7 @@ def _canonical(obj: Any) -> Any:
     """Recursively convert to a JSON-stable form (sorted keys, enums → str)."""
     if isinstance(obj, dict):
         return {k: _canonical(v) for k, v in sorted(obj.items())}
-    if isinstance(obj, (list, tuple)):
+    if isinstance(obj, (list, tuple)):  # noqa: UP038
         return [_canonical(v) for v in obj]
     # StrEnum values are already strings; this handles plain Enum too
     if hasattr(obj, "value"):

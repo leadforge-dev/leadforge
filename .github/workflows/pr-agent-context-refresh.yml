@@ -7,10 +7,28 @@ on:
     types: [created, edited, deleted]
   check_run:
     types: [completed]
+  workflow_dispatch:
+    inputs:
+      pull_request_number:
+        description: PR number to refresh
+        required: true
+        type: string
+      pull_request_head_sha:
+        description: Head SHA of the PR
+        required: true
+        type: string
+      pull_request_base_sha:
+        description: Base SHA of the PR
+        required: true
+        type: string
 
+# SHA-aware concurrency: workflow_dispatch runs key on PR+SHA so same-PR/different-SHA
+# dispatches are not cancelled, but duplicate dispatches for the same PR+SHA are.
 concurrency:
   group: >-
     pr-agent-context-refresh-${{
+      (github.event_name == 'workflow_dispatch' &&
+       format('{0}-{1}', github.event.inputs.pull_request_number, github.event.inputs.pull_request_head_sha)) ||
       github.event.pull_request.number ||
       github.event.check_run.pull_requests[0].number ||
       github.event.check_run.head_sha ||
@@ -27,6 +45,7 @@ jobs:
   pr-agent-context-refresh:
     name: PR agent context refresh
     if: >-
+      github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request_review' &&
        github.event.pull_request.head.repo.full_name == github.repository) ||
       (github.event_name == 'pull_request_review_comment' &&
@@ -52,3 +71,6 @@ jobs:
       wait_for_reviews_to_settle: true
       publish_all_clear_comments_in_refresh: false
       debug_artifacts: true
+      pull_request_number: ${{ inputs.pull_request_number || '' }}
+      pull_request_head_sha: ${{ inputs.pull_request_head_sha || '' }}
+      pull_request_base_sha: ${{ inputs.pull_request_base_sha || '' }}
