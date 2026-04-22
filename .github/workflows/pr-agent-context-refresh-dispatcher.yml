@@ -11,7 +11,6 @@ name: PR agent context refresh dispatcher
 # and trigger pr-agent-context-refresh — but the triggered run is immediately
 # blocked by GitHub's approval gate for bot/external actors:
 #
-#   • status=action_required  → waiting for maintainer approval (never runs)
 #   • conclusion=startup_failure → workflow could not start (counts as blocked)
 #   • conclusion=action_required → was approval-gated, later auto-cancelled
 #
@@ -125,10 +124,6 @@ jobs:
                   });
 
                 const hasValidCoverage = runs.some((r) => {
-                  // Approval-gated status: the run is waiting and will never
-                  // execute — do NOT treat this as coverage.
-                  if (r.status === 'action_required') return false;
-
                   // Actively working toward a refresh — don't interrupt.
                   if (
                     r.status === 'in_progress' ||

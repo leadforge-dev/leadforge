@@ -28,7 +28,7 @@ concurrency:
   group: >-
     pr-agent-context-refresh-${{
       (github.event_name == 'workflow_dispatch' &&
-       format('{0}-{1}', inputs.pull_request_number, inputs.pull_request_head_sha)) ||
+       format('{0}-{1}', github.event.inputs.pull_request_number, github.event.inputs.pull_request_head_sha)) ||
       github.event.pull_request.number ||
       github.event.check_run.pull_requests[0].number ||
       github.event.check_run.head_sha ||
