@@ -21,7 +21,7 @@ class GraphValidationError(LeadforgeError):
     """Raised when a hidden world graph violates a structural invariant."""
 
 
-@dataclass
+@dataclass(frozen=True)
 class NodeSpec:
     """Specification for a single hidden-graph node.
 
@@ -41,7 +41,7 @@ class NodeSpec:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
-@dataclass
+@dataclass(frozen=True)
 class EdgeSpec:
     """Specification for a directed edge between two hidden-graph nodes.
 
@@ -64,9 +64,10 @@ def _make_graphml_safe(attrs: dict[str, Any]) -> dict[str, Any]:
     """Return a copy of *attrs* where non-primitive values are JSON-encoded.
 
     GraphML only supports string, int, float, and bool attribute values.
-    Any dict or list value is serialised to a JSON string stored under a
-    key with a ``_json`` suffix so that ``networkx.generate_graphml``
-    does not raise ``TypeError``.
+    Any value that is not one of those primitives (including ``None``,
+    tuples, enums, dicts, lists, etc.) is serialised to a JSON string
+    stored under a key with a ``_json`` suffix so that
+    ``networkx.generate_graphml`` does not raise ``TypeError``.
     """
     _primitive = (str, int, float, bool)
     result: dict[str, Any] = {}
