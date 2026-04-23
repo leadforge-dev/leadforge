@@ -8,7 +8,9 @@ nondegeneracy — at construction time and on demand.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Any
 
 import networkx as nx
@@ -32,13 +34,17 @@ class NodeSpec:
         metadata: Arbitrary extra attributes (e.g. prior strength, proxy
             accuracy).  Stored as raw node attributes; primitive values
             are emitted directly in GraphML, non-primitive values are
-            JSON-encoded under a ``_json`` suffix key.
+            serialised under a ``_json`` suffix key.  The mapping is
+            immutable after construction to protect canonical motif specs.
     """
 
     node_id: str
     node_type: NodeType
     label: str = ""
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))
 
 
 @dataclass(frozen=True)
@@ -52,30 +58,44 @@ class EdgeSpec:
             values indicate facilitation; negative values indicate
             inhibition.
         metadata: Arbitrary extra attributes (e.g. mechanism type, lag).
+            The mapping is immutable after construction to protect
+            canonical motif specs.
     """
 
     source: str
     target: str
     weight: float = 1.0
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))
 
 
 def _make_graphml_safe(attrs: dict[str, Any]) -> dict[str, Any]:
-    """Return a copy of *attrs* where non-primitive values are JSON-encoded.
+    """Return a copy of *attrs* where non-primitive values are serialised to strings.
 
     GraphML only supports string, int, float, and bool attribute values.
     Any value that is not one of those primitives (including ``None``,
-    tuples, enums, dicts, lists, etc.) is serialised to a JSON string
-    stored under a key with a ``_json`` suffix so that
-    ``networkx.generate_graphml`` does not raise ``TypeError``.
+    tuples, enums, dicts, lists, etc.) is first attempted as a JSON
+    string; values that are not JSON-serialisable fall back to ``str()``.
+    The encoded value is stored under a ``_json`` suffix key.  The suffix
+    key is made unique (by appending further ``_json`` segments) to avoid
+    collisions with other keys already present in *attrs*.
     """
     _primitive = (str, int, float, bool)
+    _all_input_keys = set(attrs.keys())
     result: dict[str, Any] = {}
     for k, v in attrs.items():
         if isinstance(v, _primitive):  # noqa: UP038
             result[k] = v
         else:
-            result[f"{k}_json"] = json.dumps(v)
+            suffix_key = f"{k}_json"
+            while suffix_key in result or suffix_key in _all_input_keys:
+                suffix_key = f"{suffix_key}_json"
+            try:
+                result[suffix_key] = json.dumps(v)
+            except (TypeError, ValueError):
+                result[suffix_key] = str(v)
     return result
 
 

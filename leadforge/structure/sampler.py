@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from leadforge.core.rng import RNGRoot
 from leadforge.structure.graph import GraphValidationError, WorldGraph
 from leadforge.structure.motifs import (
     ALL_MOTIF_FAMILIES,
@@ -31,9 +32,11 @@ def sample_hidden_graph(
     The function is fully deterministic given ``(seed, motif_family_name)``.
 
     Args:
-        seed: Integer seed for the NumPy random generator.  All stochastic
-            choices (motif selection if *motif_family_name* is ``None``,
-            rewiring decisions, weight jitter) derive from this seed.
+        seed: Integer seed passed to :class:`~leadforge.core.rng.RNGRoot`.
+            All stochastic choices (motif selection if *motif_family_name*
+            is ``None``, rewiring decisions, weight jitter) derive from a
+            named child stream of this root so the sampler integrates with
+            the repo's RNG convention.
         motif_family_name: If provided, pin the motif family by name
             (must be one of :data:`~leadforge.structure.motifs.MOTIF_FAMILY_NAMES`).
             If ``None``, a family is chosen uniformly at random from the
@@ -51,7 +54,8 @@ def sample_hidden_graph(
     """
     if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
         raise ValueError(f"seed must be a non-negative int, got {seed!r}")
-    rng = np.random.default_rng(seed)
+    np_seed = RNGRoot(seed).child("hidden_graph").getrandbits(64)
+    rng = np.random.default_rng(np_seed)
 
     motif = _select_motif(motif_family_name, rng)
 
