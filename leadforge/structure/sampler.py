@@ -1,0 +1,90 @@
+"""World graph sampler — draw a concrete hidden world from a motif + seed.
+
+:func:`sample_hidden_graph` is the single entry point consumed by the
+simulation layer.  It selects a motif family (pinned by name or chosen
+at random from the seed), applies stochastic rewiring, and returns a
+validated :class:`~leadforge.structure.graph.WorldGraph`.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+
+from leadforge.core.rng import RNGRoot
+from leadforge.structure.graph import GraphValidationError, WorldGraph
+from leadforge.structure.motifs import (
+    ALL_MOTIF_FAMILIES,
+    MotifFamily,
+    get_motif_family,
+)
+from leadforge.structure.rewiring import rewire
+
+# Maximum number of rewiring attempts before giving up.
+_MAX_ATTEMPTS = 20
+
+
+def sample_hidden_graph(
+    seed: int,
+    motif_family_name: str | None = None,
+) -> WorldGraph:
+    """Draw a validated hidden world graph.
+
+    The function is fully deterministic given ``(seed, motif_family_name)``.
+
+    Args:
+        seed: Integer seed passed to :class:`~leadforge.core.rng.RNGRoot`.
+            All stochastic choices (motif selection if *motif_family_name*
+            is ``None``, rewiring decisions, weight jitter) derive from a
+            named child stream of this root so the sampler integrates with
+            the repo's RNG convention.
+        motif_family_name: If provided, pin the motif family by name
+            (must be one of :data:`~leadforge.structure.motifs.MOTIF_FAMILY_NAMES`).
+            If ``None``, a family is chosen uniformly at random from the
+            five v1 families.
+
+    Returns:
+        A validated :class:`~leadforge.structure.graph.WorldGraph`.
+
+    Raises:
+        ValueError: If *seed* is a ``bool`` or a negative integer.
+        KeyError: If *motif_family_name* is not a known motif family name.
+        RuntimeError: If :data:`_MAX_ATTEMPTS` rewiring attempts all
+            produce graphs that fail structural validation (should not
+            happen in practice with well-formed motifs).
+    """
+    if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
+        raise ValueError(f"seed must be a non-negative int, got {seed!r}")
+    np_seed = RNGRoot(seed).child("hidden_graph").getrandbits(64)
+    rng = np.random.default_rng(np_seed)
+
+    motif = _select_motif(motif_family_name, rng)
+
+    last_exc: Exception | None = None
+    for _attempt in range(_MAX_ATTEMPTS):
+        # Each attempt uses an independent sub-seed so that earlier
+        # failures do not corrupt the RNG state of later attempts.
+        attempt_seed = int(rng.integers(0, 2**31))
+        attempt_rng = np.random.default_rng(attempt_seed)
+        nodes, edges = rewire(motif, attempt_rng)
+        try:
+            return WorldGraph(nodes=nodes, edges=edges, motif_family=motif.name)
+        except GraphValidationError as exc:
+            last_exc = exc
+            continue
+
+    raise RuntimeError(
+        f"Failed to produce a valid WorldGraph from motif "
+        f"{motif.name!r} after {_MAX_ATTEMPTS} rewiring attempts. "
+        f"Last error: {last_exc}"
+    )
+
+
+def _select_motif(
+    name: str | None,
+    rng: np.random.Generator,
+) -> MotifFamily:
+    """Return the requested motif family, or pick one at random."""
+    if name is not None:
+        return get_motif_family(name)
+    idx = int(rng.integers(0, len(ALL_MOTIF_FAMILIES)))
+    return ALL_MOTIF_FAMILIES[idx]
