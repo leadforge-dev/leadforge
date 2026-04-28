@@ -60,10 +60,35 @@ def test_from_recipe_invalid_id_raises() -> None:
         Generator.from_recipe("does_not_exist")
 
 
-def test_generate_not_implemented() -> None:
-    gen = Generator.from_recipe("b2b_saas_procurement_v1")
-    with pytest.raises(NotImplementedError):
-        gen.generate()
+def test_generate_returns_world_bundle() -> None:
+    from leadforge.core.models import WorldBundle
+
+    gen = Generator.from_recipe("b2b_saas_procurement_v1", seed=42)
+    bundle = gen.generate(n_leads=30, n_accounts=15, n_contacts=45)
+    assert isinstance(bundle, WorldBundle)
+    assert bundle.simulation_result is not None
+    assert bundle.population is not None
+
+
+def test_generate_respects_recipe_difficulty_when_not_overridden() -> None:
+    """Calling generate() without difficulty must not silently override the recipe's setting."""
+    from leadforge.core.enums import DifficultyProfile
+
+    gen = Generator.from_recipe("b2b_saas_procurement_v1", difficulty="advanced")
+    assert gen.config.difficulty == DifficultyProfile.advanced
+    bundle = gen.generate(n_leads=20, n_accounts=10, n_contacts=30)
+    assert bundle.spec.config.difficulty == DifficultyProfile.advanced
+
+
+def test_generate_explicit_difficulty_overrides_recipe() -> None:
+    """An explicit difficulty kwarg must override the recipe setting for that call only."""
+    from leadforge.core.enums import DifficultyProfile
+
+    gen = Generator.from_recipe("b2b_saas_procurement_v1", difficulty="advanced")
+    bundle = gen.generate(n_leads=20, n_accounts=10, n_contacts=30, difficulty="intro")
+    assert bundle.spec.config.difficulty == DifficultyProfile.intro
+    # Generator itself is unchanged.
+    assert gen.config.difficulty == DifficultyProfile.advanced
 
 
 def test_from_recipe_config_has_package_version() -> None:

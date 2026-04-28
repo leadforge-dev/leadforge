@@ -18,9 +18,24 @@ All row classes expose:
 from __future__ import annotations
 
 from dataclasses import dataclass, fields
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Protocol
 
 import pandas as pd
+
+
+class EntityRowProtocol(Protocol):
+    """Structural protocol shared by all entity row dataclasses.
+
+    Allows typed dispatch in render code without coupling to concrete classes.
+    """
+
+    TABLE_NAME: ClassVar[str]
+    DTYPE_MAP: ClassVar[dict[str, str]]
+
+    def to_dict(self) -> dict[str, Any]: ...
+
+    @classmethod
+    def empty_dataframe(cls) -> pd.DataFrame: ...
 
 
 def _empty_df(dtype_map: dict[str, str]) -> pd.DataFrame:
@@ -360,7 +375,7 @@ class SubscriptionRow:
 # Registry
 # ---------------------------------------------------------------------------
 
-ALL_ROW_TYPES: tuple[type, ...] = (
+ALL_ROW_TYPES: tuple[type[EntityRowProtocol], ...] = (
     AccountRow,
     ContactRow,
     LeadRow,
@@ -372,4 +387,4 @@ ALL_ROW_TYPES: tuple[type, ...] = (
     SubscriptionRow,
 )
 
-TABLE_NAMES: tuple[str, ...] = tuple(cls.TABLE_NAME for cls in ALL_ROW_TYPES)  # type: ignore[attr-defined]
+TABLE_NAMES: tuple[str, ...] = tuple(cls.TABLE_NAME for cls in ALL_ROW_TYPES)
