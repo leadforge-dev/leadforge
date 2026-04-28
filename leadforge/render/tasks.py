@@ -9,11 +9,11 @@ tasks directory.
 from __future__ import annotations
 
 import json
-import random
 from pathlib import Path
 
 import pandas as pd
 
+from leadforge.core.rng import RNGRoot
 from leadforge.schema.tasks import CONVERTED_WITHIN_90_DAYS, TaskManifest
 
 
@@ -48,8 +48,8 @@ def write_task_splits(
     task_dir = out_dir / task.task_id
     task_dir.mkdir(parents=True, exist_ok=True)
 
-    # Deterministic shuffle via seeded RNG (index permutation).
-    rng = random.Random(seed)  # noqa: S311
+    # Deterministic shuffle via the project's RNG substream system.
+    rng = RNGRoot(seed).child("task_split_shuffle")
     indices = list(range(len(snapshot)))
     rng.shuffle(indices)
     shuffled = snapshot.iloc[indices].reset_index(drop=True)
@@ -57,7 +57,7 @@ def write_task_splits(
     n = len(shuffled)
     n_train = int(n * task.split.train)
     n_valid = int(n * task.split.valid)
-    # Test gets the remainder to avoid off-by-one from integer rounding.
+    # test split gets the remainder to avoid off-by-one from integer rounding.
 
     splits: dict[str, pd.DataFrame] = {
         "train": shuffled.iloc[:n_train],

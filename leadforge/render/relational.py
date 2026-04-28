@@ -9,7 +9,7 @@ the ``tables/`` directory in the output bundle.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import pandas as pd
 
@@ -17,6 +17,7 @@ from leadforge.schema.entities import (
     AccountRow,
     ContactRow,
     CustomerRow,
+    EntityRowProtocol,
     LeadRow,
     OpportunityRow,
     SalesActivityRow,
@@ -29,10 +30,10 @@ if TYPE_CHECKING:
     from leadforge.simulation.engine import SimulationResult
     from leadforge.simulation.population import PopulationResult
 
-# Mapping from table name to (entity_class, attribute_on_SimulationResult_or_population)
-# Population tables come from PopulationResult; event tables from SimulationResult.
-_TABLE_SOURCES: dict[str, tuple[type, str, str]] = {
-    # (entity_class, source: "population"|"simulation", attr_name)
+_Source = Literal["population", "simulation"]
+
+# Maps table name → (entity class, data source, attribute name on source object).
+_TABLE_SOURCES: dict[str, tuple[type[EntityRowProtocol], _Source, str]] = {
     AccountRow.TABLE_NAME: (AccountRow, "population", "accounts"),
     ContactRow.TABLE_NAME: (ContactRow, "population", "contacts"),
     LeadRow.TABLE_NAME: (LeadRow, "simulation", "leads"),
@@ -67,11 +68,10 @@ def to_dataframes(
         rows = getattr(obj, attr, [])
         if rows:
             df = pd.DataFrame([row.to_dict() for row in rows])
-            # Apply canonical dtypes — use nullable pandas types where possible.
-            for col, dtype in cls.DTYPE_MAP.items():  # type: ignore[attr-defined]
+            for col, dtype in cls.DTYPE_MAP.items():
                 if col in df.columns:
                     df[col] = df[col].astype(dtype)
         else:
-            df = cls.empty_dataframe()  # type: ignore[attr-defined]
+            df = cls.empty_dataframe()
         dfs[table_name] = df
     return dfs

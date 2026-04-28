@@ -15,6 +15,12 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
+from leadforge.schema.entities import (
+    OpportunityRow,
+    SalesActivityRow,
+    SessionRow,
+    TouchRow,
+)
 from leadforge.schema.features import LEAD_SNAPSHOT_FEATURES
 
 if TYPE_CHECKING:
@@ -24,6 +30,17 @@ if TYPE_CHECKING:
 # Ordered column list derived from the canonical feature spec.
 _SNAPSHOT_COLUMNS = [f.name for f in LEAD_SNAPSHOT_FEATURES]
 _SNAPSHOT_DTYPES = {f.name: f.dtype for f in LEAD_SNAPSHOT_FEATURES}
+
+# Account and contact columns needed in the snapshot (subset of their full DTYPE_MAP).
+_ACCOUNT_JOIN_COLS = [
+    "account_id",
+    "industry",
+    "region",
+    "employee_band",
+    "estimated_revenue_band",
+    "process_maturity_band",
+]
+_CONTACT_JOIN_COLS = ["contact_id", "role_function", "seniority", "buyer_role"]
 
 
 def build_snapshot(
@@ -49,86 +66,70 @@ def build_snapshot(
         :data:`~leadforge.schema.features.LEAD_SNAPSHOT_FEATURES` and dtypes
         matching the feature spec.  Row order matches ``result.leads``.
     """
-    account_by_id = {a.account_id: a for a in population.accounts}
-    contact_by_id = {c.contact_id: c for c in population.contacts}
-
     # -------------------------------------------------------------------
     # Aggregate event tables by lead_id using pandas for efficiency.
+    # Empty event lists fall back to the entity's canonical empty DataFrame
+    # so groupby always produces the correct output column names.
     # -------------------------------------------------------------------
 
     # Touch aggregates
-    if result.touches:
-        td = pd.DataFrame([t.to_dict() for t in result.touches])
-        touch_agg = (
-            td.groupby("lead_id")
-            .agg(
-                touch_count=("touch_id", "count"),
-                inbound_touch_count=(
-                    "touch_direction",
-                    lambda s: int((s == "inbound").sum()),
-                ),
-                outbound_touch_count=(
-                    "touch_direction",
-                    lambda s: int((s == "outbound").sum()),
-                ),
-                last_touch_timestamp=("touch_timestamp", "max"),
-            )
-            .reset_index()
+    td = (
+        pd.DataFrame([t.to_dict() for t in result.touches])
+        if result.touches
+        else TouchRow.empty_dataframe()
+    )
+    touch_agg = (
+        td.groupby("lead_id")
+        .agg(
+            touch_count=("touch_id", "count"),
+            inbound_touch_count=(
+                "touch_direction",
+                lambda s: int((s == "inbound").sum()),
+            ),
+            outbound_touch_count=(
+                "touch_direction",
+                lambda s: int((s == "outbound").sum()),
+            ),
+            last_touch_timestamp=("touch_timestamp", "max"),
         )
-    else:
-        touch_agg = pd.DataFrame(
-            columns=[
-                "lead_id",
-                "touch_count",
-                "inbound_touch_count",
-                "outbound_touch_count",
-                "last_touch_timestamp",
-            ]
-        )
+        .reset_index()
+    )
 
     # Session aggregates
-    if result.sessions:
-        sd = pd.DataFrame([s.to_dict() for s in result.sessions])
-        sess_agg = (
-            sd.groupby("lead_id")
-            .agg(
-                session_count=("session_id", "count"),
-                pricing_page_views=("pricing_page_views", "sum"),
-                demo_page_views=("demo_page_views", "sum"),
-                total_session_duration_seconds=("session_duration_seconds", "sum"),
-            )
-            .reset_index()
+    sd = (
+        pd.DataFrame([s.to_dict() for s in result.sessions])
+        if result.sessions
+        else SessionRow.empty_dataframe()
+    )
+    sess_agg = (
+        sd.groupby("lead_id")
+        .agg(
+            session_count=("session_id", "count"),
+            pricing_page_views=("pricing_page_views", "sum"),
+            demo_page_views=("demo_page_views", "sum"),
+            total_session_duration_seconds=("session_duration_seconds", "sum"),
         )
-    else:
-        sess_agg = pd.DataFrame(
-            columns=[
-                "lead_id",
-                "session_count",
-                "pricing_page_views",
-                "demo_page_views",
-                "total_session_duration_seconds",
-            ]
-        )
+        .reset_index()
+    )
 
     # Sales activity aggregates
-    if result.sales_activities:
-        ad = pd.DataFrame([a.to_dict() for a in result.sales_activities])
-        act_agg = ad.groupby("lead_id").agg(activity_count=("activity_id", "count")).reset_index()
-    else:
-        act_agg = pd.DataFrame(columns=["lead_id", "activity_count"])
+    ad = (
+        pd.DataFrame([a.to_dict() for a in result.sales_activities])
+        if result.sales_activities
+        else SalesActivityRow.empty_dataframe()
+    )
+    act_agg = ad.groupby("lead_id").agg(activity_count=("activity_id", "count")).reset_index()
 
     # Opportunity join: find open (unclosed) opportunity per lead.
-    if result.opportunities:
-        od = pd.DataFrame([o.to_dict() for o in result.opportunities])
-        open_opps = od[od["close_outcome"].isna()][["lead_id", "estimated_acv"]]
-        # One open opp per lead (first if multiple, which shouldn't happen in v1).
-        open_opps = open_opps.groupby("lead_id").first().reset_index()
-        open_opps = open_opps.rename(columns={"estimated_acv": "opportunity_estimated_acv"})
-        open_opps["has_open_opportunity"] = True
-    else:
-        open_opps = pd.DataFrame(
-            columns=["lead_id", "has_open_opportunity", "opportunity_estimated_acv"]
-        )
+    od = (
+        pd.DataFrame([o.to_dict() for o in result.opportunities])
+        if result.opportunities
+        else OpportunityRow.empty_dataframe()
+    )
+    open_opps = od[od["close_outcome"].isna()][["lead_id", "estimated_acv"]]
+    open_opps = open_opps.groupby("lead_id").first().reset_index()
+    open_opps = open_opps.rename(columns={"estimated_acv": "opportunity_estimated_acv"})
+    open_opps["has_open_opportunity"] = True
 
     # -------------------------------------------------------------------
     # Build base lead DataFrame and join aggregates.
@@ -174,27 +175,12 @@ def build_snapshot(
     lead_df["days_since_last_touch"] = lead_df["days_since_last_touch"].astype("Float64")
 
     # -------------------------------------------------------------------
-    # Join account and contact features.
+    # Join account and contact features via vectorised merge (not apply).
     # -------------------------------------------------------------------
-    def _account_field(row: pd.Series, field: str) -> object:
-        acct = account_by_id.get(row["account_id"])
-        return getattr(acct, field, pd.NA) if acct else pd.NA
-
-    def _contact_field(row: pd.Series, field: str) -> object:
-        cont = contact_by_id.get(row["contact_id"])
-        return getattr(cont, field, pd.NA) if cont else pd.NA
-
-    for field in (
-        "industry",
-        "region",
-        "employee_band",
-        "estimated_revenue_band",
-        "process_maturity_band",
-    ):
-        lead_df[field] = lead_df.apply(_account_field, axis=1, field=field)
-
-    for field in ("role_function", "seniority", "buyer_role"):
-        lead_df[field] = lead_df.apply(_contact_field, axis=1, field=field)
+    acct_df = pd.DataFrame([a.to_dict() for a in population.accounts])[_ACCOUNT_JOIN_COLS]
+    cont_df = pd.DataFrame([c.to_dict() for c in population.contacts])[_CONTACT_JOIN_COLS]
+    lead_df = lead_df.merge(acct_df, on="account_id", how="left")
+    lead_df = lead_df.merge(cont_df, on="contact_id", how="left")
 
     # -------------------------------------------------------------------
     # Select and order columns per canonical feature spec; apply dtypes.
@@ -202,9 +188,6 @@ def build_snapshot(
     snapshot = lead_df[_SNAPSHOT_COLUMNS].copy()
     for col, dtype in _SNAPSHOT_DTYPES.items():
         if col in snapshot.columns:
-            try:
-                snapshot[col] = snapshot[col].astype(dtype)
-            except (ValueError, TypeError):
-                pass  # column already has compatible dtype
+            snapshot[col] = snapshot[col].astype(dtype)
 
     return snapshot

@@ -14,6 +14,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from leadforge.narrative.dataset_card import render_dataset_card
 from leadforge.render.manifests import build_manifest, write_manifest
 from leadforge.render.relational import to_dataframes
 from leadforge.render.snapshots import build_snapshot
@@ -68,8 +69,6 @@ def write_bundle(bundle: WorldBundle, path: str) -> None:
     # ------------------------------------------------------------------
     # 3. Dataset card and feature dictionary
     # ------------------------------------------------------------------
-    from leadforge.narrative.dataset_card import render_dataset_card
-
     (root / "dataset_card.md").write_text(render_dataset_card(bundle.spec))
     write_feature_dictionary(root / "feature_dictionary.csv")
 

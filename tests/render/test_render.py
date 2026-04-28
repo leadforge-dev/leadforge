@@ -98,9 +98,25 @@ class TestToDataframes:
         from leadforge.schema.entities import CustomerRow
 
         dfs = to_dataframes(result, population)
-        # customers may or may not be empty, but its columns must be a superset
-        # of the entity's DTYPE_MAP keys.
         assert set(CustomerRow.DTYPE_MAP.keys()).issubset(set(dfs["customers"].columns))
+
+    def test_fk_integrity(self, sim_outputs):
+        """All FK constraints must hold on the produced DataFrames."""
+        _, population, result, _ = sim_outputs
+        from leadforge.render.relational import to_dataframes
+        from leadforge.schema.relationships import ALL_CONSTRAINTS, validate_fk
+
+        dfs = to_dataframes(result, population)
+        for constraint in ALL_CONSTRAINTS:
+            child_df = dfs.get(constraint.child_table)
+            parent_df = dfs.get(constraint.parent_table)
+            if child_df is None or parent_df is None or child_df.empty:
+                continue
+            validate_fk(
+                child_values=child_df[constraint.child_column].dropna().tolist(),
+                parent_values=set(parent_df[constraint.parent_column].tolist()),
+                constraint=constraint,
+            )
 
     def test_deterministic_under_same_seed(self):
         """Same seed → identical relational DataFrames."""
@@ -164,15 +180,15 @@ class TestBuildSnapshot:
         assert (snap["inbound_touch_count"].dropna() >= 0).all()
         assert (snap["outbound_touch_count"].dropna() >= 0).all()
 
-    def test_inbound_plus_outbound_le_total(self, sim_outputs):
-        """inbound + outbound ≤ touch_count (can be less if other directions exist)."""
+    def test_inbound_plus_outbound_equals_total(self, sim_outputs):
+        """inbound + outbound must equal touch_count exactly (only two directions in v1)."""
         _, population, result, _ = sim_outputs
         from leadforge.render.snapshots import build_snapshot
 
         snap = build_snapshot(result, population)
         valid = snap[["touch_count", "inbound_touch_count", "outbound_touch_count"]].dropna()
         combined = valid["inbound_touch_count"] + valid["outbound_touch_count"]
-        assert (combined <= valid["touch_count"]).all()
+        assert (combined == valid["touch_count"]).all()
 
     def test_days_since_last_touch_finite_when_touches_exist(self, sim_outputs):
         _, population, result, _ = sim_outputs
@@ -183,14 +199,23 @@ class TestBuildSnapshot:
         if has_touch.any():
             assert snap.loc[has_touch, "days_since_last_touch"].notna().all()
 
-    def test_no_leakage_target_not_derived_from_future(self, sim_outputs):
-        """converted_within_90_days must match SimulationResult's own flag."""
+    def test_no_post_anchor_columns_in_snapshot(self, sim_outputs):
+        """Columns that represent post-anchor truth must not appear in the snapshot."""
+        _, population, result, _ = sim_outputs
+        from leadforge.render.snapshots import build_snapshot
+
+        snap = build_snapshot(result, population)
+        # These exist in LeadRow / OpportunityRow but must be excluded (leakage rule).
+        forbidden = {"conversion_timestamp", "closed_at", "close_outcome"}
+        assert forbidden.isdisjoint(set(snap.columns))
+
+    def test_target_matches_simulation_result(self, sim_outputs):
+        """converted_within_90_days in snapshot must match SimulationResult's flag."""
         _, population, result, _ = sim_outputs
         from leadforge.render.snapshots import build_snapshot
 
         snap = build_snapshot(result, population)
         lead_flags = {row.lead_id: row.converted_within_90_days for row in result.leads}
-        # Map lead_id → snapshot label
         snap_flags = dict(zip(snap["lead_id"], snap["converted_within_90_days"], strict=False))
         for lid, flag in lead_flags.items():
             assert snap_flags[lid] == flag, f"Mismatch on {lid}"
@@ -429,12 +454,12 @@ class TestWriteBundle:
         data = json.loads((tmp_path / "manifest.json").read_text())
         assert data["seed"] == config.seed
 
-    def test_unpopulated_bundle_raises(self):
+    def test_unpopulated_bundle_raises(self, tmp_path):
         from leadforge.api.bundle import write_bundle
         from leadforge.core.models import WorldBundle
 
         with pytest.raises(RuntimeError, match="not fully populated"):
-            write_bundle(WorldBundle(), "/tmp/leadforge_test_empty")
+            write_bundle(WorldBundle(), str(tmp_path))
 
     def test_generator_generate_and_save(self, tmp_path):
         """End-to-end: Generator.from_recipe → generate → save."""
