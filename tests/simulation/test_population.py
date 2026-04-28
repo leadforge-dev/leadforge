@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import pytest
+
 from leadforge.api.generator import Generator
+from leadforge.core.exceptions import InvalidConfigError
 from leadforge.core.ids import ID_PREFIXES, make_id
 from leadforge.core.models import GenerationConfig
+from leadforge.narrative.spec import NarrativeSpec
 from leadforge.simulation.population import (
     _N_REPS,
     PopulationResult,
+    _channel_weights,
     build_population,
 )
 from leadforge.structure.sampler import sample_hidden_graph
@@ -349,3 +354,81 @@ def test_latent_state_lead_ids_match_rows() -> None:
     result = _make_result()
     row_ids = {lead.lead_id for lead in result.leads}
     assert set(result.latent_state.lead_latents.keys()) == row_ids
+
+
+# ---------------------------------------------------------------------------
+# Narrative validation (COPILOT-2 / COPILOT-3)
+# ---------------------------------------------------------------------------
+
+
+def _base_narrative() -> NarrativeSpec:
+    """Return a minimal valid NarrativeSpec for mutation tests."""
+    gen = Generator.from_recipe("b2b_saas_procurement_v1", seed=0)
+    narrative = gen.world_spec.narrative
+    assert narrative is not None
+    return narrative
+
+
+def _build_with_narrative(narrative: NarrativeSpec) -> PopulationResult:
+    config = GenerationConfig(seed=0, n_accounts=10, n_contacts=20, n_leads=30)
+    graph = sample_hidden_graph(seed=0)
+    return build_population(config, narrative, graph)
+
+
+def test_empty_industries_raises() -> None:
+    import dataclasses
+
+    narrative = _base_narrative()
+    bad_market = dataclasses.replace(narrative.market, icp_industries=())
+    bad_narrative = dataclasses.replace(narrative, market=bad_market)
+    with pytest.raises(InvalidConfigError, match="icp_industries"):
+        _build_with_narrative(bad_narrative)
+
+
+def test_empty_geographies_raises() -> None:
+    import dataclasses
+
+    narrative = _base_narrative()
+    bad_market = dataclasses.replace(narrative.market, geographies=())
+    bad_narrative = dataclasses.replace(narrative, market=bad_market)
+    with pytest.raises(InvalidConfigError, match="geographies"):
+        _build_with_narrative(bad_narrative)
+
+
+def test_empty_personas_raises() -> None:
+    import dataclasses
+
+    narrative = _base_narrative()
+    bad_narrative = dataclasses.replace(narrative, personas=())
+    with pytest.raises(InvalidConfigError, match="personas"):
+        _build_with_narrative(bad_narrative)
+
+
+def test_empty_channels_raises() -> None:
+    import dataclasses
+
+    narrative = _base_narrative()
+    bad_gtm = dataclasses.replace(narrative.gtm_motion, channels=())
+    bad_narrative = dataclasses.replace(narrative, gtm_motion=bad_gtm)
+    with pytest.raises(InvalidConfigError, match="channels"):
+        _build_with_narrative(bad_narrative)
+
+
+def test_channel_weights_zero_shares_falls_back_to_uniform() -> None:
+    """If all GTM shares are 0, _channel_weights should return uniform weights."""
+    narrative = _base_narrative()
+    import dataclasses
+
+    bad_gtm = dataclasses.replace(
+        narrative.gtm_motion,
+        inbound_share=0.0,
+        outbound_share=0.0,
+        partner_share=0.0,
+    )
+    bad_narrative = dataclasses.replace(narrative, gtm_motion=bad_gtm)
+    channels, weights = _channel_weights(bad_narrative)
+    assert len(channels) == len(weights)
+    assert all(w > 0 for w in weights)
+    assert abs(sum(weights) - 1.0) < 1e-9
+    expected = 1.0 / len(channels)
+    assert all(abs(w - expected) < 1e-9 for w in weights)

@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import TYPE_CHECKING
 
+from leadforge.core.exceptions import InvalidConfigError
 from leadforge.core.ids import ID_PREFIXES, make_id
 from leadforge.core.models import GenerationConfig
 from leadforge.core.rng import RNGRoot
@@ -137,12 +138,15 @@ def build_population(
     """Generate accounts, contacts, leads, and their latent states.
 
     All randomness is derived from named substreams of ``RNGRoot(config.seed)``
-    so the result is fully deterministic for a given ``(config, world_graph)``.
+    so the result is fully deterministic for a given
+    ``(config, narrative, world_graph.motif_family)``.
 
     Args:
         config: Fully resolved generation configuration (counts, seed, etc.).
         narrative: Parsed narrative spec providing ICP industries, geographies,
-            personas, and GTM channel mix.
+            personas, and GTM channel mix.  Must have non-empty
+            ``market.icp_industries``, ``market.geographies``, ``personas``,
+            and ``gtm_motion.channels``.
         world_graph: The sampled hidden world graph; its ``motif_family`` is used
             to apply latent-trait mean biases that make the world structurally
             coherent.
@@ -150,7 +154,11 @@ def build_population(
     Returns:
         A :class:`PopulationResult` containing the three entity lists and the
         full :class:`LatentState`.
+
+    Raises:
+        InvalidConfigError: If any required narrative collection is empty.
     """
+    _validate_narrative(narrative)
     root = RNGRoot(config.seed)
     bias = _MOTIF_LATENT_BIAS.get(world_graph.motif_family, {})
 
@@ -366,6 +374,20 @@ def _generate_leads(
 # ---------------------------------------------------------------------------
 
 
+def _validate_narrative(narrative: NarrativeSpec) -> None:
+    """Raise :exc:`InvalidConfigError` if any collection required by population
+    generation is empty."""
+    checks: list[tuple[object, str]] = [
+        (narrative.market.icp_industries, "narrative.market.icp_industries"),
+        (narrative.market.geographies, "narrative.market.geographies"),
+        (narrative.personas, "narrative.personas"),
+        (narrative.gtm_motion.channels, "narrative.gtm_motion.channels"),
+    ]
+    for collection, name in checks:
+        if not collection:
+            raise InvalidConfigError(f"{name} must not be empty")
+
+
 def _sample_latent(rng: random.Random, mean: float = 0.50, std: float = 0.20) -> float:
     """Draw a latent trait value in [0, 1] from a clipped Gaussian."""
     mean = max(0.10, min(0.90, mean))
@@ -373,16 +395,24 @@ def _sample_latent(rng: random.Random, mean: float = 0.50, std: float = 0.20) ->
 
 
 def _channel_weights(narrative: NarrativeSpec) -> tuple[list[str], list[float]]:
-    """Return (channels, weights) lists ordered as in the GTM spec."""
+    """Return (channels, weights) lists ordered as in the GTM spec.
+
+    If the per-channel share attributes sum to zero (all shares are 0),
+    falls back to a uniform distribution so ``random.choices`` never
+    receives an all-zero weight list.
+    """
     gtm = narrative.gtm_motion
     channels: list[str] = []
     weights: list[float] = []
     for ch in gtm.channels:
         attr = _CHANNEL_TO_SHARE_ATTR.get(ch)
         channels.append(ch)
-        weights.append(float(getattr(gtm, attr)) if attr else 1.0 / len(gtm.channels))
-    # Normalise in case shares don't sum to exactly 1.0
+        weights.append(float(getattr(gtm, attr)) if attr else 0.0)
     total = sum(weights)
     if total > 0:
         weights = [w / total for w in weights]
+    else:
+        # All shares are zero — fall back to uniform.
+        uniform = 1.0 / len(channels)
+        weights = [uniform] * len(channels)
     return channels, weights
