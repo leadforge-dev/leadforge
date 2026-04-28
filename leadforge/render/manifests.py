@@ -1,9 +1,9 @@
 """Bundle manifest builder.
 
 :func:`build_manifest` constructs the ``manifest.json`` dict that is written
-at the root of every output bundle.  The manifest is the authoritative record
-of provenance: it identifies the recipe, seed, version, and every file in the
-bundle along with its SHA-256 hash and row count.
+at the root of every output bundle.  The manifest records provenance (recipe,
+seed, version, generation timestamp) and integrity metadata (row counts and
+SHA-256 hashes) for the Parquet data files: relational tables and task splits.
 """
 
 from __future__ import annotations
