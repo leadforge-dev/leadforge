@@ -90,7 +90,44 @@ class WorldSpec:
 class WorldBundle:
     """In-memory result of one complete generation run.
 
-    Populated in Milestone 7+ (simulation and rendering).
+    Holds all generated artefacts and provides :meth:`save` to write the
+    full output bundle to disk.
+
+    Attributes:
+        spec: Fully resolved world specification (config + narrative).
+        population: Generated accounts, contacts, leads, and latent state.
+        simulation_result: Simulated event tables and final lead outcomes.
+        world_graph: Sampled hidden world graph used during simulation.
     """
 
     spec: WorldSpec = field(default_factory=WorldSpec)
+    population: Any = None  # PopulationResult | None
+    simulation_result: Any = None  # SimulationResult | None
+    world_graph: Any = None  # WorldGraph | None
+
+    def save(self, path: str) -> None:
+        """Write the full output bundle to *path*.
+
+        Creates the directory if it does not exist.  The bundle layout
+        matches the canonical structure defined in ``CLAUDE.md``::
+
+            path/
+              manifest.json
+              dataset_card.md
+              feature_dictionary.csv
+              tables/          # one .parquet per relational table
+              tasks/converted_within_90_days/{train,valid,test}.parquet
+              tasks/converted_within_90_days/task_manifest.json
+
+        Args:
+            path: Destination directory (created if absent).
+
+        Raises:
+            RuntimeError: if :attr:`simulation_result`, :attr:`population`,
+                or :attr:`world_graph` have not been populated (i.e. if
+                :meth:`~leadforge.api.generator.Generator.generate` was not
+                called).
+        """
+        from leadforge.api.bundle import write_bundle
+
+        write_bundle(self, path)
