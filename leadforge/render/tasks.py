@@ -57,12 +57,11 @@ def write_task_splits(
     n = len(shuffled)
     n_train = int(n * task.split.train)
     n_valid = int(n * task.split.valid)
-    # test split gets the remainder to avoid off-by-one from integer rounding.
 
     splits: dict[str, pd.DataFrame] = {
         "train": shuffled.iloc[:n_train],
         "valid": shuffled.iloc[n_train : n_train + n_valid],
-        "test": shuffled.iloc[n_train + n_valid :],
+        "test": shuffled.iloc[n_train + n_valid :],  # remainder avoids rounding off-by-one
     }
 
     row_counts: dict[str, int] = {}

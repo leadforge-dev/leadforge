@@ -27,20 +27,27 @@ if TYPE_CHECKING:
     from leadforge.simulation.engine import SimulationResult
     from leadforge.simulation.population import PopulationResult
 
-# Ordered column list derived from the canonical feature spec.
+# Ordered column list and dtypes derived from the canonical feature spec.
 _SNAPSHOT_COLUMNS = [f.name for f in LEAD_SNAPSHOT_FEATURES]
 _SNAPSHOT_DTYPES = {f.name: f.dtype for f in LEAD_SNAPSHOT_FEATURES}
 
-# Account and contact columns needed in the snapshot (subset of their full DTYPE_MAP).
-_ACCOUNT_JOIN_COLS = [
-    "account_id",
-    "industry",
-    "region",
-    "employee_band",
-    "estimated_revenue_band",
-    "process_maturity_band",
+# Join columns derived from the feature spec — single source of truth.
+# Adding a new account/contact feature to LEAD_SNAPSHOT_FEATURES automatically
+# includes it here without any manual list maintenance.
+_ACCOUNT_JOIN_COLS = [f.name for f in LEAD_SNAPSHOT_FEATURES if f.category == "account"]
+_CONTACT_JOIN_COLS = [f.name for f in LEAD_SNAPSHOT_FEATURES if f.category == "contact"]
+
+# Aggregated count columns that need zero-filling after left-merge.
+_INT_AGG_COLS = [
+    "touch_count",
+    "inbound_touch_count",
+    "outbound_touch_count",
+    "session_count",
+    "pricing_page_views",
+    "demo_page_views",
+    "total_session_duration_seconds",
+    "activity_count",
 ]
-_CONTACT_JOIN_COLS = ["contact_id", "role_function", "seniority", "buyer_role"]
 
 
 def build_snapshot(
@@ -147,35 +154,21 @@ def build_snapshot(
     lead_df = lead_df.merge(act_agg, on="lead_id", how="left")
     lead_df = lead_df.merge(open_opps, on="lead_id", how="left")
 
-    # Fill missing aggregates with zero / False.
-    lead_df["touch_count"] = lead_df["touch_count"].fillna(0).astype("Int64")
-    lead_df["inbound_touch_count"] = lead_df["inbound_touch_count"].fillna(0).astype("Int64")
-    lead_df["outbound_touch_count"] = lead_df["outbound_touch_count"].fillna(0).astype("Int64")
-    lead_df["session_count"] = lead_df["session_count"].fillna(0).astype("Int64")
-    lead_df["pricing_page_views"] = lead_df["pricing_page_views"].fillna(0).astype("Int64")
-    lead_df["demo_page_views"] = lead_df["demo_page_views"].fillna(0).astype("Int64")
-    lead_df["total_session_duration_seconds"] = (
-        lead_df["total_session_duration_seconds"].fillna(0).astype("Int64")
-    )
-    lead_df["activity_count"] = lead_df["activity_count"].fillna(0).astype("Int64")
-    mask = lead_df["has_open_opportunity"].notna()
-    lead_df["has_open_opportunity"] = (
-        lead_df["has_open_opportunity"].where(mask, other=False).astype("boolean")
-    )
-    lead_df["opportunity_estimated_acv"] = lead_df["opportunity_estimated_acv"].astype("Float64")
+    # Fill missing event aggregate counts with zero; has_open_opportunity with False.
+    # opportunity_estimated_acv and days_since_last_touch intentionally stay NaN.
+    lead_df[_INT_AGG_COLS] = lead_df[_INT_AGG_COLS].fillna(0)
+    opp_mask = lead_df["has_open_opportunity"].notna()
+    lead_df["has_open_opportunity"] = lead_df["has_open_opportunity"].where(opp_mask, other=False)
 
-    # Compute days_since_last_touch (Float64, NaN when no touches).
-    has_touch = lead_df["last_touch_timestamp"].notna()
-    lead_df["days_since_last_touch"] = pd.NA
-    if has_touch.any():
-        last_ts = pd.to_datetime(lead_df.loc[has_touch, "last_touch_timestamp"])
-        lead_df.loc[has_touch, "days_since_last_touch"] = (
-            lead_df.loc[has_touch, "anchor_date"] - last_ts
-        ).dt.days
-    lead_df["days_since_last_touch"] = lead_df["days_since_last_touch"].astype("Float64")
+    # Compute days_since_last_touch fully vectorised.
+    # pd.to_datetime returns NaT for nulls; (Timestamp - NaT) yields NaN naturally.
+    last_ts = pd.to_datetime(lead_df["last_touch_timestamp"])
+    lead_df["days_since_last_touch"] = (lead_df["anchor_date"] - last_ts).dt.days
 
     # -------------------------------------------------------------------
     # Join account and contact features via vectorised merge (not apply).
+    # Columns are derived from LEAD_SNAPSHOT_FEATURES categories so this
+    # list stays in sync automatically when the feature spec changes.
     # -------------------------------------------------------------------
     acct_df = pd.DataFrame([a.to_dict() for a in population.accounts])[_ACCOUNT_JOIN_COLS]
     cont_df = pd.DataFrame([c.to_dict() for c in population.contacts])[_CONTACT_JOIN_COLS]
@@ -183,7 +176,7 @@ def build_snapshot(
     lead_df = lead_df.merge(cont_df, on="contact_id", how="left")
 
     # -------------------------------------------------------------------
-    # Select and order columns per canonical feature spec; apply dtypes.
+    # Select, order, and cast columns — single authoritative dtype pass.
     # -------------------------------------------------------------------
     snapshot = lead_df[_SNAPSHOT_COLUMNS].copy()
     for col, dtype in _SNAPSHOT_DTYPES.items():

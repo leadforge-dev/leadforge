@@ -55,7 +55,7 @@ def build_manifest(
     for table_name, row_count in table_row_counts.items():
         rel_path = f"tables/{table_name}.parquet"
         abs_path = bundle_root / rel_path
-        sha = _sha256(abs_path) if abs_path.exists() else ""
+        sha = _sha256(abs_path)
         tables[table_name] = {"row_count": row_count, "file": rel_path, "sha256": sha}
 
     # Build task entries.
@@ -65,7 +65,7 @@ def build_manifest(
         for split_name, row_count in split_counts.items():
             rel_path = f"tasks/{task_id}/{split_name}.parquet"
             abs_path = bundle_root / rel_path
-            sha = _sha256(abs_path) if abs_path.exists() else ""
+            sha = _sha256(abs_path)
             entry[f"{split_name}_rows"] = row_count
             entry[f"{split_name}_sha256"] = sha
         tasks[task_id] = entry

@@ -9,7 +9,7 @@ the ``tables/`` directory in the output bundle.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, NamedTuple
 
 import pandas as pd
 
@@ -32,17 +32,24 @@ if TYPE_CHECKING:
 
 _Source = Literal["population", "simulation"]
 
-# Maps table name → (entity class, data source, attribute name on source object).
-_TABLE_SOURCES: dict[str, tuple[type[EntityRowProtocol], _Source, str]] = {
-    AccountRow.TABLE_NAME: (AccountRow, "population", "accounts"),
-    ContactRow.TABLE_NAME: (ContactRow, "population", "contacts"),
-    LeadRow.TABLE_NAME: (LeadRow, "simulation", "leads"),
-    TouchRow.TABLE_NAME: (TouchRow, "simulation", "touches"),
-    SessionRow.TABLE_NAME: (SessionRow, "simulation", "sessions"),
-    SalesActivityRow.TABLE_NAME: (SalesActivityRow, "simulation", "sales_activities"),
-    OpportunityRow.TABLE_NAME: (OpportunityRow, "simulation", "opportunities"),
-    CustomerRow.TABLE_NAME: (CustomerRow, "simulation", "customers"),
-    SubscriptionRow.TABLE_NAME: (SubscriptionRow, "simulation", "subscriptions"),
+
+class _TableSource(NamedTuple):
+    cls: type[EntityRowProtocol]
+    origin: _Source  # which object holds the rows
+    attr: str  # attribute name on that object
+
+
+# Maps table name → source descriptor.
+_TABLE_SOURCES: dict[str, _TableSource] = {
+    AccountRow.TABLE_NAME: _TableSource(AccountRow, "population", "accounts"),
+    ContactRow.TABLE_NAME: _TableSource(ContactRow, "population", "contacts"),
+    LeadRow.TABLE_NAME: _TableSource(LeadRow, "simulation", "leads"),
+    TouchRow.TABLE_NAME: _TableSource(TouchRow, "simulation", "touches"),
+    SessionRow.TABLE_NAME: _TableSource(SessionRow, "simulation", "sessions"),
+    SalesActivityRow.TABLE_NAME: _TableSource(SalesActivityRow, "simulation", "sales_activities"),
+    OpportunityRow.TABLE_NAME: _TableSource(OpportunityRow, "simulation", "opportunities"),
+    CustomerRow.TABLE_NAME: _TableSource(CustomerRow, "simulation", "customers"),
+    SubscriptionRow.TABLE_NAME: _TableSource(SubscriptionRow, "simulation", "subscriptions"),
 }
 
 
@@ -63,15 +70,15 @@ def to_dataframes(
         DataFrames with the correct schema.
     """
     dfs: dict[str, pd.DataFrame] = {}
-    for table_name, (cls, source, attr) in _TABLE_SOURCES.items():
-        obj = population if source == "population" else result
-        rows = getattr(obj, attr, [])
+    for table_name, src in _TABLE_SOURCES.items():
+        obj = population if src.origin == "population" else result
+        rows = getattr(obj, src.attr)  # AttributeError surfaces missing attrs immediately
         if rows:
             df = pd.DataFrame([row.to_dict() for row in rows])
-            for col, dtype in cls.DTYPE_MAP.items():
+            for col, dtype in src.cls.DTYPE_MAP.items():
                 if col in df.columns:
                     df[col] = df[col].astype(dtype)
         else:
-            df = cls.empty_dataframe()
+            df = src.cls.empty_dataframe()
         dfs[table_name] = df
     return dfs

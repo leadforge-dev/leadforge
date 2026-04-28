@@ -25,10 +25,10 @@ def _make_config(seed: int = 42, n_leads: int = 80) -> GenerationConfig:
     return GenerationConfig(seed=seed, n_accounts=30, n_contacts=90, n_leads=n_leads)
 
 
-def _make_narrative():
+def _make_narrative(seed: int = 42):
     from leadforge.api.generator import Generator
 
-    gen = Generator.from_recipe("b2b_saas_procurement_v1", seed=42)
+    gen = Generator.from_recipe("b2b_saas_procurement_v1", seed=seed)
     assert gen.world_spec.narrative is not None
     return gen.world_spec.narrative
 
@@ -37,7 +37,7 @@ def _make_narrative():
 def sim_outputs():
     """Run a small simulation once; share across all tests in this module."""
     config = _make_config()
-    narrative = _make_narrative()
+    narrative = _make_narrative(config.seed)
     graph = sample_hidden_graph(42)
     population = build_population(config, narrative, graph)
     result = simulate_world(config, population, graph)
@@ -124,7 +124,7 @@ class TestToDataframes:
 
         def _run(seed):
             cfg = _make_config(seed=seed)
-            narr = _make_narrative()
+            narr = _make_narrative(seed)
             g = sample_hidden_graph(seed)
             pop = build_population(cfg, narr, g)
             res = simulate_world(cfg, pop, g)
@@ -226,7 +226,7 @@ class TestBuildSnapshot:
 
         def _snap(seed):
             cfg = _make_config(seed=seed)
-            narr = _make_narrative()
+            narr = _make_narrative(seed)
             g = sample_hidden_graph(seed)
             pop = build_population(cfg, narr, g)
             res = simulate_world(cfg, pop, g)

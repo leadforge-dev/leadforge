@@ -21,6 +21,7 @@ from leadforge.render.snapshots import build_snapshot
 from leadforge.render.tasks import write_task_splits
 from leadforge.schema.dictionaries import write_feature_dictionary
 from leadforge.schema.tables import write_parquet
+from leadforge.schema.tasks import CONVERTED_WITHIN_90_DAYS
 
 if TYPE_CHECKING:
     from leadforge.core.models import WorldBundle
@@ -79,7 +80,7 @@ def write_bundle(bundle: WorldBundle, path: str) -> None:
         config=config,
         world_graph=world_graph,
         table_row_counts=table_row_counts,
-        task_row_counts={"converted_within_90_days": task_row_counts},
+        task_row_counts={CONVERTED_WITHIN_90_DAYS.task_id: task_row_counts},
         bundle_root=root,
     )
     write_manifest(manifest, root)
