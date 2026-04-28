@@ -18,7 +18,11 @@ def _weighted_sum(latents: dict[str, float], weights: dict[str, float], bias: fl
 
 
 def _sigmoid(x: float) -> float:
-    return 1.0 / (1.0 + math.exp(-x))
+    """Numerically stable sigmoid that avoids overflow for large |x|."""
+    if x >= 0:
+        return 1.0 / (1.0 + math.exp(-x))
+    ex = math.exp(x)
+    return ex / (1.0 + ex)
 
 
 class AdditiveInfluence(Mechanism):

@@ -115,6 +115,11 @@ def test_mixture_draw_serialise_roundtrip() -> None:
     assert abs(sum(d["mix_weights"]) - 1.0) < 1e-9
 
 
+def test_mixture_draw_negative_weight_raises() -> None:
+    with pytest.raises(ValueError, match="non-negative"):
+        MixtureDraw([(0.3, 0.1), (0.7, 0.1)], [1.0, -0.5])
+
+
 # ===========================================================================
 # Influence mechanisms
 # ===========================================================================
@@ -416,6 +421,54 @@ def test_proxy_compression_bad_labels_count() -> None:
 def test_proxy_compression_unsorted_thresholds() -> None:
     with pytest.raises(ValueError, match="increasing"):
         ProxyCompression("k", thresholds=[0.7, 0.3], labels=["a", "b", "c"])
+
+
+def test_proxy_compression_duplicate_thresholds_raises() -> None:
+    with pytest.raises(ValueError, match="increasing"):
+        ProxyCompression("k", thresholds=[0.5, 0.5], labels=["a", "b", "c"])
+
+
+def test_proxy_compression_threshold_at_zero_raises() -> None:
+    with pytest.raises(ValueError, match=r"\(0, 1\)"):
+        ProxyCompression("k", thresholds=[0.0, 0.5], labels=["a", "b", "c"])
+
+
+def test_proxy_compression_threshold_at_one_raises() -> None:
+    with pytest.raises(ValueError, match=r"\(0, 1\)"):
+        ProxyCompression("k", thresholds=[0.5, 1.0], labels=["a", "b", "c"])
+
+
+# ===========================================================================
+# Numeric stability — sigmoid / score
+# ===========================================================================
+
+
+def test_latent_score_extreme_positive_no_overflow() -> None:
+    mech = LatentScore({"k": 1.0}, bias=0.0)
+    ctx = MechanismContext(latents={"k": 1_000.0})
+    v = mech.sample(ctx, _rng())
+    assert v == pytest.approx(1.0, abs=1e-6)
+
+
+def test_latent_score_extreme_negative_no_overflow() -> None:
+    mech = LatentScore({"k": 1.0}, bias=0.0)
+    ctx = MechanismContext(latents={"k": -1_000.0})
+    v = mech.sample(ctx, _rng())
+    assert v == pytest.approx(0.0, abs=1e-6)
+
+
+def test_logistic_influence_extreme_positive_no_overflow() -> None:
+    mech = LogisticInfluence({"k": 1.0}, bias=0.0)
+    ctx = MechanismContext(latents={"k": 1_000.0})
+    v = mech.sample(ctx, _rng())
+    assert v == pytest.approx(1.0, abs=1e-6)
+
+
+def test_logistic_influence_extreme_negative_no_overflow() -> None:
+    mech = LogisticInfluence({"k": 1.0}, bias=0.0)
+    ctx = MechanismContext(latents={"k": -1_000.0})
+    v = mech.sample(ctx, _rng())
+    assert v == pytest.approx(0.0, abs=1e-6)
 
 
 # ===========================================================================

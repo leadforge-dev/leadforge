@@ -46,7 +46,10 @@ class LatentScore(Mechanism):
         linear = self._bias + sum(
             self._weights.get(k, 0.0) * latents.get(k, 0.0) for k in self._weights
         )
-        return 1.0 / (1.0 + math.exp(-linear))
+        if linear >= 0:
+            return 1.0 / (1.0 + math.exp(-linear))
+        ex = math.exp(linear)
+        return ex / (1.0 + ex)
 
     def sample(self, context: MechanismContext, rng: random.Random) -> float:
         return self.score(context.latents)

@@ -142,8 +142,11 @@ class ProxyCompression(Mechanism):
                 f"Expected {len(thresholds) + 1} labels for {len(thresholds)} thresholds, "
                 f"got {len(labels)}"
             )
-        if thresholds != sorted(thresholds):
-            raise ValueError("thresholds must be strictly increasing")
+        for i in range(len(thresholds) - 1):
+            if thresholds[i] >= thresholds[i + 1]:
+                raise ValueError("thresholds must be strictly increasing")
+        if any(not (0.0 < t < 1.0) for t in thresholds):
+            raise ValueError("all thresholds must be in (0, 1)")
         if not (0.0 <= missing_rate <= 1.0):
             raise ValueError(f"missing_rate must be in [0, 1], got {missing_rate}")
         self._key = latent_key

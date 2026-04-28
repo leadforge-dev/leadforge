@@ -116,6 +116,8 @@ class MixtureDraw(Mechanism):
             raise ValueError("components must not be empty")
         if len(components) != len(mix_weights):
             raise ValueError("components and mix_weights must have the same length")
+        if any(w < 0 for w in mix_weights):
+            raise ValueError("all mix_weights must be non-negative")
         total = sum(mix_weights)
         if total <= 0:
             raise ValueError("mix_weights must sum to a positive value")
