@@ -140,10 +140,22 @@ class TestDeterminism:
         ]
 
     def test_different_seeds_differ(self) -> None:
-        r1 = _run_sim(seed=1)
-        r2 = _run_sim(seed=2)
-        # With large enough populations the touch counts should differ.
-        assert len(r1.touches) != len(r2.touches) or len(r1.sessions) != len(r2.sessions)
+        r1 = _run_sim(seed=1, n_leads=200)
+        r2 = _run_sim(seed=2, n_leads=200)
+        sig1 = [
+            (row.lead_id, row.converted_within_90_days, row.current_stage, row.conversion_timestamp)
+            for row in r1.leads
+        ]
+        sig2 = [
+            (row.lead_id, row.converted_within_90_days, row.current_stage, row.conversion_timestamp)
+            for row in r2.leads
+        ]
+        assert (
+            sig1 != sig2
+            or len(r1.touches) != len(r2.touches)
+            or len(r1.sessions) != len(r2.sessions)
+            or len(r1.opportunities) != len(r2.opportunities)
+        )
 
 
 # ---------------------------------------------------------------------------

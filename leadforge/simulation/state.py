@@ -11,6 +11,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+# Funnel stages that are at or past the SQL qualification gate.
+# Used by advance_stage() to record sql_day regardless of the exact
+# stage name, so opportunity timestamps are correct even if the stage
+# sequence evolves in future milestones.
+_SQL_OR_DEEPER: frozenset[str] = frozenset(
+    {
+        "sql",
+        "demo_scheduled",
+        "demo_completed",
+        "proposal_sent",
+        "negotiation",
+        "closed_won",
+    }
+)
+
 
 @dataclass
 class LeadSimState:
@@ -38,8 +53,8 @@ class LeadSimState:
     """0-based day index when the lead was marked ``closed_lost``."""
 
     sql_day: int | None = None
-    """First day the lead reached the ``sql`` stage (or equivalent deeper
-    stage).  Used to anchor opportunity creation timestamps."""
+    """First day the lead entered ``sql`` or any deeper funnel stage.
+    Used to anchor opportunity creation timestamps."""
 
     @property
     def is_terminal(self) -> bool:
@@ -49,8 +64,11 @@ class LeadSimState:
     def advance_stage(self, new_stage: str, day: int) -> None:
         """Transition to *new_stage* on *day*, resetting the dwell counter.
 
-        Also records the first time the lead reaches ``sql`` so the engine
-        can create an opportunity row at the correct timestamp.
+        Records the first time the lead enters ``sql`` or any deeper stage
+        (``demo_scheduled``, ``demo_completed``, ``proposal_sent``,
+        ``negotiation``, ``closed_won``) so the engine can create an
+        opportunity row at the correct timestamp regardless of which
+        qualifying stage is reached first.
 
         Args:
             new_stage: The funnel stage to transition into.
@@ -58,7 +76,7 @@ class LeadSimState:
         """
         self.current_stage = new_stage
         self.dwell_days = 0
-        if new_stage == "sql" and self.sql_day is None:
+        if new_stage in _SQL_OR_DEEPER and self.sql_day is None:
             self.sql_day = day
 
     def mark_converted(self, day: int) -> None:

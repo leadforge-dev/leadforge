@@ -18,6 +18,15 @@ Simulation contract
 - A small daily churn probability independently moves any non-terminal lead to
   ``closed_lost``.
 
+RNG substreams
+--------------
+Three named substreams keep unrelated outputs stable when any single part of
+the simulation logic changes:
+
+- ``simulation_transitions`` — churn and stage/conversion hazard rolls.
+- ``simulation_events`` — touch, session, and sales-activity emission.
+- ``simulation_post_sim`` — ACV sampling for post-loop entity creation.
+
 Post-simulation entity creation
 --------------------------------
 - An :class:`~leadforge.schema.entities.OpportunityRow` is created for every
@@ -163,7 +172,9 @@ def simulate_world(
     """
     root = RNGRoot(config.seed)
     mech_rng = root.child("mechanisms")
-    sim_rng = root.child("simulation")
+    transition_rng = root.child("simulation_transitions")
+    event_rng = root.child("simulation_events")
+    post_sim_rng = root.child("simulation_post_sim")
 
     mechanisms = assign_mechanisms(world_graph.motif_family, mech_rng)
     stage_seq = StageSequence()
@@ -183,12 +194,18 @@ def simulate_world(
         merged.update(lat.lead_latents.get(lead.lead_id, {}))
         merged_latents[lead.lead_id] = merged
 
+    # Precompute lead creation dates to avoid repeated ISO parsing inside
+    # the hot day × lead loop.
+    lead_dates: dict[str, date] = {
+        lead.lead_id: date.fromisoformat(lead.lead_created_at) for lead in population.leads
+    }
+
     # Initialise per-lead mutable state.
     states: dict[str, LeadSimState] = {
         lead.lead_id: LeadSimState(
             lead_id=lead.lead_id,
             current_stage=lead.current_stage,
-            # Track leads already at sql from population initialisation.
+            # Track leads already at sql+ from population initialisation.
             sql_day=0 if lead.current_stage in _SQL_OR_DEEPER else None,
         )
         for lead in population.leads
@@ -219,29 +236,28 @@ def simulate_world(
                 extra={"dwell_days": state.dwell_days},
             )
 
-            # -- 1. Churn check ------------------------------------------
-            if sim_rng.random() < _DAILY_CHURN_RATE:
+            # -- 1. Churn check (transition stream) ----------------------
+            if transition_rng.random() < _DAILY_CHURN_RATE:
                 state.mark_churned(t)
                 continue  # no events emitted on churn day
 
-            # -- 2. Stage advance or conversion check --------------------
+            # -- 2. Stage advance or conversion check (transition stream) -
             if state.current_stage == "negotiation":
                 # Final close: ConversionHazard decides closed_won.
-                if mechanisms.conversion_hazard.sample(ctx, sim_rng):
+                if mechanisms.conversion_hazard.sample(ctx, transition_rng):
                     state.mark_converted(t)
                     # Fall through to emit events on conversion day.
             else:
                 # Funnel advancement: HazardTransition advances the stage.
-                if mechanisms.stage_transition.sample(ctx, sim_rng):
+                if mechanisms.stage_transition.sample(ctx, transition_rng):
                     next_s = stage_seq.next_stage(state.current_stage)
                     if next_s is not None:
                         state.advance_stage(next_s, t)
 
-            # -- 3. Touches ----------------------------------------------
-            lead_date = date.fromisoformat(lead.lead_created_at)
-            event_date = (lead_date + timedelta(days=t)).isoformat()
+            # -- 3. Touches (event stream) --------------------------------
+            event_date = (lead_dates[lead.lead_id] + timedelta(days=t)).isoformat()
 
-            n_touches = mechanisms.touch_intensity.sample(ctx, sim_rng)
+            n_touches = mechanisms.touch_intensity.sample(ctx, event_rng)
             for _ in range(n_touches):
                 touch_ctr += 1
                 touches.append(
@@ -249,7 +265,7 @@ def simulate_world(
                         touch_id=make_id(ID_PREFIXES["touch"], touch_ctr),
                         lead_id=lead.lead_id,
                         touch_timestamp=event_date,
-                        touch_type=sim_rng.choice(_TOUCH_TYPES),
+                        touch_type=event_rng.choice(_TOUCH_TYPES),
                         touch_channel=lead.first_touch_channel,
                         touch_direction="inbound"
                         if lead.first_touch_channel == "inbound_marketing"
@@ -258,8 +274,8 @@ def simulate_world(
                     )
                 )
 
-            # -- 4. Sessions (≈30 % of touch-days) -----------------------
-            if n_touches > 0 and sim_rng.random() < 0.30:
+            # -- 4. Sessions (≈30 % of touch-days, event stream) ----------
+            if n_touches > 0 and event_rng.random() < 0.30:
                 session_ctr += 1
                 at_demo_stage = state.current_stage in {
                     "demo_scheduled",
@@ -271,16 +287,16 @@ def simulate_world(
                         session_id=make_id(ID_PREFIXES["session"], session_ctr),
                         lead_id=lead.lead_id,
                         session_timestamp=event_date,
-                        session_type=sim_rng.choice(_SESSION_TYPES),
-                        page_views=sim_rng.randint(1, 10),
-                        pricing_page_views=sim_rng.randint(0, 2) if at_late_stage else 0,
-                        demo_page_views=sim_rng.randint(0, 2) if at_demo_stage else 0,
-                        session_duration_seconds=sim_rng.randint(60, 600),
+                        session_type=event_rng.choice(_SESSION_TYPES),
+                        page_views=event_rng.randint(1, 10),
+                        pricing_page_views=event_rng.randint(0, 2) if at_late_stage else 0,
+                        demo_page_views=event_rng.randint(0, 2) if at_demo_stage else 0,
+                        session_duration_seconds=event_rng.randint(60, 600),
                     )
                 )
 
-            # -- 5. Sales activities (≈20 % of active-stage days) --------
-            if state.current_stage in _SALES_ACTIVE_STAGES and sim_rng.random() < 0.20:
+            # -- 5. Sales activities (≈20 % of active-stage days) ---------
+            if state.current_stage in _SALES_ACTIVE_STAGES and event_rng.random() < 0.20:
                 activity_ctr += 1
                 sales_activities.append(
                     SalesActivityRow(
@@ -288,12 +304,12 @@ def simulate_world(
                         lead_id=lead.lead_id,
                         rep_id=lead.owner_rep_id,
                         activity_timestamp=event_date,
-                        activity_type=sim_rng.choice(_ACTIVITY_TYPES),
-                        activity_outcome=sim_rng.choice(_ACTIVITY_OUTCOMES),
+                        activity_type=event_rng.choice(_ACTIVITY_TYPES),
+                        activity_outcome=event_rng.choice(_ACTIVITY_OUTCOMES),
                     )
                 )
 
-            # -- 6. Advance dwell counter --------------------------------
+            # -- 6. Advance dwell counter ---------------------------------
             state.dwell_days += 1
 
     # -------------------------------------------------------------------
@@ -309,7 +325,7 @@ def simulate_world(
 
     for lead in population.leads:
         state = states[lead.lead_id]
-        lead_date = date.fromisoformat(lead.lead_created_at)
+        lead_date = lead_dates[lead.lead_id]
 
         is_sql = state.sql_day is not None or state.current_stage in _SQL_OR_DEEPER
         conv_ts: str | None = None
@@ -351,7 +367,7 @@ def simulate_world(
 
             acct = account_by_id.get(lead.account_id)
             emp_band = acct.employee_band if acct else ""
-            acv = _sample_acv(sim_rng, emp_band)
+            acv = _sample_acv(post_sim_rng, emp_band)
 
             opp = OpportunityRow(
                 opportunity_id=opp_id,
@@ -365,7 +381,10 @@ def simulate_world(
             opportunities.append(opp)
 
             # Customer + subscription: converted leads only.
-            if state.converted:
+            # state.conversion_day is always set when state.converted is True,
+            # so conv_ts_str is computed as a plain str (not str | None) here.
+            if state.converted and state.conversion_day is not None:
+                conv_ts_str = (lead_date + timedelta(days=state.conversion_day)).isoformat()
                 cust_ctr += 1
                 cust_id = make_id(ID_PREFIXES["customer"], cust_ctr)
                 customers.append(
@@ -373,7 +392,7 @@ def simulate_world(
                         customer_id=cust_id,
                         opportunity_id=opp_id,
                         account_id=lead.account_id,
-                        customer_start_at=conv_ts,  # type: ignore[arg-type]
+                        customer_start_at=conv_ts_str,
                     )
                 )
 
@@ -384,8 +403,8 @@ def simulate_world(
                         subscription_id=sub_id,
                         customer_id=cust_id,
                         plan_name=_plan_from_acv(acv),
-                        subscription_start_at=conv_ts,  # type: ignore[arg-type]
-                    subscription_status="active",
+                        subscription_start_at=conv_ts_str,
+                        subscription_status="active",
                     )
                 )
 
