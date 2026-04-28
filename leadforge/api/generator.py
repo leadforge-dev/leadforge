@@ -112,19 +112,21 @@ class Generator:
         n_accounts: int | None = None,
         n_contacts: int | None = None,
         n_leads: int | None = None,
-        difficulty: str | DifficultyProfile = DifficultyProfile.intermediate,
+        difficulty: str | DifficultyProfile = _MISSING,  # type: ignore[assignment]
         **kwargs: Any,
     ) -> WorldBundle:
         """Run the full world simulation and return an in-memory bundle.
 
         Overrides in *n_accounts*, *n_contacts*, *n_leads*, and *difficulty*
         take effect for this call only — they do not mutate the Generator.
+        When *difficulty* is omitted the Generator's configured difficulty is used.
 
         Args:
             n_accounts: Override account count.
             n_contacts: Override contact count.
             n_leads: Override lead count.
-            difficulty: Difficulty profile name or enum value.
+            difficulty: Difficulty profile name or enum value.  Defaults to
+                the difficulty set on the Generator (i.e. from the recipe).
             **kwargs: Reserved for future use.
 
         Returns:
@@ -148,10 +150,11 @@ class Generator:
             overrides["n_contacts"] = n_contacts
         if n_leads is not None:
             overrides["n_leads"] = n_leads
-        if not isinstance(difficulty, DifficultyProfile):
-            difficulty = DifficultyProfile(difficulty)
-        if difficulty != config.difficulty:
-            overrides["difficulty"] = difficulty
+        if difficulty is not _MISSING:
+            if not isinstance(difficulty, DifficultyProfile):
+                difficulty = DifficultyProfile(difficulty)  # type: ignore[arg-type]
+            if difficulty != config.difficulty:
+                overrides["difficulty"] = difficulty
         if overrides:
             config = dataclasses.replace(config, **overrides)
 

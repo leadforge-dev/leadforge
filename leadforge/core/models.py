@@ -11,6 +11,9 @@ from leadforge.version import __version__
 
 if TYPE_CHECKING:
     from leadforge.narrative.spec import NarrativeSpec
+    from leadforge.simulation.engine import SimulationResult
+    from leadforge.simulation.population import PopulationResult
+    from leadforge.structure.graph import WorldGraph
 
 
 def _require_positive_int(value: Any, name: str) -> None:
@@ -101,9 +104,9 @@ class WorldBundle:
     """
 
     spec: WorldSpec = field(default_factory=WorldSpec)
-    population: Any = None  # PopulationResult | None
-    simulation_result: Any = None  # SimulationResult | None
-    world_graph: Any = None  # WorldGraph | None
+    population: PopulationResult | None = None
+    simulation_result: SimulationResult | None = None
+    world_graph: WorldGraph | None = None
 
     def save(self, path: str) -> None:
         """Write the full output bundle to *path*.
