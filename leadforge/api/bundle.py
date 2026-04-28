@@ -6,7 +6,9 @@ all rendering steps:
 1. Write relational Parquet tables (``tables/``).
 2. Build the lead snapshot and write task splits (``tasks/``).
 3. Write ``dataset_card.md`` and ``feature_dictionary.csv``.
-4. Build and write ``manifest.json``.
+4. Apply exposure filtering — write ``metadata/`` for ``research_instructor``
+   mode; skip it for ``student_public``.
+5. Build and write ``manifest.json``.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from leadforge.exposure.modes import apply_exposure
 from leadforge.narrative.dataset_card import render_dataset_card
 from leadforge.render.manifests import build_manifest, write_manifest
 from leadforge.render.relational import to_dataframes
@@ -74,7 +77,12 @@ def write_bundle(bundle: WorldBundle, path: str) -> None:
     write_feature_dictionary(root / "feature_dictionary.csv")
 
     # ------------------------------------------------------------------
-    # 4. Manifest
+    # 4. Exposure metadata (research_instructor only)
+    # ------------------------------------------------------------------
+    apply_exposure(bundle, root, config.exposure_mode)
+
+    # ------------------------------------------------------------------
+    # 5. Manifest
     # ------------------------------------------------------------------
     manifest = build_manifest(
         config=config,
