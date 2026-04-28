@@ -60,10 +60,14 @@ def test_from_recipe_invalid_id_raises() -> None:
         Generator.from_recipe("does_not_exist")
 
 
-def test_generate_not_implemented() -> None:
-    gen = Generator.from_recipe("b2b_saas_procurement_v1")
-    with pytest.raises(NotImplementedError):
-        gen.generate()
+def test_generate_returns_world_bundle() -> None:
+    from leadforge.core.models import WorldBundle
+
+    gen = Generator.from_recipe("b2b_saas_procurement_v1", seed=42)
+    bundle = gen.generate(n_leads=30, n_accounts=15, n_contacts=45)
+    assert isinstance(bundle, WorldBundle)
+    assert bundle.simulation_result is not None
+    assert bundle.population is not None
 
 
 def test_from_recipe_config_has_package_version() -> None:

@@ -115,8 +115,61 @@ class Generator:
         difficulty: str | DifficultyProfile = DifficultyProfile.intermediate,
         **kwargs: Any,
     ) -> WorldBundle:
-        """Run the world simulation and return a bundle.
+        """Run the full world simulation and return an in-memory bundle.
 
-        Not yet implemented — available in v0.3.0+.
+        Overrides in *n_accounts*, *n_contacts*, *n_leads*, and *difficulty*
+        take effect for this call only — they do not mutate the Generator.
+
+        Args:
+            n_accounts: Override account count.
+            n_contacts: Override contact count.
+            n_leads: Override lead count.
+            difficulty: Difficulty profile name or enum value.
+            **kwargs: Reserved for future use.
+
+        Returns:
+            A fully populated :class:`~leadforge.core.models.WorldBundle`.
+            Call :meth:`~leadforge.core.models.WorldBundle.save` to write it
+            to disk.
         """
-        raise NotImplementedError("Generator.generate() is not yet implemented. Coming in v0.3.0.")
+        import dataclasses
+
+        from leadforge.simulation.engine import simulate_world
+        from leadforge.simulation.population import build_population
+        from leadforge.structure.sampler import sample_hidden_graph
+
+        config = self._world_spec.config
+
+        # Apply per-call overrides without mutating the shared config.
+        overrides: dict[str, Any] = {}
+        if n_accounts is not None:
+            overrides["n_accounts"] = n_accounts
+        if n_contacts is not None:
+            overrides["n_contacts"] = n_contacts
+        if n_leads is not None:
+            overrides["n_leads"] = n_leads
+        if not isinstance(difficulty, DifficultyProfile):
+            difficulty = DifficultyProfile(difficulty)
+        if difficulty != config.difficulty:
+            overrides["difficulty"] = difficulty
+        if overrides:
+            config = dataclasses.replace(config, **overrides)
+
+        narrative = self._world_spec.narrative
+        if narrative is None:
+            raise RuntimeError(
+                "No narrative loaded.  Initialise the Generator via "
+                "Generator.from_recipe() to resolve the narrative."
+            )
+
+        world_graph = sample_hidden_graph(config.seed)
+        population = build_population(config, narrative, world_graph)
+        result = simulate_world(config, population, world_graph)
+
+        spec = WorldSpec(config=config, narrative=narrative)
+        return WorldBundle(
+            spec=spec,
+            population=population,
+            simulation_result=result,
+            world_graph=world_graph,
+        )
