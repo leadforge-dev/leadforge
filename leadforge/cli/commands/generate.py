@@ -1,5 +1,9 @@
 """leadforge generate command."""
 
+from __future__ import annotations
+
+from pathlib import Path
+
 import typer
 
 
@@ -28,8 +32,37 @@ def generate(
     ),
 ) -> None:
     """Generate a synthetic CRM dataset bundle from a recipe."""
-    typer.echo(
-        "The 'generate' command is not yet implemented. Coming in v0.2.0.",
-        err=True,
+    from leadforge.api.generator import Generator
+    from leadforge.core.serialization import load_yaml
+
+    override_dict: dict | None = None
+    if override is not None:
+        override_dict = load_yaml(Path(override))
+
+    gen = Generator.from_recipe(
+        recipe,
+        seed=seed,
+        exposure_mode=mode,
+        difficulty=difficulty,
+        n_accounts=n_accounts,
+        n_contacts=n_contacts,
+        n_leads=n_leads,
+        horizon_days=horizon_days,
+        override=override_dict,
     )
-    raise typer.Exit(1)
+
+    generate_kwargs: dict[str, int] = {}
+    if n_accounts is not None:
+        generate_kwargs["n_accounts"] = n_accounts
+    if n_contacts is not None:
+        generate_kwargs["n_contacts"] = n_contacts
+    if n_leads is not None:
+        generate_kwargs["n_leads"] = n_leads
+
+    typer.echo(f"Generating bundle with recipe '{recipe}', seed={seed}, mode={mode} ...")
+    bundle = gen.generate(**generate_kwargs)
+
+    typer.echo(f"Writing bundle to {out} ...")
+    bundle.save(out)
+
+    typer.echo(f"Done. Bundle written to {out}")
