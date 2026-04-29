@@ -170,8 +170,9 @@ def build_snapshot(
         touches_week_1 = pd.DataFrame(columns=["lead_id", "touches_week_1"])
         first_touch_day = pd.DataFrame(columns=["lead_id", "_first_touch_day"])
 
-    # total_touches_all: count over full horizon (leakage trap).
-    if snapshot_day is not None and len(td_full) > 0:
+    # total_touches_all: count over full horizon (leakage trap when windowed,
+    # equals touch_count when using full horizon).
+    if len(td_full) > 0:
         total_touches_all = (
             td_full.groupby("lead_id")["touch_id"]
             .count()

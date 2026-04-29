@@ -9,9 +9,23 @@ These checks verify structural guarantees that must hold for every bundle:
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from leadforge.core.hashing import file_sha256
+
+# Manifest keys that are inherently non-deterministic (wall-clock time).
+_MANIFEST_IGNORE_KEYS = {"generation_timestamp"}
+
+
+def _manifests_match(fa: Path, fb: Path) -> bool:
+    """Compare two manifest.json files, ignoring non-deterministic keys."""
+    a = json.loads(fa.read_text())
+    b = json.loads(fb.read_text())
+    for key in _MANIFEST_IGNORE_KEYS:
+        a.pop(key, None)
+        b.pop(key, None)
+    return a == b
 
 
 def check_determinism(bundle_a: Path, bundle_b: Path) -> list[str]:
@@ -27,7 +41,10 @@ def check_determinism(bundle_a: Path, bundle_b: Path) -> list[str]:
         fa = bundle_a / fname
         fb = bundle_b / fname
         if fa.exists() and fb.exists():
-            if file_sha256(fa) != file_sha256(fb):
+            if fname == "manifest.json":
+                if not _manifests_match(fa, fb):
+                    errors.append(f"Hash mismatch: {fname}")
+            elif file_sha256(fa) != file_sha256(fb):
                 errors.append(f"Hash mismatch: {fname}")
         elif fa.exists() != fb.exists():
             errors.append(f"File '{fname}' exists in one bundle but not the other")

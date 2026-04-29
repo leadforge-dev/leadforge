@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Build the v4 lead scoring intro CSV from a generated bundle.
+"""Build the v4 lead scoring intro CSV (generates the bundle internally).
 
 Usage:
-    python scripts/build_v4_snapshot.py /path/to/bundle output.csv
+    python scripts/build_v4_snapshot.py OUTPUT_CSV
 
 Produces a 1000-row × 18-column CSV at ~30% conversion rate with:
-- Day-21 windowed features
+- Day-14 windowed features
 - Structured missingness (MAR for web_sessions, seniority)
 - Leakage trap (total_touches_all using full 90-day data)
 - Stratified subsampling
@@ -105,7 +105,12 @@ def rename_and_select(df: pd.DataFrame) -> pd.DataFrame:
     df = df.rename(columns=_RENAME_MAP)
     # Convert boolean converted to int 0/1
     df["converted"] = df["converted"].astype(int)
-    return df[[c for c in _FINAL_COLUMNS if c in df.columns]]
+    missing = [c for c in _FINAL_COLUMNS if c not in df.columns]
+    if missing:
+        raise ValueError(
+            f"Missing required columns after renaming: {missing}. Available: {list(df.columns)}"
+        )
+    return df[_FINAL_COLUMNS]
 
 
 def subsample(

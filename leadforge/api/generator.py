@@ -178,7 +178,7 @@ class Generator:
             profiles = recipe.load_difficulty_profiles()
             profile = profiles.get(config.difficulty.value, {})
             category_latent_correlations = profile.get("category_latent_correlations")
-        except Exception:  # noqa: BLE001 — graceful fallback when profile unavailable
+        except (FileNotFoundError, KeyError):
             category_latent_correlations = None
 
         population = build_population(

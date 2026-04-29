@@ -197,7 +197,7 @@ LEAD_SNAPSHOT_FEATURES: tuple[FeatureSpec, ...] = (
     FeatureSpec(
         "days_since_last_touch",
         "Float64",
-        "Days elapsed between most recent touch and snapshot anchor date.",
+        "Days elapsed between most recent touch and snapshot cutoff.",
         "sales",
     ),
     FeatureSpec(

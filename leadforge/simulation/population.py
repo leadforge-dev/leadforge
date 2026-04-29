@@ -432,8 +432,26 @@ def _apply_category_latent_correlations(
     contact_fields = {"seniority", "role_function", "buyer_role"}
 
     for field_name, spec in correlations.items():
+        if not isinstance(spec, dict):
+            raise InvalidConfigError(
+                f"category_latent_correlations[{field_name!r}]: "
+                f"expected a dict, got {type(spec).__name__}"
+            )
+        if "latent_trait" not in spec:
+            raise InvalidConfigError(
+                f"category_latent_correlations[{field_name!r}]: missing required key 'latent_trait'"
+            )
+        if "boosts" not in spec:
+            raise InvalidConfigError(
+                f"category_latent_correlations[{field_name!r}]: missing required key 'boosts'"
+            )
         trait = spec["latent_trait"]
         boosts = spec["boosts"]
+        if not isinstance(boosts, dict):
+            raise InvalidConfigError(
+                f"category_latent_correlations[{field_name!r}].boosts: "
+                f"expected a dict, got {type(boosts).__name__}"
+            )
 
         if field_name in account_fields:
             for account in result.accounts:
