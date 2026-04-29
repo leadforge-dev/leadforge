@@ -51,11 +51,12 @@ def check_cross_seed_stability(bundles: dict[int, Path]) -> list[str]:
                 f"Conversion rate spread too wide across seeds: "
                 f"min={min_rate:.4f}, max={max_rate:.4f} (ratio {max_rate / min_rate:.1f}x)"
             )
-        # Also flag if any seed produces 0% or 100% conversion
+        # Also flag if any seed produces near-0% or near-100% conversion
+        eps = 1e-9
         for seed, rate in rates.items():
-            if rate == 0.0:
+            if rate < eps:
                 errors.append(f"Seed {seed}: 0% conversion rate — simulation degenerate")
-            elif rate == 1.0:
+            elif rate > 1.0 - eps:
                 errors.append(f"Seed {seed}: 100% conversion rate — simulation degenerate")
 
     # Check stage diversity — all seeds should produce multiple stages

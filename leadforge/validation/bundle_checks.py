@@ -17,6 +17,8 @@ from leadforge.core.hashing import file_sha256
 from leadforge.core.serialization import load_json
 from leadforge.schema.features import LEAD_SNAPSHOT_FEATURES
 from leadforge.schema.relationships import ALL_CONSTRAINTS
+from leadforge.validation.difficulty import check_difficulty
+from leadforge.validation.realism import check_realism
 
 
 def validate_bundle(bundle_root: Path, *, include_realism: bool = True) -> list[str]:
@@ -44,11 +46,8 @@ def validate_bundle(bundle_root: Path, *, include_realism: bool = True) -> list[
     errors.extend(_check_leakage(bundle_root, manifest))
 
     if include_realism:
-        from leadforge.validation.difficulty import check_difficulty
-        from leadforge.validation.realism import check_realism
-
-        errors.extend(check_realism(bundle_root))
-        errors.extend(check_difficulty(bundle_root))
+        errors.extend(check_realism(bundle_root, manifest))
+        errors.extend(check_difficulty(manifest))
 
     return errors
 

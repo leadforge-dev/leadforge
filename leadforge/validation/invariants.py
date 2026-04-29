@@ -22,13 +22,25 @@ def check_determinism(bundle_a: Path, bundle_b: Path) -> list[str]:
     """
     errors: list[str] = []
 
+    # Compare core non-Parquet files that must also be deterministic.
+    for fname in ("manifest.json", "dataset_card.md", "feature_dictionary.csv"):
+        fa = bundle_a / fname
+        fb = bundle_b / fname
+        if fa.exists() and fb.exists():
+            if file_sha256(fa) != file_sha256(fb):
+                errors.append(f"Hash mismatch: {fname}")
+        elif fa.exists() != fb.exists():
+            errors.append(f"File '{fname}' exists in one bundle but not the other")
+
     # Compare all Parquet files under tables/ and tasks/
     for subdir in ("tables", "tasks"):
         dir_a = bundle_a / subdir
         dir_b = bundle_b / subdir
         if not dir_a.exists() or not dir_b.exists():
             if dir_a.exists() != dir_b.exists():
-                errors.append(f"Directory '{subdir}' exists in one bundle but not the other")
+                errors.append(
+                    f"Directory '{subdir}' exists in one bundle but not the other"
+                )
             continue
 
         files_a = {p.relative_to(dir_a) for p in dir_a.rglob("*.parquet")}
@@ -37,9 +49,13 @@ def check_determinism(bundle_a: Path, bundle_b: Path) -> list[str]:
         only_a = files_a - files_b
         only_b = files_b - files_a
         if only_a:
-            errors.append(f"Files only in bundle A {subdir}/: {sorted(str(f) for f in only_a)}")
+            errors.append(
+                f"Files only in bundle A {subdir}/: {sorted(str(f) for f in only_a)}"
+            )
         if only_b:
-            errors.append(f"Files only in bundle B {subdir}/: {sorted(str(f) for f in only_b)}")
+            errors.append(
+                f"Files only in bundle B {subdir}/: {sorted(str(f) for f in only_b)}"
+            )
 
         for rel in sorted(files_a & files_b):
             sha_a = file_sha256(dir_a / rel)
@@ -50,11 +66,14 @@ def check_determinism(bundle_a: Path, bundle_b: Path) -> list[str]:
     return errors
 
 
-def check_exposure_monotonicity(student_bundle: Path, instructor_bundle: Path) -> list[str]:
+def check_exposure_monotonicity(
+    student_bundle: Path, instructor_bundle: Path
+) -> list[str]:
     """Verify that student_public is a subset of research_instructor.
 
     The instructor bundle must contain everything the student bundle has,
-    plus additional ``metadata/`` artefacts.  Returns errors if violated.
+    plus additional ``metadata/`` artefacts.  Shared files must be identical
+    (same SHA-256 hash).  Returns errors if violated.
     """
     errors: list[str] = []
 
@@ -66,15 +85,25 @@ def check_exposure_monotonicity(student_bundle: Path, instructor_bundle: Path) -
     if not (instructor_bundle / "metadata").exists():
         errors.append("research_instructor bundle is missing metadata/")
 
-    # Both must have the same core files
+    # Both must have the same core files.
+    # manifest.json and dataset_card.md legitimately differ between modes
+    # (exposure_mode field, metadata references), so only check presence.
+    # feature_dictionary.csv should be identical.
     core_files = ["manifest.json", "dataset_card.md", "feature_dictionary.csv"]
     for fname in core_files:
-        s_exists = (student_bundle / fname).exists()
-        i_exists = (instructor_bundle / fname).exists()
-        if s_exists and not i_exists:
+        s_path = student_bundle / fname
+        i_path = instructor_bundle / fname
+        if s_path.exists() and not i_path.exists():
             errors.append(f"Student has {fname} but instructor does not")
 
-    # Both must have the same tables
+    # feature_dictionary.csv should be identical across modes.
+    s_dict = student_bundle / "feature_dictionary.csv"
+    i_dict = instructor_bundle / "feature_dictionary.csv"
+    if s_dict.exists() and i_dict.exists():
+        if file_sha256(s_dict) != file_sha256(i_dict):
+            errors.append("Content mismatch in shared file: feature_dictionary.csv")
+
+    # Both must have the same tables with identical content
     student_tables = (
         {p.name for p in (student_bundle / "tables").glob("*.parquet")}
         if (student_bundle / "tables").exists()
@@ -89,7 +118,13 @@ def check_exposure_monotonicity(student_bundle: Path, instructor_bundle: Path) -
     if missing:
         errors.append(f"Tables in student but not instructor: {sorted(missing)}")
 
-    # Both must have the same task splits
+    for table in sorted(student_tables & instructor_tables):
+        s_sha = file_sha256(student_bundle / "tables" / table)
+        i_sha = file_sha256(instructor_bundle / "tables" / table)
+        if s_sha != i_sha:
+            errors.append(f"Table content mismatch: {table}")
+
+    # Both must have the same task splits with identical content
     student_tasks = (
         {
             p.relative_to(student_bundle / "tasks")
@@ -109,7 +144,14 @@ def check_exposure_monotonicity(student_bundle: Path, instructor_bundle: Path) -
     missing_tasks = student_tasks - instructor_tasks
     if missing_tasks:
         errors.append(
-            f"Task files in student but not instructor: {sorted(str(f) for f in missing_tasks)}"
+            f"Task files in student but not instructor: "
+            f"{sorted(str(f) for f in missing_tasks)}"
         )
+
+    for rel in sorted(student_tasks & instructor_tasks):
+        s_sha = file_sha256(student_bundle / "tasks" / rel)
+        i_sha = file_sha256(instructor_bundle / "tasks" / rel)
+        if s_sha != i_sha:
+            errors.append(f"Task content mismatch: {rel}")
 
     return errors

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 from pathlib import Path
 
 import pytest
@@ -26,28 +25,23 @@ def bundle_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return out
 
 
+@pytest.fixture(scope="module")
+def manifest(bundle_dir: Path) -> dict:
+    return json.loads((bundle_dir / "manifest.json").read_text())
+
+
 class TestCheckDifficulty:
-    def test_known_difficulty_passes(self, bundle_dir: Path) -> None:
-        errors = check_difficulty(bundle_dir)
+    def test_known_difficulty_passes(self, manifest: dict) -> None:
+        errors = check_difficulty(manifest)
         assert errors == []
 
-    def test_unknown_difficulty_fails(self, tmp_path: Path, bundle_dir: Path) -> None:
-        corrupt = tmp_path / "unknown_diff"
-        shutil.copytree(bundle_dir, corrupt)
-        manifest = json.loads((corrupt / "manifest.json").read_text())
-        manifest["difficulty"] = "nightmare"
-        (corrupt / "manifest.json").write_text(json.dumps(manifest, indent=2))
-
+    def test_unknown_difficulty_fails(self, manifest: dict) -> None:
+        corrupt = {**manifest, "difficulty": "nightmare"}
         errors = check_difficulty(corrupt)
         assert any("Unknown difficulty" in e for e in errors)
 
-    def test_missing_difficulty_fails(self, tmp_path: Path, bundle_dir: Path) -> None:
-        corrupt = tmp_path / "no_diff"
-        shutil.copytree(bundle_dir, corrupt)
-        manifest = json.loads((corrupt / "manifest.json").read_text())
-        del manifest["difficulty"]
-        (corrupt / "manifest.json").write_text(json.dumps(manifest, indent=2))
-
+    def test_missing_difficulty_fails(self, manifest: dict) -> None:
+        corrupt = {k: v for k, v in manifest.items() if k != "difficulty"}
         errors = check_difficulty(corrupt)
         assert any("missing" in e.lower() for e in errors)
 
