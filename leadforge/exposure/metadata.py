@@ -39,15 +39,11 @@ def write_metadata_dir(bundle: WorldBundle, bundle_root: Path) -> None:
     meta_dir = bundle_root / "metadata"
     meta_dir.mkdir(exist_ok=True)
 
-    # ------------------------------------------------------------------
     # graph.json + graph.graphml
-    # ------------------------------------------------------------------
     (meta_dir / "graph.json").write_text(bundle.world_graph.to_json())
     (meta_dir / "graph.graphml").write_text(bundle.world_graph.to_graphml())
 
-    # ------------------------------------------------------------------
     # latent_registry.json
-    # ------------------------------------------------------------------
     ls = bundle.population.latent_state
     latent_registry: dict[str, object] = {
         "account_latents": ls.account_latents,
@@ -56,9 +52,7 @@ def write_metadata_dir(bundle: WorldBundle, bundle_root: Path) -> None:
     }
     (meta_dir / "latent_registry.json").write_text(json.dumps(latent_registry, indent=2))
 
-    # ------------------------------------------------------------------
     # world_spec.json — config + narrative (if present)
-    # ------------------------------------------------------------------
     config_dict = dataclasses.asdict(bundle.spec.config)
     narrative_dict = (
         dataclasses.asdict(bundle.spec.narrative) if bundle.spec.narrative is not None else None
@@ -66,9 +60,7 @@ def write_metadata_dir(bundle: WorldBundle, bundle_root: Path) -> None:
     world_spec_dict = {"config": config_dict, "narrative": narrative_dict}
     (meta_dir / "world_spec.json").write_text(json.dumps(world_spec_dict, indent=2))
 
-    # ------------------------------------------------------------------
     # mechanism_summary.json
-    # ------------------------------------------------------------------
     # Reconstruct the mechanism assignment with the same RNG substream that
     # was used during simulation — produces the identical parameter values.
     motif_family = bundle.world_graph.motif_family

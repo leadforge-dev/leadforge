@@ -34,12 +34,19 @@ FILTERS: dict[ExposureMode, BundleFilter] = {
 }
 
 
-def get_filter(mode: ExposureMode) -> BundleFilter:
+def get_filter(mode: str | ExposureMode) -> BundleFilter:
     """Return the :class:`BundleFilter` for *mode*.
 
+    Args:
+        mode: An :class:`ExposureMode` or its string value.
+
     Raises:
+        ValueError: if *mode* is a string that is not a valid
+            :class:`ExposureMode` value.
         KeyError: if *mode* has no registered filter (should never happen
             with well-typed callers, but guards against future enum additions
             that forget to update ``FILTERS``).
     """
+    if isinstance(mode, str):
+        mode = ExposureMode(mode)
     return FILTERS[mode]
