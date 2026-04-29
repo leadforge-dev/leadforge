@@ -6,6 +6,8 @@ from pathlib import Path
 
 import typer
 
+from leadforge.core.exceptions import LeadforgeError
+
 
 def generate(
     recipe: str = typer.Option(..., "--recipe", "-r", help="Recipe ID to use."),
@@ -37,26 +39,39 @@ def generate(
 
     override_dict: dict | None = None
     if override is not None:
-        override_dict = load_yaml(Path(override))
+        override_path = Path(override)
+        if not override_path.exists():
+            typer.echo(f"Error: override file not found: {override_path}", err=True)
+            raise typer.Exit(1)
+        try:
+            override_dict = load_yaml(override_path)
+        except LeadforgeError as exc:
+            typer.echo(f"Error: {exc}", err=True)
+            raise typer.Exit(1) from None
 
-    gen = Generator.from_recipe(
-        recipe,
-        seed=seed,
-        exposure_mode=mode,
-        difficulty=difficulty,
-        n_accounts=n_accounts,
-        n_contacts=n_contacts,
-        n_leads=n_leads,
-        horizon_days=horizon_days,
-        override=override_dict,
-    )
+    try:
+        gen = Generator.from_recipe(
+            recipe,
+            seed=seed,
+            exposure_mode=mode,
+            difficulty=difficulty,
+            n_accounts=n_accounts,
+            n_contacts=n_contacts,
+            n_leads=n_leads,
+            horizon_days=horizon_days,
+            override=override_dict,
+        )
+    except (LeadforgeError, ValueError) as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1) from None
 
     typer.echo(f"Generating bundle with recipe '{recipe}', seed={seed}, mode={mode} ...")
-    bundle = gen.generate(
-        n_accounts=n_accounts,
-        n_contacts=n_contacts,
-        n_leads=n_leads,
-    )
+
+    try:
+        bundle = gen.generate()
+    except (LeadforgeError, RuntimeError) as exc:
+        typer.echo(f"Error during generation: {exc}", err=True)
+        raise typer.Exit(1) from None
 
     typer.echo(f"Writing bundle to {out} ...")
     bundle.save(out)

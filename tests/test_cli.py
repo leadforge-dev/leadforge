@@ -62,7 +62,13 @@ _GENERATE_ARGS = [
 
 @pytest.fixture(scope="module")
 def bundle_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Generate a small bundle once and reuse across tests in this module."""
+    """Generate a small bundle once and reuse across tests in this module.
+
+    WARNING: this fixture is module-scoped for performance (avoids re-running
+    the full generate pipeline per test).  Tests MUST NOT mutate this directory.
+    Tests that need to tamper with bundle contents should ``shutil.copytree``
+    into their own ``tmp_path`` first (see ``TestValidateCommand``).
+    """
     out = tmp_path_factory.mktemp("bundle")
     result = runner.invoke(app, [*_GENERATE_ARGS, "--out", str(out)])
     assert result.exit_code == 0, f"generate failed:\n{result.output}"
@@ -112,6 +118,7 @@ class TestGenerateCommand:
             ],
         )
         assert result.exit_code != 0
+        assert "Error" in result.output
 
     def test_invalid_mode_fails(self, tmp_path: Path) -> None:
         result = runner.invoke(
@@ -129,6 +136,7 @@ class TestGenerateCommand:
             ],
         )
         assert result.exit_code != 0
+        assert "Error" in result.output
 
     def test_research_instructor_mode_has_metadata(self, tmp_path: Path) -> None:
         result = runner.invoke(
@@ -161,6 +169,78 @@ class TestGenerateCommand:
         assert "Generating bundle" in result.output
         assert "Done" in result.output
 
+    def test_override_flag(self, tmp_path: Path) -> None:
+        """--override with a valid YAML file should work."""
+        override_file = tmp_path / "override.yaml"
+        override_file.write_text("n_leads: 25\n")
+        out = tmp_path / "override_out"
+        result = runner.invoke(
+            app,
+            [
+                "generate",
+                "--recipe",
+                "b2b_saas_procurement_v1",
+                "--seed",
+                "1",
+                "--mode",
+                "student_public",
+                "--override",
+                str(override_file),
+                "--out",
+                str(out),
+            ],
+        )
+        assert result.exit_code == 0, f"generate failed:\n{result.output}"
+        assert (out / "manifest.json").exists()
+
+    def test_override_missing_file_fails(self, tmp_path: Path) -> None:
+        result = runner.invoke(
+            app,
+            [
+                "generate",
+                "--recipe",
+                "b2b_saas_procurement_v1",
+                "--seed",
+                "1",
+                "--mode",
+                "student_public",
+                "--override",
+                str(tmp_path / "nope.yaml"),
+                "--out",
+                str(tmp_path / "out"),
+            ],
+        )
+        assert result.exit_code != 0
+        assert "not found" in result.output
+
+    def test_difficulty_flag(self, tmp_path: Path) -> None:
+        out = tmp_path / "diff_out"
+        result = runner.invoke(
+            app,
+            [
+                "generate",
+                "--recipe",
+                "b2b_saas_procurement_v1",
+                "--seed",
+                "1",
+                "--mode",
+                "student_public",
+                "--difficulty",
+                "intro",
+                "--n-leads",
+                "20",
+                "--n-accounts",
+                "10",
+                "--n-contacts",
+                "30",
+                "--out",
+                str(out),
+            ],
+        )
+        assert result.exit_code == 0, f"generate failed:\n{result.output}"
+        manifest = json.loads((out / "manifest.json").read_text())
+        assert manifest["difficulty"] == "intro"
+
 
 # ---------------------------------------------------------------------------
 # inspect command
@@ -168,30 +248,27 @@ class TestGenerateCommand:
 
 
 class TestInspectCommand:
-    def test_exits_zero(self, bundle_dir: Path) -> None:
+    def test_inspect_output(self, bundle_dir: Path) -> None:
+        """Single invocation, multiple assertions."""
         result = runner.invoke(app, ["inspect", str(bundle_dir)])
         assert result.exit_code == 0
-
-    def test_shows_recipe(self, bundle_dir: Path) -> None:
-        result = runner.invoke(app, ["inspect", str(bundle_dir)])
-        assert "b2b_saas_procurement_v1" in result.output
-
-    def test_shows_seed(self, bundle_dir: Path) -> None:
-        result = runner.invoke(app, ["inspect", str(bundle_dir)])
-        assert "42" in result.output
-
-    def test_shows_tables(self, bundle_dir: Path) -> None:
-        result = runner.invoke(app, ["inspect", str(bundle_dir)])
-        assert "accounts" in result.output
-        assert "leads" in result.output
-
-    def test_shows_tasks(self, bundle_dir: Path) -> None:
-        result = runner.invoke(app, ["inspect", str(bundle_dir)])
-        assert "converted_within_90_days" in result.output
+        output = result.output
+        assert "b2b_saas_procurement_v1" in output
+        assert "42" in output
+        assert "accounts" in output
+        assert "leads" in output
+        assert "converted_within_90_days" in output
+        assert "Metadata dir:" in output
 
     def test_missing_bundle_fails(self, tmp_path: Path) -> None:
         result = runner.invoke(app, ["inspect", str(tmp_path / "nonexistent")])
         assert result.exit_code != 0
+
+    def test_file_instead_of_dir_fails(self, bundle_dir: Path) -> None:
+        """Passing a file path instead of a directory should error clearly."""
+        result = runner.invoke(app, ["inspect", str(bundle_dir / "manifest.json")])
+        assert result.exit_code != 0
+        assert "not a directory" in result.output
 
 
 # ---------------------------------------------------------------------------
@@ -208,6 +285,11 @@ class TestValidateCommand:
     def test_missing_bundle_fails(self, tmp_path: Path) -> None:
         result = runner.invoke(app, ["validate", str(tmp_path / "nonexistent")])
         assert result.exit_code != 0
+
+    def test_file_instead_of_dir_fails(self, bundle_dir: Path) -> None:
+        result = runner.invoke(app, ["validate", str(bundle_dir / "manifest.json")])
+        assert result.exit_code != 0
+        assert "not a directory" in result.output
 
     def test_corrupt_manifest_fails(self, tmp_path: Path, bundle_dir: Path) -> None:
         """A bundle with a tampered row count should fail validation."""
@@ -241,3 +323,5 @@ class TestValidateCommand:
         result = runner.invoke(app, ["validate", str(corrupt)])
         assert result.exit_code != 0
         assert "FAIL" in result.output
+        # Should also report skipped FK checks for the missing table
+        assert "FK check skipped" in result.output
