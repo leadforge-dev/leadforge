@@ -1,13 +1,17 @@
-"""Deterministic config hashing for manifest identity.
+"""Deterministic config hashing and file digest helpers.
 
 A config hash uniquely identifies a (recipe, config, seed, version) tuple and
 is embedded in every generated manifest so that bundles can be traced back to
 the exact parameters that produced them.
+
+:func:`file_sha256` provides a reusable SHA-256 file digest used by the
+manifest builder and the bundle validator.
 """
 
 import hashlib
 import json
 from dataclasses import asdict
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -24,6 +28,15 @@ def _canonical(obj: Any) -> Any:
     if hasattr(obj, "value"):
         return obj.value
     return obj
+
+
+def file_sha256(path: Path) -> str:
+    """Return the hex-encoded SHA-256 digest of the file at *path*."""
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def hash_config(config: "GenerationConfig") -> str:

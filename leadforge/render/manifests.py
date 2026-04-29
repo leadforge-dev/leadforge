@@ -8,11 +8,12 @@ SHA-256 hashes) for the Parquet data files: relational tables and task splits.
 
 from __future__ import annotations
 
-import hashlib
 import json
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+from leadforge.core.hashing import file_sha256
 
 if TYPE_CHECKING:
     from leadforge.core.models import GenerationConfig
@@ -55,7 +56,7 @@ def build_manifest(
     for table_name, row_count in table_row_counts.items():
         rel_path = f"tables/{table_name}.parquet"
         abs_path = bundle_root / rel_path
-        sha = _sha256(abs_path)
+        sha = file_sha256(abs_path)
         tables[table_name] = {"row_count": row_count, "file": rel_path, "sha256": sha}
 
     # Build task entries.
@@ -65,7 +66,7 @@ def build_manifest(
         for split_name, row_count in split_counts.items():
             rel_path = f"tasks/{task_id}/{split_name}.parquet"
             abs_path = bundle_root / rel_path
-            sha = _sha256(abs_path)
+            sha = file_sha256(abs_path)
             entry[f"{split_name}_rows"] = row_count
             entry[f"{split_name}_sha256"] = sha
         tasks[task_id] = entry
@@ -93,12 +94,3 @@ def write_manifest(manifest: dict[str, Any], bundle_root: Path) -> Path:
     path = bundle_root / "manifest.json"
     path.write_text(json.dumps(manifest, indent=2))
     return path
-
-
-def _sha256(path: Path) -> str:
-    """Return the hex-encoded SHA-256 digest of *path*."""
-    h = hashlib.sha256()
-    with path.open("rb") as fh:
-        for chunk in iter(lambda: fh.read(65536), b""):
-            h.update(chunk)
-    return h.hexdigest()
