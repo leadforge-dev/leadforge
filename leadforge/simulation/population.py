@@ -76,6 +76,14 @@ _EMPLOYEE_BAND_WEIGHTS = (0.35, 0.35, 0.20, 0.10)
 _REVENUE_BANDS = ("$1M-$10M", "$10M-$50M", "$50M-$200M", "$200M+")
 _REVENUE_BAND_WEIGHTS = (0.25, 0.40, 0.25, 0.10)
 
+# Revenue band → ACV midpoint heuristic.  Used by snapshots.py for expected_acv.
+REVENUE_BAND_MIDPOINTS: dict[str, int] = {
+    "$1M-$10M": 25_000,
+    "$10M-$50M": 55_000,
+    "$50M-$200M": 85_000,
+    "$200M+": 140_000,
+}
+
 _PROCESS_MATURITY_BANDS = ("low", "medium", "high")
 _PROCESS_MATURITY_BAND_WEIGHTS = (0.30, 0.45, 0.25)
 _PROCESS_MATURITY_MEANS = {"low": 0.25, "medium": 0.50, "high": 0.75}
@@ -134,6 +142,7 @@ def build_population(
     config: GenerationConfig,
     narrative: NarrativeSpec,
     world_graph: WorldGraph,
+    category_latent_correlations: dict[str, dict] | None = None,
 ) -> PopulationResult:
     """Generate accounts, contacts, leads, and their latent states.
 
@@ -185,7 +194,7 @@ def build_population(
         rng=root.child("population_leads"),
     )
 
-    return PopulationResult(
+    result = PopulationResult(
         accounts=accounts,
         contacts=contacts,
         leads=leads,
@@ -195,6 +204,11 @@ def build_population(
             lead_latents=lead_latents,
         ),
     )
+
+    if category_latent_correlations:
+        _apply_category_latent_correlations(result, category_latent_correlations)
+
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -392,6 +406,94 @@ def _sample_latent(rng: random.Random, mean: float = 0.50, std: float = 0.20) ->
     """Draw a latent trait value in [0, 1] from a clipped Gaussian."""
     mean = max(0.10, min(0.90, mean))
     return max(0.0, min(1.0, rng.gauss(mean, std)))
+
+
+def _apply_category_latent_correlations(
+    result: PopulationResult,
+    correlations: dict[str, dict],
+) -> None:
+    """Shift latent traits based on observable category values.
+
+    Each entry in *correlations* maps an observable field name to a dict with
+    ``latent_trait`` (the latent key to adjust) and ``boosts`` (a mapping of
+    category value → additive shift).  The shift is applied in-place, clamped
+    to [0, 1].
+
+    Observable fields are resolved from the appropriate entity list:
+
+    - Account fields (``estimated_revenue_band``, ``industry``, etc.) adjust
+      account-level latents.
+    - Contact fields (``seniority``, ``role_function``, etc.) adjust
+      contact-level latents.
+    - Lead fields (``lead_source``, etc.) adjust the linked contact's latents.
+    """
+    lat = result.latent_state
+
+    # Known fields per entity type for dispatch.
+    account_fields = {
+        "estimated_revenue_band",
+        "industry",
+        "region",
+        "employee_band",
+        "process_maturity_band",
+    }
+    contact_fields = {"seniority", "role_function", "buyer_role"}
+
+    for field_name, spec in correlations.items():
+        if not isinstance(spec, dict):
+            raise InvalidConfigError(
+                f"category_latent_correlations[{field_name!r}]: "
+                f"expected a dict, got {type(spec).__name__}"
+            )
+        if "latent_trait" not in spec:
+            raise InvalidConfigError(
+                f"category_latent_correlations[{field_name!r}]: missing required key 'latent_trait'"
+            )
+        if "boosts" not in spec:
+            raise InvalidConfigError(
+                f"category_latent_correlations[{field_name!r}]: missing required key 'boosts'"
+            )
+        trait = spec["latent_trait"]
+        boosts = spec["boosts"]
+        if not isinstance(boosts, dict):
+            raise InvalidConfigError(
+                f"category_latent_correlations[{field_name!r}].boosts: "
+                f"expected a dict, got {type(boosts).__name__}"
+            )
+
+        if field_name in account_fields:
+            for account in result.accounts:
+                value = getattr(account, field_name, None)
+                boost = boosts.get(str(value), 0.0) if value is not None else 0.0
+                if boost and account.account_id in lat.account_latents:
+                    traits = lat.account_latents[account.account_id]
+                    if trait in traits:
+                        traits[trait] = max(0.0, min(1.0, traits[trait] + boost))
+
+        elif field_name in contact_fields:
+            for contact in result.contacts:
+                value = getattr(contact, field_name, None)
+                boost = boosts.get(str(value), 0.0) if value is not None else 0.0
+                if boost and contact.contact_id in lat.contact_latents:
+                    traits = lat.contact_latents[contact.contact_id]
+                    if trait in traits:
+                        traits[trait] = max(0.0, min(1.0, traits[trait] + boost))
+
+        else:
+            # Lead-level fields (e.g. lead_source) — adjust linked contact latents.
+            # Deduplicate by contact_id: use the first lead's value to avoid
+            # stacking boosts when multiple leads share a contact.
+            seen_contacts: set[str] = set()
+            for lead in result.leads:
+                if lead.contact_id in seen_contacts:
+                    continue
+                seen_contacts.add(lead.contact_id)
+                value = getattr(lead, field_name, None)
+                boost = boosts.get(str(value), 0.0) if value is not None else 0.0
+                if boost and lead.contact_id in lat.contact_latents:
+                    traits = lat.contact_latents[lead.contact_id]
+                    if trait in traits:
+                        traits[trait] = max(0.0, min(1.0, traits[trait] + boost))
 
 
 def _channel_weights(narrative: NarrativeSpec) -> tuple[list[str], list[float]]:

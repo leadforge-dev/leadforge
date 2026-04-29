@@ -108,7 +108,7 @@ class WorldBundle:
     simulation_result: SimulationResult | None = None
     world_graph: WorldGraph | None = None
 
-    def save(self, path: str) -> None:
+    def save(self, path: str, generation_timestamp: str | None = None) -> None:
         """Write the full output bundle to *path*.
 
         Creates the directory if it does not exist.  The bundle layout
@@ -124,6 +124,8 @@ class WorldBundle:
 
         Args:
             path: Destination directory (created if absent).
+            generation_timestamp: ISO-8601 UTC timestamp.  Defaults to now.
+                Pass a fixed value to produce byte-identical manifests.
 
         Raises:
             RuntimeError: if :attr:`simulation_result`, :attr:`population`,
@@ -133,4 +135,4 @@ class WorldBundle:
         """
         from leadforge.api.bundle import write_bundle
 
-        write_bundle(self, path)
+        write_bundle(self, path, generation_timestamp=generation_timestamp)

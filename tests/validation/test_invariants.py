@@ -12,16 +12,19 @@ from leadforge.validation.invariants import check_determinism, check_exposure_mo
 _SMALL = {"n_leads": 20, "n_accounts": 10, "n_contacts": 30}
 
 
+_PINNED_TIMESTAMP = "2024-01-01T00:00:00+00:00"
+
+
 @pytest.fixture(scope="module")
 def determinism_bundles(tmp_path_factory: pytest.TempPathFactory) -> tuple[Path, Path]:
-    """Generate two bundles with the same seed."""
+    """Generate two bundles with the same seed and pinned timestamp."""
     a = tmp_path_factory.mktemp("det_a")
     b = tmp_path_factory.mktemp("det_b")
     for out in (a, b):
         gen = Generator.from_recipe(
             "b2b_saas_procurement_v1", seed=77, exposure_mode="student_public"
         )
-        gen.generate(**_SMALL).save(str(out))
+        gen.generate(**_SMALL).save(str(out), generation_timestamp=_PINNED_TIMESTAMP)
     return a, b
 
 

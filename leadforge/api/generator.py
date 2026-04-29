@@ -166,7 +166,27 @@ class Generator:
             )
 
         world_graph = sample_hidden_graph(config.seed)
-        population = build_population(config, narrative, world_graph)
+
+        # Load category-latent correlations from difficulty profile if available.
+        from leadforge.api.recipes import Recipe
+        from leadforge.recipes.registry import load_recipe
+
+        category_latent_correlations = None
+        try:
+            raw = load_recipe(config.recipe_id)
+            recipe = Recipe.from_dict(raw)
+            profiles = recipe.load_difficulty_profiles()
+            profile = profiles.get(config.difficulty.value, {})
+            category_latent_correlations = profile.get("category_latent_correlations")
+        except (FileNotFoundError, KeyError):
+            category_latent_correlations = None
+
+        population = build_population(
+            config,
+            narrative,
+            world_graph,
+            category_latent_correlations=category_latent_correlations,
+        )
         result = simulate_world(config, population, world_graph)
 
         spec = WorldSpec(config=config, narrative=narrative)

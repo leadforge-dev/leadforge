@@ -20,6 +20,32 @@ intro:
   conversion_rate_range: [0.30, 0.45]
   # Strength of buying-committee-friction effects
   committee_friction: 0.10
+  # Correlate observable categories with latent traits to produce category-level
+  # conversion signal.  Each entry maps an observable field to a latent trait and
+  # per-value additive boosts (applied after initial latent sampling in
+  # build_population).  Values validated by spike experiment (scale 1.8).
+  category_latent_correlations:
+    seniority:
+      latent_trait: latent_contact_authority
+      boosts:
+        individual_contributor: -0.27
+        manager: -0.09
+        director: 0.09
+        vp: 0.22
+        c_suite: 0.36
+    estimated_revenue_band:
+      latent_trait: latent_account_fit
+      boosts:
+        "$1M-$10M": -0.18
+        "$10M-$50M": 0.0
+        "$50M-$200M": 0.18
+        "$200M+": 0.32
+    lead_source:
+      latent_trait: latent_engagement_propensity
+      boosts:
+        sdr_outbound: -0.14
+        inbound_marketing: 0.09
+        partner_referral: 0.22
 
 intermediate:
   description: >

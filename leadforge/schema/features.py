@@ -174,6 +174,19 @@ LEAD_SNAPSHOT_FEATURES: tuple[FeatureSpec, ...] = (
         "Sum of session durations (seconds) before snapshot.",
         "engagement",
     ),
+    # -- Momentum features --
+    FeatureSpec(
+        "touches_week_1",
+        "Int64",
+        "Number of touches in the first 7 days after lead creation.",
+        "engagement",
+    ),
+    FeatureSpec(
+        "days_since_first_touch",
+        "Float64",
+        "Days between first touch and snapshot cutoff (NaN if no touches).",
+        "engagement",
+    ),
     # -- Sales activity features --
     FeatureSpec(
         "activity_count",
@@ -184,7 +197,13 @@ LEAD_SNAPSHOT_FEATURES: tuple[FeatureSpec, ...] = (
     FeatureSpec(
         "days_since_last_touch",
         "Float64",
-        "Days elapsed between most recent touch and snapshot anchor date.",
+        "Days elapsed between most recent touch and snapshot cutoff.",
+        "sales",
+    ),
+    FeatureSpec(
+        "opportunity_created",
+        "boolean",
+        "Whether any opportunity was created by snapshot date (open or closed).",
         "sales",
     ),
     FeatureSpec(
@@ -198,6 +217,22 @@ LEAD_SNAPSHOT_FEATURES: tuple[FeatureSpec, ...] = (
         "Float64",
         "Estimated ACV of the most recent open opportunity (NaN if none).",
         "sales",
+    ),
+    FeatureSpec(
+        "expected_acv",
+        "Float64",
+        "Expected ACV: opportunity ACV if available by snapshot, else "
+        "revenue band midpoint heuristic (NaN if neither available).",
+        "sales",
+    ),
+    # -- Leakage trap --
+    FeatureSpec(
+        "total_touches_all",
+        "Int64",
+        "Total touches over full 90-day window. LEAKAGE TRAP: uses "
+        "post-snapshot data. Included for pedagogical purposes only.",
+        "engagement",
+        leakage_risk=True,
     ),
     # -- Target --
     FeatureSpec(
