@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
-from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import LabelEncoder, StandardScaler
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -120,9 +120,12 @@ def _fit_lr(df: pd.DataFrame, exclude_cols: list[str] | None = None) -> float:
     x_df = x_df.select_dtypes(include=[np.number])
     x_df = x_df.fillna(x_df.median())
 
+    scaler = StandardScaler()
+    x_scaled = scaler.fit_transform(x_df)
+
     lr = LogisticRegression(max_iter=2000, random_state=42)
-    lr.fit(x_df, y)
-    probs = lr.predict_proba(x_df)[:, 1]
+    lr.fit(x_scaled, y)
+    probs = lr.predict_proba(x_scaled)[:, 1]
     return float(roc_auc_score(y, probs))
 
 
