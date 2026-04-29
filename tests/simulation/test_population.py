@@ -414,6 +414,93 @@ def test_empty_channels_raises() -> None:
         _build_with_narrative(bad_narrative)
 
 
+# ---------------------------------------------------------------------------
+# Category-latent correlations (v4 engine change)
+# ---------------------------------------------------------------------------
+
+
+def test_category_latent_correlations_shift_latents() -> None:
+    """Applying category-latent correlations must shift the target trait."""
+    config = GenerationConfig(seed=42, n_accounts=100, n_contacts=200, n_leads=300)
+    gen = Generator.from_recipe("b2b_saas_procurement_v1", seed=42)
+    narrative = gen.world_spec.narrative
+    assert narrative is not None
+    graph = sample_hidden_graph(seed=42)
+
+    # Build without correlations.
+    baseline = build_population(config, narrative, graph)
+    baseline_authority = [
+        v["latent_contact_authority"] for v in baseline.latent_state.contact_latents.values()
+    ]
+
+    # Build with a strong positive boost for a common seniority value.
+    correlations = {
+        "seniority": {
+            "latent_trait": "latent_contact_authority",
+            "boosts": {
+                "c_suite": 0.3,
+                "vp": 0.2,
+                "director": 0.1,
+            },
+        },
+    }
+    boosted = build_population(config, narrative, graph, category_latent_correlations=correlations)
+    boosted_authority = [
+        v["latent_contact_authority"] for v in boosted.latent_state.contact_latents.values()
+    ]
+
+    # Mean should be higher with boosts.
+    avg_baseline = sum(baseline_authority) / len(baseline_authority)
+    avg_boosted = sum(boosted_authority) / len(boosted_authority)
+    assert avg_boosted > avg_baseline, (
+        f"Expected boosted ({avg_boosted:.3f}) > baseline ({avg_baseline:.3f})"
+    )
+
+
+def test_category_latent_correlations_clamped() -> None:
+    """Values must stay in [0, 1] even with extreme boosts."""
+    config = GenerationConfig(seed=42, n_accounts=50, n_contacts=100, n_leads=150)
+    gen = Generator.from_recipe("b2b_saas_procurement_v1", seed=42)
+    narrative = gen.world_spec.narrative
+    assert narrative is not None
+    graph = sample_hidden_graph(seed=42)
+
+    correlations = {
+        "seniority": {
+            "latent_trait": "latent_contact_authority",
+            "boosts": {
+                "c_suite": 5.0,
+                "vp": 5.0,
+                "director": 5.0,
+                "manager": 5.0,
+                "individual_contributor": -5.0,
+            },
+        },
+    }
+    result = build_population(config, narrative, graph, category_latent_correlations=correlations)
+    for traits in result.latent_state.contact_latents.values():
+        assert 0.0 <= traits["latent_contact_authority"] <= 1.0
+
+
+def test_category_latent_correlations_deterministic() -> None:
+    """Same seed + same correlations → same output."""
+    config = GenerationConfig(seed=77, n_accounts=30, n_contacts=60, n_leads=80)
+    gen = Generator.from_recipe("b2b_saas_procurement_v1", seed=77)
+    narrative = gen.world_spec.narrative
+    assert narrative is not None
+    graph = sample_hidden_graph(seed=77)
+
+    correlations = {
+        "estimated_revenue_band": {
+            "latent_trait": "latent_account_fit",
+            "boosts": {"$200M+": 0.15, "$50M-$200M": 0.05},
+        },
+    }
+    r1 = build_population(config, narrative, graph, category_latent_correlations=correlations)
+    r2 = build_population(config, narrative, graph, category_latent_correlations=correlations)
+    assert r1.latent_state.account_latents == r2.latent_state.account_latents
+
+
 def test_channel_weights_zero_shares_falls_back_to_uniform() -> None:
     """If all GTM shares are 0, _channel_weights should return uniform weights."""
     narrative = _base_narrative()
