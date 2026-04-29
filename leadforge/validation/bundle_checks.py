@@ -59,7 +59,11 @@ def _check_tables(
     """Validate table files.  Returns loaded DataFrames and errors."""
     errors: list[str] = []
     tables: dict[str, pd.DataFrame] = {}
-    for table_name, info in manifest.get("tables", {}).items():
+    raw_tables = manifest.get("tables", {})
+    if not isinstance(raw_tables, dict):
+        errors.append("Malformed manifest: 'tables' is not a JSON object")
+        return tables, errors
+    for table_name, info in raw_tables.items():
         rel_path = info.get("file", f"tables/{table_name}.parquet")
         abs_path = root / rel_path
         if not abs_path.exists():
@@ -84,7 +88,11 @@ def _check_tables(
 
 def _check_task_splits(root: Path, manifest: dict[str, Any]) -> list[str]:
     errors: list[str] = []
-    for task_id, task_info in manifest.get("tasks", {}).items():
+    raw_tasks = manifest.get("tasks", {})
+    if not isinstance(raw_tasks, dict):
+        errors.append("Malformed manifest: 'tasks' is not a JSON object")
+        return errors
+    for task_id, task_info in raw_tasks.items():
         for split in ("train", "valid", "test"):
             rel_path = f"tasks/{task_id}/{split}.parquet"
             abs_path = root / rel_path
@@ -143,8 +151,11 @@ def _check_fk_integrity(tables: dict[str, pd.DataFrame]) -> list[str]:
 def _check_leakage(root: Path, manifest: dict[str, Any]) -> list[str]:
     """Check all task splits for unexpected columns."""
     errors: list[str] = []
+    raw_tasks = manifest.get("tasks", {})
+    if not isinstance(raw_tasks, dict):
+        return errors
     expected_columns = {f.name for f in LEAD_SNAPSHOT_FEATURES}
-    for task_id in manifest.get("tasks", {}):
+    for task_id in raw_tasks:
         for split in ("train", "valid", "test"):
             split_path = root / f"tasks/{task_id}/{split}.parquet"
             if split_path.exists():

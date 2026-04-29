@@ -44,10 +44,17 @@ def generate(
             typer.echo(f"Error: override file not found: {override_path}", err=True)
             raise typer.Exit(1)
         try:
-            override_dict = load_yaml(override_path)
+            loaded = load_yaml(override_path)
         except LeadforgeError as exc:
             typer.echo(f"Error: {exc}", err=True)
             raise typer.Exit(1) from None
+        if loaded is not None and not isinstance(loaded, dict):
+            typer.echo(
+                "Error: override file must contain a YAML mapping at the top level.",
+                err=True,
+            )
+            raise typer.Exit(1)
+        override_dict = loaded
 
     try:
         gen = Generator.from_recipe(
