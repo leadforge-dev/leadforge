@@ -42,10 +42,15 @@ class TestFilters:
         f = get_filter(ExposureMode.research_instructor)
         assert f.write_metadata is True
 
+    def test_get_filter_accepts_string(self) -> None:
+        f = get_filter("student_public")
+        assert isinstance(f, BundleFilter)
+        assert f.write_metadata is False
+
     def test_unknown_mode_raises(self) -> None:
-        """get_filter must raise KeyError for an unregistered mode string."""
-        with pytest.raises(KeyError):
-            get_filter("totally_fake_mode")  # type: ignore[arg-type]
+        """get_filter must raise ValueError for an invalid mode string."""
+        with pytest.raises(ValueError, match="totally_fake_mode"):
+            get_filter("totally_fake_mode")
 
 
 # ---------------------------------------------------------------------------
@@ -62,6 +67,23 @@ class TestStudentPublicMode:
     def test_core_files_present(self, tmp_path: Path) -> None:
         bundle = _make_bundle("student_public")
         bundle.save(str(tmp_path))
+        assert (tmp_path / "manifest.json").exists()
+        assert (tmp_path / "dataset_card.md").exists()
+        assert (tmp_path / "feature_dictionary.csv").exists()
+        assert (tmp_path / "tables").is_dir()
+        assert (tmp_path / "tasks").is_dir()
+
+    def test_reused_output_dir_removes_metadata_when_switching_to_student_public(
+        self, tmp_path: Path
+    ) -> None:
+        instructor_bundle = _make_bundle("research_instructor")
+        instructor_bundle.save(str(tmp_path))
+        assert (tmp_path / "metadata").is_dir()
+
+        public_bundle = _make_bundle("student_public")
+        public_bundle.save(str(tmp_path))
+
+        assert not (tmp_path / "metadata").exists()
         assert (tmp_path / "manifest.json").exists()
         assert (tmp_path / "dataset_card.md").exists()
         assert (tmp_path / "feature_dictionary.csv").exists()
