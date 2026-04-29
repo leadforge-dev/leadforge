@@ -38,9 +38,7 @@ def check_determinism(bundle_a: Path, bundle_b: Path) -> list[str]:
         dir_b = bundle_b / subdir
         if not dir_a.exists() or not dir_b.exists():
             if dir_a.exists() != dir_b.exists():
-                errors.append(
-                    f"Directory '{subdir}' exists in one bundle but not the other"
-                )
+                errors.append(f"Directory '{subdir}' exists in one bundle but not the other")
             continue
 
         files_a = {p.relative_to(dir_a) for p in dir_a.rglob("*.parquet")}
@@ -49,13 +47,9 @@ def check_determinism(bundle_a: Path, bundle_b: Path) -> list[str]:
         only_a = files_a - files_b
         only_b = files_b - files_a
         if only_a:
-            errors.append(
-                f"Files only in bundle A {subdir}/: {sorted(str(f) for f in only_a)}"
-            )
+            errors.append(f"Files only in bundle A {subdir}/: {sorted(str(f) for f in only_a)}")
         if only_b:
-            errors.append(
-                f"Files only in bundle B {subdir}/: {sorted(str(f) for f in only_b)}"
-            )
+            errors.append(f"Files only in bundle B {subdir}/: {sorted(str(f) for f in only_b)}")
 
         for rel in sorted(files_a & files_b):
             sha_a = file_sha256(dir_a / rel)
@@ -66,9 +60,7 @@ def check_determinism(bundle_a: Path, bundle_b: Path) -> list[str]:
     return errors
 
 
-def check_exposure_monotonicity(
-    student_bundle: Path, instructor_bundle: Path
-) -> list[str]:
+def check_exposure_monotonicity(student_bundle: Path, instructor_bundle: Path) -> list[str]:
     """Verify that student_public is a subset of research_instructor.
 
     The instructor bundle must contain everything the student bundle has,
@@ -88,13 +80,15 @@ def check_exposure_monotonicity(
     # Both must have the same core files.
     # manifest.json and dataset_card.md legitimately differ between modes
     # (exposure_mode field, metadata references), so only check presence.
-    # feature_dictionary.csv should be identical.
+    # feature_dictionary.csv should be identical (checked below).
     core_files = ["manifest.json", "dataset_card.md", "feature_dictionary.csv"]
     for fname in core_files:
         s_path = student_bundle / fname
         i_path = instructor_bundle / fname
         if s_path.exists() and not i_path.exists():
             errors.append(f"Student has {fname} but instructor does not")
+        elif not s_path.exists() and i_path.exists():
+            errors.append(f"Instructor has {fname} but student does not")
 
     # feature_dictionary.csv should be identical across modes.
     s_dict = student_bundle / "feature_dictionary.csv"
@@ -114,9 +108,12 @@ def check_exposure_monotonicity(
         if (instructor_bundle / "tables").exists()
         else set()
     )
-    missing = student_tables - instructor_tables
-    if missing:
-        errors.append(f"Tables in student but not instructor: {sorted(missing)}")
+    missing_from_instructor = student_tables - instructor_tables
+    if missing_from_instructor:
+        errors.append(f"Tables in student but not instructor: {sorted(missing_from_instructor)}")
+    extra_in_instructor = instructor_tables - student_tables
+    if extra_in_instructor:
+        errors.append(f"Tables in instructor but not student: {sorted(extra_in_instructor)}")
 
     for table in sorted(student_tables & instructor_tables):
         s_sha = file_sha256(student_bundle / "tables" / table)
@@ -144,8 +141,12 @@ def check_exposure_monotonicity(
     missing_tasks = student_tasks - instructor_tasks
     if missing_tasks:
         errors.append(
-            f"Task files in student but not instructor: "
-            f"{sorted(str(f) for f in missing_tasks)}"
+            f"Task files in student but not instructor: {sorted(str(f) for f in missing_tasks)}"
+        )
+    extra_tasks = instructor_tasks - student_tasks
+    if extra_tasks:
+        errors.append(
+            f"Task files in instructor but not student: {sorted(str(f) for f in extra_tasks)}"
         )
 
     for rel in sorted(student_tasks & instructor_tasks):

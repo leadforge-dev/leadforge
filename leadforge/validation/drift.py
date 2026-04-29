@@ -32,6 +32,7 @@ def check_cross_seed_stability(bundles: dict[int, Path]) -> list[str]:
     for seed, bundle_path in bundles.items():
         train_path = bundle_path / "tasks/converted_within_90_days/train.parquet"
         if not train_path.exists():
+            errors.append(f"Seed {seed}: missing tasks/converted_within_90_days/train.parquet")
             continue
         df = pd.read_parquet(train_path, columns=["converted_within_90_days"])
         if len(df) > 0:

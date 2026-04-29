@@ -104,12 +104,11 @@ def _check_feature_ranges(root: Path) -> list[str]:
             if pd.notna(min_val) and min_val < 0:
                 errors.append(f"Feature '{col}' has negative values (min={min_val})")
 
-    # Boolean features should be True/False only
+    # Boolean features should have boolean dtype
     for col in _BOOL_FEATURES:
         if col in df.columns:
-            unique = set(df[col].dropna().unique())
-            if unique - {True, False}:
-                errors.append(f"Feature '{col}' has non-boolean values: {unique}")
+            if not pd.api.types.is_bool_dtype(df[col]):
+                errors.append(f"Feature '{col}' has non-boolean dtype: {df[col].dtype}")
 
     return errors
 
