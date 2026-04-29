@@ -212,7 +212,153 @@ Key abstractions: `Recipe`, `GenerationConfig`, `WorldSpec`, `WorldBundle`, `Exp
 
 ---
 
+## Repository Map
+
+```
+leadforge/                    # Python package root
+├── api/                      # Public API: Generator, Recipe, Bundle
+│   ├── generator.py          # Generator.from_recipe() → .generate() → WorldBundle
+│   ├── recipes.py            # Recipe loading, config resolution
+│   └── bundle.py             # write_bundle() orchestrator
+├── cli/                      # Click CLI
+│   ├── main.py               # CLI entry point
+│   └── commands/             # generate, inspect, validate, list_recipes
+├── core/                     # Foundational utilities
+│   ├── rng.py                # RNGRoot with named substreams
+│   ├── ids.py                # Deterministic ID generation (acct_000001, etc.)
+│   ├── models.py             # GenerationConfig, WorldSpec, WorldBundle
+│   ├── enums.py              # ExposureMode, DifficultyProfile
+│   └── exceptions.py         # Custom exception hierarchy
+├── narrative/                # Vertical narrative (company, market, personas)
+│   ├── spec.py               # NarrativeSpec and sub-spec dataclasses
+│   └── dataset_card.py       # Markdown dataset card renderer
+├── schema/                   # Relational data model
+│   ├── entities.py           # 9 entity row dataclasses (AccountRow, LeadRow, etc.)
+│   ├── features.py           # LEAD_SNAPSHOT_FEATURES — canonical feature spec
+│   ├── relationships.py      # FK constraints (ALL_CONSTRAINTS)
+│   ├── tasks.py              # SplitSpec, TaskManifest, CONVERTED_WITHIN_90_DAYS
+│   └── dictionaries.py       # Feature dictionary CSV writer
+├── structure/                # Hidden world graph
+│   ├── graph.py              # WorldGraph (DAG wrapper)
+│   ├── motifs.py             # 5 motif families
+│   ├── rewiring.py           # Stochastic graph perturbation
+│   └── sampler.py            # sample_hidden_graph()
+├── mechanisms/               # Node/edge behavior
+│   ├── policies.py           # assign_mechanisms() — motif → MechanismAssignment
+│   ├── hazards.py            # ConversionHazard
+│   ├── transitions.py        # StageSequence, HazardTransition
+│   ├── counts.py             # PoissonIntensity, RecencyDecayIntensity
+│   ├── categorical.py        # CategoricalInfluence, CHANNEL_QUALITY_SCORES
+│   └── scores.py             # LatentScore
+├── simulation/               # World evolution
+│   ├── engine.py             # simulate_world() — 90-day daily loop
+│   ├── state.py              # LeadSimState (per-lead mutable state)
+│   └── population.py         # build_population() — accounts, contacts, leads
+├── render/                   # Bundle output
+│   ├── snapshots.py          # build_snapshot() — ML-ready lead table
+│   ├── relational.py         # to_dataframes() — 9-table dict
+│   ├── tasks.py              # write_task_splits() — train/valid/test Parquet
+│   └── manifests.py          # build_manifest(), write_manifest()
+├── exposure/                 # Truth filtering
+│   ├── modes.py              # apply_exposure() dispatch
+│   ├── metadata.py           # write_metadata_dir() for instructor mode
+│   └── filters.py            # BundleFilter, FILTERS dict
+├── validation/               # Bundle quality checks
+│   ├── bundle_checks.py      # validate_bundle() orchestrator
+│   ├── invariants.py         # Determinism + exposure monotonicity
+│   ├── realism.py            # Conversion rates, feature ranges, stage diversity
+│   ├── difficulty.py         # Known difficulty profile validation
+│   └── drift.py              # Cross-seed stability
+└── recipes/                  # Recipe definitions
+    └── b2b_saas_procurement_v1/
+        ├── recipe.yaml       # Recipe metadata + defaults
+        ├── narrative.yaml    # Company, product, market, personas, funnel
+        └── difficulty_profiles.yaml  # intro/intermediate/advanced
+```
+
+### Related repos
+
+- **leadforge-datasets-private** — generated dataset archive
+  - `b2b_saas_procurement_v1__intro__seed42/` — full relational bundle
+  - `lead_scoring_intro/` — simplified single-CSV versions (v1–v4)
+  - `scripts/` — build and validation scripts for simplified CSVs
+
+---
+
+## Generation Workflow
+
+### Generate a full bundle
+
+```bash
+leadforge generate \
+  --recipe b2b_saas_procurement_v1 \
+  --seed 42 \
+  --mode student_public \
+  --difficulty intro \
+  --n-leads 5000 \
+  --out ./out/bundle
+```
+
+### Build a simplified CSV (v4 example)
+
+```bash
+# In leadforge-datasets-private repo:
+python scripts/build_v4_snapshot.py /path/to/bundle lead_scoring_intro/lead_scoring_intro_v4.csv
+```
+
+### Validate a simplified CSV
+
+```bash
+python scripts/validate_v4_dataset.py lead_scoring_intro/lead_scoring_intro_v4.csv
+```
+
+### Validate a full bundle
+
+```bash
+leadforge validate ./out/bundle
+```
+
+---
+
+## student_public Mode Invariants
+
+These are non-negotiable for any dataset published in `student_public` mode:
+
+1. **No post-snapshot features** — all features computed from events ≤ snapshot day only.
+2. **No outcome-stage columns** — `current_stage`, `funnel_stage` with `closed_won`/`closed_lost` are banned.
+3. **No deterministic single-feature mapping** — for any feature value with n≥50, conversion rate must be in [2%, 98%].
+4. **No hidden truth** — latent scores, mechanism parameters, world graph not included.
+5. **No direct outcome columns** — `conversion_timestamp`, `close_outcome` are banned.
+6. **No zero-variance features** — every included feature must have ≥2 distinct values.
+
+Exception: deliberately included leakage traps (e.g., `total_touches_all` in v4) must be clearly documented in release notes and feature dictionary.
+
+---
+
+## How to Add New Features to the Snapshot
+
+1. Add a `FeatureSpec` entry to `LEAD_SNAPSHOT_FEATURES` in `leadforge/schema/features.py`.
+2. Compute the feature value in `build_snapshot()` in `leadforge/render/snapshots.py`.
+3. If the feature needs new event data, add it to the simulation loop in `leadforge/simulation/engine.py`.
+4. Update `leadforge/schema/dictionaries.py` if the feature dictionary format changes.
+5. Run `pytest` and `leadforge validate` on a generated bundle.
+6. Update the feature dictionary CSV description.
+
+---
+
+## v4 Dataset Plan
+
+The current focus is producing a v4 lead scoring intro dataset. See `docs/v4/` for:
+- `lead_scoring_v4_requirements.md` — what v4 must achieve
+- `dataset_contract.md` — schema contract and temporal gates
+- `engine_changes_spec.md` — what changes in the engine
+- `validation_spec.md` — automated validation checks
+- `implementation_plan.md` — milestone breakdown
+
+---
+
 ## Reference Docs
 - Design decisions: `docs/leadforge_design_doc.md`
 - Architecture/spec: `docs/leadforge_architecture_spec.md`
 - Implementation roadmap: `docs/leadforge_implementation_plan.md`
+- v4 dataset plan: `docs/v4/implementation_plan.md`
