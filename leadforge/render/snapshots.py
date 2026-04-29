@@ -227,6 +227,10 @@ def build_snapshot(
         od["_cutoff"] = od["lead_id"].map(cutoff_map)
         od = od[od["_created"] <= od["_cutoff"]]
 
+    # Track ANY opportunity created (regardless of close outcome) for opportunity_created flag.
+    any_opps = od[["lead_id"]].drop_duplicates()
+    any_opps["opportunity_created"] = True
+
     open_opps = od[od["close_outcome"].isna()][["lead_id", "estimated_acv"]]
     open_opps = open_opps.groupby("lead_id").first().reset_index()
     open_opps = open_opps.rename(columns={"estimated_acv": "opportunity_estimated_acv"})
@@ -238,6 +242,7 @@ def build_snapshot(
     lead_df = lead_df.merge(touch_agg, on="lead_id", how="left")
     lead_df = lead_df.merge(sess_agg, on="lead_id", how="left")
     lead_df = lead_df.merge(act_agg, on="lead_id", how="left")
+    lead_df = lead_df.merge(any_opps, on="lead_id", how="left")
     lead_df = lead_df.merge(open_opps, on="lead_id", how="left")
     lead_df = lead_df.merge(touches_week_1, on="lead_id", how="left")
     lead_df = lead_df.merge(first_touch_day, on="lead_id", how="left")
@@ -252,6 +257,10 @@ def build_snapshot(
         lead_df["total_touches_all"] = pd.to_numeric(
             lead_df["total_touches_all"], errors="coerce"
         ).fillna(0)
+    opp_created_mask = lead_df["opportunity_created"].notna()
+    lead_df["opportunity_created"] = lead_df["opportunity_created"].where(
+        opp_created_mask, other=False
+    )
     opp_mask = lead_df["has_open_opportunity"].notna()
     lead_df["has_open_opportunity"] = lead_df["has_open_opportunity"].where(opp_mask, other=False)
 

@@ -201,6 +201,12 @@ LEAD_SNAPSHOT_FEATURES: tuple[FeatureSpec, ...] = (
         "sales",
     ),
     FeatureSpec(
+        "opportunity_created",
+        "boolean",
+        "Whether any opportunity was created by snapshot date (open or closed).",
+        "sales",
+    ),
+    FeatureSpec(
         "has_open_opportunity",
         "boolean",
         "Whether an open opportunity existed at snapshot date.",
