@@ -51,16 +51,12 @@ def generate(
         override=override_dict,
     )
 
-    generate_kwargs: dict[str, int] = {}
-    if n_accounts is not None:
-        generate_kwargs["n_accounts"] = n_accounts
-    if n_contacts is not None:
-        generate_kwargs["n_contacts"] = n_contacts
-    if n_leads is not None:
-        generate_kwargs["n_leads"] = n_leads
-
     typer.echo(f"Generating bundle with recipe '{recipe}', seed={seed}, mode={mode} ...")
-    bundle = gen.generate(**generate_kwargs)
+    bundle = gen.generate(
+        n_accounts=n_accounts,
+        n_contacts=n_contacts,
+        n_leads=n_leads,
+    )
 
     typer.echo(f"Writing bundle to {out} ...")
     bundle.save(out)
