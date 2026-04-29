@@ -5,7 +5,7 @@ Usage:
     python scripts/build_v4_snapshot.py OUTPUT_CSV
 
 Produces a 1000-row × 18-column CSV at ~30% conversion rate with:
-- Day-14 windowed features
+- Day-10 windowed features
 - Structured missingness (MAR for web_sessions, seniority)
 - Leakage trap (total_touches_all using full 90-day data)
 - Stratified subsampling
@@ -27,7 +27,7 @@ from leadforge.render.snapshots import build_snapshot
 # ---------------------------------------------------------------------------
 SEED = 42
 N_LEADS = 5000
-SNAPSHOT_DAY = 14
+SNAPSHOT_DAY = 10
 SUBSAMPLE_N = 1000
 TARGET_RATE = 0.30
 
@@ -72,7 +72,7 @@ _RENAME_MAP = {
 
 
 def generate_bundle(seed: int = SEED, n_leads: int = N_LEADS) -> pd.DataFrame:
-    """Generate a full bundle and return the day-14 snapshot."""
+    """Generate a full bundle and return the day-10 snapshot."""
     gen = Generator.from_recipe(
         "b2b_saas_procurement_v1",
         seed=seed,
