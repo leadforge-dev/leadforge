@@ -1,5 +1,7 @@
 # v4 Validation Specification
 
+> Companion to `design.md`. Column set, missingness rates, and AUC targets are defined there — this doc specifies the automated checks.
+
 ## Overview
 
 v4 validation operates at two levels:

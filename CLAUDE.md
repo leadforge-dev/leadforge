@@ -349,11 +349,9 @@ Exception: deliberately included leakage traps (e.g., `total_touches_all` in v4)
 ## v4 Dataset Plan
 
 The current focus is producing a v4 lead scoring intro dataset. See `docs/v4/` for:
-- `lead_scoring_v4_requirements.md` — what v4 must achieve
-- `dataset_contract.md` — schema contract and temporal gates
-- `engine_changes_spec.md` — what changes in the engine
+- `design.md` — requirements, contract, engine changes, implementation plan (single source of truth)
 - `validation_spec.md` — automated validation checks
-- `implementation_plan.md` — milestone breakdown
+- `planning_pr_review.md` — self-review of the planning PR and treatment plan
 
 ---
 
@@ -361,4 +359,4 @@ The current focus is producing a v4 lead scoring intro dataset. See `docs/v4/` f
 - Design decisions: `docs/leadforge_design_doc.md`
 - Architecture/spec: `docs/leadforge_architecture_spec.md`
 - Implementation roadmap: `docs/leadforge_implementation_plan.md`
-- v4 dataset plan: `docs/v4/implementation_plan.md`
+- v4 dataset plan: `docs/v4/design.md`
