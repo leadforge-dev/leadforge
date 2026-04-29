@@ -76,6 +76,14 @@ _EMPLOYEE_BAND_WEIGHTS = (0.35, 0.35, 0.20, 0.10)
 _REVENUE_BANDS = ("$1M-$10M", "$10M-$50M", "$50M-$200M", "$200M+")
 _REVENUE_BAND_WEIGHTS = (0.25, 0.40, 0.25, 0.10)
 
+# Revenue band → ACV midpoint heuristic.  Used by snapshots.py for expected_acv.
+REVENUE_BAND_MIDPOINTS: dict[str, int] = {
+    "$1M-$10M": 25_000,
+    "$10M-$50M": 55_000,
+    "$50M-$200M": 85_000,
+    "$200M+": 140_000,
+}
+
 _PROCESS_MATURITY_BANDS = ("low", "medium", "high")
 _PROCESS_MATURITY_BAND_WEIGHTS = (0.30, 0.45, 0.25)
 _PROCESS_MATURITY_MEANS = {"low": 0.25, "medium": 0.50, "high": 0.75}
@@ -473,7 +481,13 @@ def _apply_category_latent_correlations(
 
         else:
             # Lead-level fields (e.g. lead_source) — adjust linked contact latents.
+            # Deduplicate by contact_id: use the first lead's value to avoid
+            # stacking boosts when multiple leads share a contact.
+            seen_contacts: set[str] = set()
             for lead in result.leads:
+                if lead.contact_id in seen_contacts:
+                    continue
+                seen_contacts.add(lead.contact_id)
                 value = getattr(lead, field_name, None)
                 boost = boosts.get(str(value), 0.0) if value is not None else 0.0
                 if boost and lead.contact_id in lat.contact_latents:

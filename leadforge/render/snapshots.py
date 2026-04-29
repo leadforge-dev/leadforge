@@ -22,6 +22,7 @@ from leadforge.schema.entities import (
     TouchRow,
 )
 from leadforge.schema.features import LEAD_SNAPSHOT_FEATURES
+from leadforge.simulation.population import REVENUE_BAND_MIDPOINTS
 
 if TYPE_CHECKING:
     from leadforge.simulation.engine import SimulationResult
@@ -36,14 +37,6 @@ _SNAPSHOT_DTYPES = {f.name: f.dtype for f in LEAD_SNAPSHOT_FEATURES}
 # includes it here without any manual list maintenance.
 _ACCOUNT_JOIN_COLS = [f.name for f in LEAD_SNAPSHOT_FEATURES if f.category == "account"]
 _CONTACT_JOIN_COLS = [f.name for f in LEAD_SNAPSHOT_FEATURES if f.category == "contact"]
-
-# Revenue band → ACV midpoint for expected_acv fallback.
-_REVENUE_BAND_MIDPOINTS: dict[str, int] = {
-    "$1M-$10M": 25_000,
-    "$10M-$50M": 55_000,
-    "$50M-$200M": 85_000,
-    "$200M+": 140_000,
-}
 
 # Aggregated count columns that need zero-filling after left-merge.
 _INT_AGG_COLS = [
@@ -83,8 +76,10 @@ def build_snapshot(
             :func:`~leadforge.simulation.population.build_population`.
         horizon_days: Simulation horizon length.  Defaults to 90.
         snapshot_day: Optional windowed snapshot day.  When set, only events
-            within this many days of lead creation are included.  Default
-            ``None`` means use *horizon_days*.
+            with timestamps ``<= lead_created_at + timedelta(days=snapshot_day)``
+            are included (midnight-exclusive by construction, since the
+            simulation engine uses daily steps).  Default ``None`` means use
+            *horizon_days*.
 
     Returns:
         A ``pd.DataFrame`` with the columns specified in
@@ -289,7 +284,7 @@ def build_snapshot(
     lead_df = lead_df.merge(cont_df, on="contact_id", how="left")
 
     # expected_acv: opportunity ACV where available, else revenue band midpoint.
-    band_midpoint = lead_df["estimated_revenue_band"].map(_REVENUE_BAND_MIDPOINTS)
+    band_midpoint = lead_df["estimated_revenue_band"].map(REVENUE_BAND_MIDPOINTS)
     lead_df["expected_acv"] = lead_df["opportunity_estimated_acv"].fillna(band_midpoint)
 
     # -------------------------------------------------------------------

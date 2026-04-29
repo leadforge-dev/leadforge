@@ -501,6 +501,63 @@ def test_category_latent_correlations_deterministic() -> None:
     assert r1.latent_state.account_latents == r2.latent_state.account_latents
 
 
+def test_lead_source_boost_not_stacked_per_contact() -> None:
+    """A contact shared by N leads must receive the boost only once.
+
+    Regression test: previously, iterating over leads applied the boost once
+    per lead, so a contact with 3 leads of the same source got 3x the boost.
+    """
+    import copy
+
+    from leadforge.simulation.population import _apply_category_latent_correlations
+
+    # Use enough leads relative to contacts to guarantee shared contacts.
+    config = GenerationConfig(seed=42, n_accounts=30, n_contacts=90, n_leads=200)
+    gen = Generator.from_recipe("b2b_saas_procurement_v1", seed=42)
+    narrative = gen.world_spec.narrative
+    assert narrative is not None
+    graph = sample_hidden_graph(seed=42)
+    pop = build_population(config, narrative, graph)
+
+    # Find a contact with multiple leads of the same source.
+    from collections import defaultdict
+
+    contact_leads: dict[str, list] = defaultdict(list)
+    for lead in pop.leads:
+        contact_leads[lead.contact_id].append(lead)
+
+    target_cid = None
+    target_source = None
+    for cid, leads in contact_leads.items():
+        if len(leads) >= 2:
+            sources = [ld.lead_source for ld in leads]
+            if len(set(sources)) == 1:
+                target_cid = cid
+                target_source = sources[0]
+                break
+    assert target_cid is not None, "Need at least one shared contact for this test"
+
+    pop2 = copy.deepcopy(pop)
+    boost_val = 0.10
+    _apply_category_latent_correlations(
+        pop2,
+        {
+            "lead_source": {
+                "latent_trait": "latent_engagement_propensity",
+                "boosts": {target_source: boost_val},
+            },
+        },
+    )
+    original = pop.latent_state.contact_latents[target_cid]["latent_engagement_propensity"]
+    updated = pop2.latent_state.contact_latents[target_cid]["latent_engagement_propensity"]
+    delta = updated - original
+    # Should be exactly one boost, not N * boost.
+    assert abs(delta - boost_val) < 1e-9, (
+        f"Expected single boost {boost_val}, got delta {delta:.4f} "
+        f"(contact has {len(contact_leads[target_cid])} leads)"
+    )
+
+
 def test_channel_weights_zero_shares_falls_back_to_uniform() -> None:
     """If all GTM shares are 0, _channel_weights should return uniform weights."""
     narrative = _base_narrative()

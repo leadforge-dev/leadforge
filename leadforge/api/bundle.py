@@ -30,12 +30,18 @@ if TYPE_CHECKING:
     from leadforge.core.models import WorldBundle
 
 
-def write_bundle(bundle: WorldBundle, path: str) -> None:
+def write_bundle(
+    bundle: WorldBundle,
+    path: str,
+    generation_timestamp: str | None = None,
+) -> None:
     """Write *bundle* to disk at *path*.
 
     Args:
         bundle: Fully populated :class:`~leadforge.core.models.WorldBundle`.
         path: Destination directory (created if absent).
+        generation_timestamp: ISO-8601 UTC timestamp.  Defaults to now.
+            Pass a fixed value to produce byte-identical manifests.
 
     Raises:
         RuntimeError: if any of ``bundle.simulation_result``,
@@ -90,5 +96,6 @@ def write_bundle(bundle: WorldBundle, path: str) -> None:
         table_row_counts=table_row_counts,
         task_row_counts={CONVERTED_WITHIN_90_DAYS.task_id: task_row_counts},
         bundle_root=root,
+        generation_timestamp=generation_timestamp,
     )
     write_manifest(manifest, root)

@@ -19,9 +19,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-# Ensure leadforge is importable when running from repo root.
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 from leadforge.api.generator import Generator
 from leadforge.render.snapshots import build_snapshot
 
@@ -75,7 +72,7 @@ _RENAME_MAP = {
 
 
 def generate_bundle(seed: int = SEED, n_leads: int = N_LEADS) -> pd.DataFrame:
-    """Generate a full bundle and return the day-21 snapshot."""
+    """Generate a full bundle and return the day-14 snapshot."""
     gen = Generator.from_recipe(
         "b2b_saas_procurement_v1",
         seed=seed,
