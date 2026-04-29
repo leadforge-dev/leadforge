@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import typer
+
+from leadforge.core.exceptions import LeadforgeError
+from leadforge.core.serialization import load_json
 
 
 def inspect(
@@ -18,7 +20,11 @@ def inspect(
         typer.echo(f"Error: no manifest.json found in {root}", err=True)
         raise typer.Exit(1)
 
-    manifest = json.loads(manifest_path.read_text())
+    try:
+        manifest = load_json(manifest_path)
+    except LeadforgeError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1) from None
 
     typer.echo(f"Bundle: {root}")
     typer.echo(f"  Recipe:        {manifest.get('recipe_id', '?')}")

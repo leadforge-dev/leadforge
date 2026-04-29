@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from pathlib import Path
 
 import typer
+
+from leadforge.core.exceptions import LeadforgeError
+from leadforge.core.hashing import file_sha256
+from leadforge.core.serialization import load_json
 
 
 def validate(
@@ -24,7 +26,11 @@ def validate(
         typer.echo(f"FAIL: no manifest.json in {root}", err=True)
         raise typer.Exit(1)
 
-    manifest = json.loads(manifest_path.read_text())
+    try:
+        manifest = load_json(manifest_path)
+    except LeadforgeError as exc:
+        typer.echo(f"FAIL: {exc}", err=True)
+        raise typer.Exit(1) from None
 
     # ------------------------------------------------------------------
     # 2. Required top-level files
@@ -55,7 +61,7 @@ def validate(
 
         expected_sha = info.get("sha256")
         if expected_sha is not None:
-            actual_sha = _sha256(abs_path)
+            actual_sha = file_sha256(abs_path)
             if actual_sha != expected_sha:
                 errors.append(f"Table {table_name}: SHA-256 mismatch")
 
@@ -79,7 +85,7 @@ def validate(
 
             expected_sha = task_info.get(f"{split}_sha256")
             if expected_sha is not None:
-                actual_sha = _sha256(abs_path)
+                actual_sha = file_sha256(abs_path)
                 if actual_sha != expected_sha:
                     errors.append(f"Task {task_id}/{split}: SHA-256 mismatch")
 
@@ -133,12 +139,3 @@ def validate(
         raise typer.Exit(1)
 
     typer.echo(f"OK: bundle at {root} passed all checks.")
-
-
-def _sha256(path: Path) -> str:
-    """Return hex-encoded SHA-256 digest of *path*."""
-    h = hashlib.sha256()
-    with path.open("rb") as fh:
-        for chunk in iter(lambda: fh.read(65536), b""):
-            h.update(chunk)
-    return h.hexdigest()
