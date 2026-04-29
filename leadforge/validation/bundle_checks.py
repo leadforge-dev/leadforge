@@ -19,8 +19,13 @@ from leadforge.schema.features import LEAD_SNAPSHOT_FEATURES
 from leadforge.schema.relationships import ALL_CONSTRAINTS
 
 
-def validate_bundle(bundle_root: Path) -> list[str]:
+def validate_bundle(bundle_root: Path, *, include_realism: bool = True) -> list[str]:
     """Run all validation checks on the bundle at *bundle_root*.
+
+    Args:
+        bundle_root: Path to the bundle directory.
+        include_realism: If True (default), also run distributional sanity
+            and difficulty-adherence checks.
 
     Returns:
         A list of error strings.  An empty list means the bundle is valid.
@@ -37,6 +42,14 @@ def validate_bundle(bundle_root: Path) -> list[str]:
     errors.extend(_check_task_splits(bundle_root, manifest))
     errors.extend(_check_fk_integrity(tables))
     errors.extend(_check_leakage(bundle_root, manifest))
+
+    if include_realism:
+        from leadforge.validation.difficulty import check_difficulty
+        from leadforge.validation.realism import check_realism
+
+        errors.extend(check_realism(bundle_root))
+        errors.extend(check_difficulty(bundle_root))
+
     return errors
 
 
