@@ -153,9 +153,9 @@ def patch_population(pop: PopulationResult, scale: float = 1.0) -> None:
 
 def run_pipeline(label: str, gen: Generator, scale: float | None = None) -> None:
     """Generate, optionally patch, simulate, snapshot, subsample, measure."""
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  {label}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     config = gen._world_spec.config
     narrative = gen._world_spec.narrative
@@ -241,9 +241,9 @@ def main() -> None:
     results["scale_2.5"] = run_pipeline("PATCHED scale=2.5", gen4, scale=2.5)
 
     # Summary
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("  SUMMARY")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     for label, auc in results.items():
         print(f"  {label:<30s} AUC={auc:.3f}")
 
