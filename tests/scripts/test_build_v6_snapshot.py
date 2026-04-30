@@ -234,7 +234,7 @@ class TestSubsample:
 class TestInjectMissingness:
     @pytest.mark.parametrize("seed", [42, 99, 7])
     def test_missingness_rates_bounded(self, seed):
-        """Each column's missingness rate should stay under 15% across seeds."""
+        """Each column's missingness rate should stay under 10% across seeds."""
         df = _make_v6_df(n=2000, seed=seed)
         rng = np.random.RandomState(seed)
         result = inject_missingness(df, rng)
@@ -246,7 +246,7 @@ class TestInjectMissingness:
             "expected_acv",
         ]:
             rate = result[col].isna().mean()
-            assert rate < 0.15, f"{col} missingness rate {rate:.2%} exceeds 15%"
+            assert rate < 0.10, f"{col} missingness rate {rate:.2%} exceeds 10%"
 
     def test_expected_acv_gets_mcar(self):
         """expected_acv should have MCAR missingness."""

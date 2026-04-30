@@ -2,7 +2,7 @@
 
 v6 produces TWO exports:
 - **Student-safe**: no leakage columns.
-- **Instructor**: identical rows + one ``__leakage__touches_post_snapshot_11_90``
+- **Instructor**: identical rows + one ``__leakage__touches_post_snapshot_15_90``
   column computed from the simulator's actual event timeline (days 15..90).
 
 Key v6 changes over v5:
@@ -33,6 +33,7 @@ __all__ = [
     "SNAPSHOT_DAY",
     "SUBSAMPLE_N",
     "TARGET_RATE",
+    "assign_acquisition_wave",
     "cap_expected_acv",
     "compute_post_snapshot_touches",
     "derive_features",
@@ -55,9 +56,9 @@ TARGET_RATE = 0.30
 ACV_FLOOR = 18_000.0
 ACV_CAP = 120_000.0
 
-INSTRUCTOR_TRAP_COL = "__leakage__touches_post_snapshot_11_90"
+INSTRUCTOR_TRAP_COL = "__leakage__touches_post_snapshot_15_90"
 
-# v6 student column set: 20 features + 1 target = 21 columns.
+# v6 student column set: 19 features + 1 target = 20 columns.
 FINAL_COLUMNS_STUDENT = [
     "industry",
     "region",

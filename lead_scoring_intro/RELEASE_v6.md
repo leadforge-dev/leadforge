@@ -74,7 +74,7 @@ v6 is the sixth iteration of the lead scoring intro dataset, designed for **3–
 
 | Column | Type | Description |
 |---|---|---|
-| `__leakage__touches_post_snapshot_11_90` | int | Touch count in days 15–90 (post-snapshot) |
+| `__leakage__touches_post_snapshot_15_90` | int | Touch count in days 15–90 (post-snapshot) |
 
 ---
 
@@ -128,7 +128,7 @@ GBM reliably outperforms LR due to nonlinear interactions in the DGP (latent tra
 
 | Metric | Value |
 |---|---|
-| Column | `__leakage__touches_post_snapshot_11_90` |
+| Column | `__leakage__touches_post_snapshot_15_90` |
 | Seeds | 10 (42–51) |
 | Mean AUC delta | 0.0458 |
 | Min AUC delta | 0.0343 |
@@ -182,7 +182,7 @@ The trap is **causally grounded**: post-snapshot touches are higher for leads wi
 ### Instructor note: Leakage detection exercise
 
 Use `lead_scoring_intro_v6_instructor.csv` for a leakage detection exercise:
-- Students train with all columns including `__leakage__touches_post_snapshot_11_90`
+- Students train with all columns including `__leakage__touches_post_snapshot_15_90`
 - AUC jumps by ~0.046 on average
 - Challenge: identify which column is leaking and explain why
 - The trap is causally grounded (future engagement correlates with conversion via shared latent traits), making it a realistic example of temporal leakage

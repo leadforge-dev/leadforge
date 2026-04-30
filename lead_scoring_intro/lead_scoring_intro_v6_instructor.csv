@@ -1,4 +1,4 @@
-industry,region,company_size,company_revenue,contact_role,seniority,lead_source,opportunity_created,demo_completed,expected_acv,inbound_touches,outbound_touches,touches_week_1,touches_last_7_days,days_since_first_touch,web_sessions,sales_activities,days_since_last_touch,acquisition_wave,converted,__leakage__touches_post_snapshot_11_90
+industry,region,company_size,company_revenue,contact_role,seniority,lead_source,opportunity_created,demo_completed,expected_acv,inbound_touches,outbound_touches,touches_week_1,touches_last_7_days,days_since_first_touch,web_sessions,sales_activities,days_since_last_touch,acquisition_wave,converted,__leakage__touches_post_snapshot_15_90
 healthcare_non_clinical,US,200-499,$50M-$200M,procurement_manager,individual_contributor,inbound_marketing,1,0,85000.0,16,0,9,7,13.0,3,2,3.0,C,1,10
 professional_services,US,1000-1999,$50M-$200M,procurement_manager,c_suite,sdr_outbound,0,0,85000.0,0,9,4,5,13.0,2,0,0.0,B,0,14
 logistics,UK,1000-1999,$1M-$10M,vp_finance,c_suite,inbound_marketing,0,0,25000.0,8,0,5,3,14.0,1,2,0.0,A,0,18
