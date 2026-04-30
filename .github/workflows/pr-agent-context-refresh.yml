@@ -3,7 +3,7 @@ run-name: >-
   ${{
     github.event_name == 'workflow_dispatch' &&
     format(
-      'scheduled refresh PR #{0} @ {1}',
+      'dispatch refresh PR #{0} @ {1}',
       github.event.inputs.pull_request_number,
       github.event.inputs.pull_request_head_sha
     ) ||
@@ -52,7 +52,8 @@ on:
         type: string
 
 # SHA-aware concurrency: workflow_dispatch runs key on PR+SHA so same-PR/different-SHA
-# dispatches are not cancelled, but duplicate dispatches for the same PR+SHA are.
+# dispatches can run independently. Direct event-triggered refreshes cancel older in-flight runs;
+# workflow_dispatch refreshes share the PR+SHA group but are allowed to finish instead of being cancelled.
 concurrency:
   group: >-
     pr-agent-context-refresh-${{
