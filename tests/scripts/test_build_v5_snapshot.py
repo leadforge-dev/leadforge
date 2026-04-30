@@ -232,7 +232,7 @@ class TestSubsample:
     def test_n_larger_than_input_caps_gracefully(self):
         """Requesting more rows than available caps at available count."""
         df = _make_v5_df(n=50)
-        with pytest.warns(UserWarning):
+        with pytest.warns(UserWarning, match="available"):
             result = subsample(df, seed=42, n=200, target_rate=0.30)
         # Output should contain all available rows (capped)
         assert len(result) <= len(df)
