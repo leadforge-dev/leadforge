@@ -1,37 +1,23 @@
-"""Tests for scripts/build_v5_snapshot.py pipeline functions."""
+"""Tests for leadforge.pipelines.build_v5 pipeline functions."""
 
 from __future__ import annotations
-
-import importlib.util
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
 
-# ---------------------------------------------------------------------------
-# Import the script module (not in a package, so use importlib)
-# ---------------------------------------------------------------------------
-_SCRIPT_PATH = Path(__file__).resolve().parents[2] / "scripts" / "build_v5_snapshot.py"
-
-spec = importlib.util.spec_from_file_location("build_v5_snapshot", _SCRIPT_PATH)
-assert spec is not None
-assert spec.loader is not None
-build_v5 = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(build_v5)
-
-# Re-export for convenience
-subsample = build_v5.subsample
-inject_missingness = build_v5.inject_missingness
-derive_binary_features = build_v5.derive_binary_features
-cap_expected_acv = build_v5.cap_expected_acv
-rename_and_select = build_v5.rename_and_select
-boost_leakage_trap = build_v5.boost_leakage_trap
-ACV_FLOOR = build_v5.ACV_FLOOR
-ACV_CAP = build_v5.ACV_CAP
-_FINAL_COLUMNS = build_v5._FINAL_COLUMNS
-_RENAME_MAP = build_v5._RENAME_MAP
-
+from leadforge.pipelines.build_v5 import (
+    ACV_CAP,
+    ACV_FLOOR,
+    FINAL_COLUMNS,
+    RENAME_MAP,
+    boost_leakage_trap,
+    cap_expected_acv,
+    derive_binary_features,
+    inject_missingness,
+    rename_and_select,
+    subsample,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -157,7 +143,7 @@ class TestCapExpectedACV:
 class TestRenameAndSelect:
     def test_output_columns_match_final(self):
         df = _make_v5_df()
-        assert list(df.columns) == _FINAL_COLUMNS
+        assert list(df.columns) == FINAL_COLUMNS
 
     def test_converted_is_int(self):
         df = _make_v5_df()
@@ -177,18 +163,18 @@ class TestRenameAndSelect:
         df = derive_binary_features(snapshot)
         df = cap_expected_acv(df)
         result = rename_and_select(df)
-        for new_name in _RENAME_MAP.values():
+        for new_name in RENAME_MAP.values():
             assert new_name in result.columns
 
     def test_extra_columns_are_dropped(self):
-        """Columns not in _FINAL_COLUMNS should be silently dropped."""
+        """Columns not in FINAL_COLUMNS should be silently dropped."""
         snapshot = _make_snapshot()
         snapshot["extra_col"] = 999
         df = derive_binary_features(snapshot)
         df = cap_expected_acv(df)
         result = rename_and_select(df)
         assert "extra_col" not in result.columns
-        assert list(result.columns) == _FINAL_COLUMNS
+        assert list(result.columns) == FINAL_COLUMNS
 
 
 # ---------------------------------------------------------------------------
@@ -293,7 +279,7 @@ class TestInjectMissingness:
             "days_since_last_touch",
             "days_since_first_touch",
         }
-        for col in _FINAL_COLUMNS:
+        for col in FINAL_COLUMNS:
             if col not in miss_cols:
                 orig_nan = df[col].isna().sum()
                 new_nan = result[col].isna().sum()
