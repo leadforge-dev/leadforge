@@ -199,7 +199,8 @@ def boost_leakage_trap(df: pd.DataFrame, rng: np.random.RandomState) -> pd.DataF
     trap_col = "__leakage__total_touches_90d"
     n = len(df)
     converted = df["converted"].values
-    # Converted leads: add 0–3 extra "post-conversion" touches
+    # Converted leads: add a Poisson(1)-distributed number of extra
+    # "post-conversion" touches (typically small, but unbounded)
     boost = converted * rng.poisson(1, size=n)
     df[trap_col] = df[trap_col] + boost
     return df

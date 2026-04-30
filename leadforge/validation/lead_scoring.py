@@ -171,6 +171,8 @@ class ValidationReport:
     value_metrics: list[ValueMetrics] = field(default_factory=list)
     trap_metrics: list[TrapMetrics] = field(default_factory=list)
     missingness: dict[str, float] = field(default_factory=dict)
+    n_rows: int = 0
+    test_size: float = 0.30
 
     @property
     def passed(self) -> bool:
@@ -294,9 +296,10 @@ class ValidationReport:
             lines.append("")
             lines.append("### Baseline performance")
             lines.append("")
+            train_pct = int(round((1 - self.test_size) * 100))
+            test_pct = int(round(self.test_size * 100))
             lines.append(
-                f"Evaluated on a {100 - int(100 * 0.30)}/30 stratified "
-                f"hold-out split (seed {b.seed})."
+                f"Evaluated on a {train_pct}/{test_pct} stratified hold-out split (seed {b.seed})."
             )
             lines.append("")
             lines.append("| Metric | Value |")
@@ -345,7 +348,7 @@ class ValidationReport:
             total = 0
             for col, rate in sorted(self.missingness.items(), key=lambda x: -x[1]):
                 if rate > 0:
-                    n = int(round(rate * 1000))
+                    n = int(round(rate * self.n_rows))
                     total += n
                     lines.append(f"| `{col}` | {n} | {rate:.1%} |")
             lines.append(f"| **Total** | **{total}** | |")
@@ -443,7 +446,7 @@ def _evaluate_split(
     pr_auc = float(average_precision_score(y_test, probs))
     base_rate = float(y_test.mean())
 
-    # Precision@K, Recall@K, Lift@K  (stable sort by -prob, tie-break by index)
+    # Precision@K, Recall@K, Lift@K  (stable sort by -prob; ties preserve array order)
     order = np.argsort(-probs, kind="stable")
     y_sorted = y_test.values[order]
 
@@ -545,6 +548,7 @@ def _check_schema(df: pd.DataFrame, cfg: ValidationConfig) -> list[CheckResult]:
     if TARGET not in df.columns:
         results.append(CheckResult("target_exists", False, f"'{TARGET}' column missing"))
         return results
+    results.append(CheckResult("target_exists", True))
     target_vals = set(df[TARGET].dropna().unique())
     if not target_vals <= {0, 1}:
         results.append(CheckResult("target_binary", False, f"target values: {target_vals}"))
@@ -728,9 +732,9 @@ def _evaluate_trap(
 
     all_trap_metrics = []
     all_checks = []
+    all_leakage = set(leakage_cols)
 
     for trap_col in leakage_cols:
-        exclude_trap = {trap_col}
         seeds = list(range(cfg.trap_seed_start, cfg.trap_seed_start + cfg.trap_n_seeds))
         deltas_auc = []
         deltas_pr_auc = []
@@ -738,14 +742,14 @@ def _evaluate_trap(
         for seed in seeds:
             m_without = _evaluate_split(
                 df,
-                exclude_cols=exclude_trap,
+                exclude_cols=all_leakage,
                 seed=seed,
                 test_size=cfg.test_size,
                 ks=(),
             )
             m_with = _evaluate_split(
                 df,
-                exclude_cols=None,
+                exclude_cols=all_leakage - {trap_col},
                 seed=seed,
                 test_size=cfg.test_size,
                 ks=(),
@@ -815,11 +819,15 @@ def validate_dataset(
     """
     cfg = cfg or ValidationConfig()
     df = pd.read_csv(csv_path)
-    report = ValidationReport(csv_path=str(csv_path))
+    report = ValidationReport(csv_path=str(csv_path), n_rows=len(df), test_size=cfg.test_size)
 
     # Schema checks
-    report.checks.extend(_check_schema(df, cfg))
+    schema_checks = _check_schema(df, cfg)
+    report.checks.extend(schema_checks)
     if TARGET not in df.columns:
+        return report
+    # Short-circuit if target is unusable (non-binary or has NaNs)
+    if any(not c.passed for c in schema_checks if c.name in ("target_binary", "target_no_missing")):
         return report
 
     # Conversion rate
