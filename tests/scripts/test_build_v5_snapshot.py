@@ -19,11 +19,6 @@ from leadforge.pipelines.build_v5 import (
     subsample,
 )
 
-# Backwards-compatible aliases used in tests below.
-_FINAL_COLUMNS = FINAL_COLUMNS
-_RENAME_MAP = RENAME_MAP
-
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -148,7 +143,7 @@ class TestCapExpectedACV:
 class TestRenameAndSelect:
     def test_output_columns_match_final(self):
         df = _make_v5_df()
-        assert list(df.columns) == _FINAL_COLUMNS
+        assert list(df.columns) == FINAL_COLUMNS
 
     def test_converted_is_int(self):
         df = _make_v5_df()
@@ -168,18 +163,18 @@ class TestRenameAndSelect:
         df = derive_binary_features(snapshot)
         df = cap_expected_acv(df)
         result = rename_and_select(df)
-        for new_name in _RENAME_MAP.values():
+        for new_name in RENAME_MAP.values():
             assert new_name in result.columns
 
     def test_extra_columns_are_dropped(self):
-        """Columns not in _FINAL_COLUMNS should be silently dropped."""
+        """Columns not in FINAL_COLUMNS should be silently dropped."""
         snapshot = _make_snapshot()
         snapshot["extra_col"] = 999
         df = derive_binary_features(snapshot)
         df = cap_expected_acv(df)
         result = rename_and_select(df)
         assert "extra_col" not in result.columns
-        assert list(result.columns) == _FINAL_COLUMNS
+        assert list(result.columns) == FINAL_COLUMNS
 
 
 # ---------------------------------------------------------------------------
@@ -284,7 +279,7 @@ class TestInjectMissingness:
             "days_since_last_touch",
             "days_since_first_touch",
         }
-        for col in _FINAL_COLUMNS:
+        for col in FINAL_COLUMNS:
             if col not in miss_cols:
                 orig_nan = df[col].isna().sum()
                 new_nan = result[col].isna().sum()

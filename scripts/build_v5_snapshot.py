@@ -23,9 +23,7 @@ import pandas as pd
 
 from leadforge.api.generator import Generator
 from leadforge.pipelines.build_v5 import (
-    FINAL_COLUMNS,
     N_LEADS,
-    RENAME_MAP,
     SEED,
     SNAPSHOT_DAY,
     boost_leakage_trap,
@@ -36,11 +34,6 @@ from leadforge.pipelines.build_v5 import (
     subsample,
 )
 from leadforge.render.snapshots import build_snapshot
-
-# Backwards-compatible aliases for the underscore-prefixed names.
-_FINAL_COLUMNS = FINAL_COLUMNS
-_RENAME_MAP = RENAME_MAP
-
 
 # ---------------------------------------------------------------------------
 # Orchestration (stays in script — depends on Generator)
