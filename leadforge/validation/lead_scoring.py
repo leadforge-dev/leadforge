@@ -411,10 +411,10 @@ def _get_feature_cols(
     for col in df.columns:
         if col in exclude:
             continue
-        if df[col].dtype == "object" or isinstance(df[col].dtype, pd.CategoricalDtype):
-            cat_cols.append(col)
-        else:
+        if pd.api.types.is_numeric_dtype(df[col]):
             num_cols.append(col)
+        else:
+            cat_cols.append(col)
     return cat_cols, num_cols
 
 
@@ -650,11 +650,11 @@ def _check_group_determinism(
     """No categorical/binary group should be near-deterministic."""
     # Gather all categorical + binary columns present in the data
     check_cols = [c for c in EXPECTED_CAT_FEATURES + EXPECTED_BINARY_FEATURES if c in df.columns]
-    # Also include any object/category dtype columns not in the expected list
+    # Also include any non-numeric or binary columns not in the expected list
     for col in df.columns:
         if col == TARGET or col in check_cols:
             continue
-        if df[col].dtype == "object" or set(df[col].dropna().unique()) <= {0, 1}:
+        if not pd.api.types.is_numeric_dtype(df[col]) or set(df[col].dropna().unique()) <= {0, 1}:
             check_cols.append(col)
 
     violations = []
