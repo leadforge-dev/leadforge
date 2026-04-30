@@ -22,7 +22,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 from leadforge.api.generator import Generator
@@ -66,8 +65,6 @@ def generate_bundle(seed: int = SEED, n_leads: int = N_LEADS):
 
 def build_v6_datasets(seed: int = SEED) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Full pipeline: generate -> derive -> process -> split into student + instructor."""
-    rng = np.random.RandomState(seed)
-
     print("Generating bundle (with latent touch intensity)...", file=sys.stderr)
     snapshot, bundle = generate_bundle(seed=seed)
     conv = snapshot["converted_within_90_days"].mean()
@@ -87,14 +84,14 @@ def build_v6_datasets(seed: int = SEED) -> tuple[pd.DataFrame, pd.DataFrame]:
     snapshot[INSTRUCTOR_TRAP_COL] = trap_series.values
 
     df = derive_features(snapshot)
-    df = softcap_expected_acv(df, rng)
-    df = assign_acquisition_wave(df, rng)
+    df = softcap_expected_acv(df, seed)
+    df = assign_acquisition_wave(df, seed)
 
     # Rename and select (instructor first to keep trap column)
     df_instructor = rename_and_select(df, instructor=True)
 
     print("Subsampling...", file=sys.stderr)
-    df_instructor = subsample(df_instructor, rng)
+    df_instructor = subsample(df_instructor, seed)
     print(
         f"  Subsampled: {len(df_instructor)} rows, "
         f"conversion={df_instructor['converted'].mean():.1%}",
@@ -102,7 +99,7 @@ def build_v6_datasets(seed: int = SEED) -> tuple[pd.DataFrame, pd.DataFrame]:
     )
 
     print("Injecting missingness...", file=sys.stderr)
-    df_instructor = inject_missingness(df_instructor, rng)
+    df_instructor = inject_missingness(df_instructor, seed)
 
     # Student version: drop the trap column
     student_cols = [c for c in df_instructor.columns if not c.startswith("__leakage__")]

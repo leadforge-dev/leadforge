@@ -16,6 +16,8 @@ Usage::
 import hashlib
 import random
 
+import numpy as np
+
 
 class RNGRoot:
     """Single seeded RNG root for a generation run.
@@ -44,6 +46,17 @@ class RNGRoot:
         digest = hashlib.sha256(f"{self._seed}:{name}".encode()).digest()
         derived_seed = int.from_bytes(digest[:8], "little")
         return random.Random(derived_seed)  # noqa: S311
+
+    def numpy_child(self, name: str) -> np.random.RandomState:
+        """Return a deterministic ``np.random.RandomState`` for the named substream.
+
+        Same derivation as ``child()`` but returns a numpy RandomState,
+        suitable for pandas/numpy stochastic operations.
+        """
+        digest = hashlib.sha256(f"{self._seed}:{name}".encode()).digest()
+        # RandomState seed must be in [0, 2**32); use 4 bytes.
+        derived_seed = int.from_bytes(digest[:4], "little")
+        return np.random.RandomState(derived_seed)  # noqa: NPY002
 
     def __repr__(self) -> str:
         return f"RNGRoot(seed={self._seed})"

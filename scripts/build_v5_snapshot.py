@@ -18,7 +18,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 from leadforge.api.generator import Generator
@@ -59,8 +58,6 @@ def generate_bundle(seed: int = SEED, n_leads: int = N_LEADS) -> pd.DataFrame:
 
 def build_v5_dataset(seed: int = SEED) -> pd.DataFrame:
     """Full pipeline: generate → derive → cap ACV → rename → subsample → boost → missingness."""
-    rng = np.random.RandomState(seed)
-
     print("Generating bundle...", file=sys.stderr)
     snapshot = generate_bundle(seed=seed)
     conv = snapshot["converted_within_90_days"].mean()
@@ -74,14 +71,14 @@ def build_v5_dataset(seed: int = SEED) -> pd.DataFrame:
     df = rename_and_select(df)
 
     print("Subsampling...", file=sys.stderr)
-    df = subsample(df, rng)
+    df = subsample(df, seed)
     print(f"  Subsampled: {len(df)} rows, conversion={df['converted'].mean():.1%}", file=sys.stderr)
 
     print("Boosting leakage trap...", file=sys.stderr)
-    df = boost_leakage_trap(df, rng)
+    df = boost_leakage_trap(df, seed)
 
     print("Injecting missingness...", file=sys.stderr)
-    df = inject_missingness(df, rng)
+    df = inject_missingness(df, seed)
 
     return df
 

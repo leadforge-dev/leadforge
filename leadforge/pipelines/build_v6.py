@@ -16,10 +16,12 @@ Key v6 changes over v5:
 
 from __future__ import annotations
 
-import sys
+import warnings
 
 import numpy as np
 import pandas as pd
+
+from leadforge.core.rng import RNGRoot
 
 __all__ = [
     "ACV_CAP",
@@ -113,7 +115,7 @@ def derive_features(df: pd.DataFrame) -> pd.DataFrame:
 
 def softcap_expected_acv(
     df: pd.DataFrame,
-    rng: np.random.RandomState,
+    seed: int,
     floor: float = ACV_FLOOR,
     cap: float = ACV_CAP,
 ) -> pd.DataFrame:
@@ -122,6 +124,7 @@ def softcap_expected_acv(
     Values below floor are clipped. Values above cap are pulled toward cap
     with additive noise so they cluster near the cap rather than pile at it.
     """
+    rng = RNGRoot(seed).numpy_child("softcap_acv")
     df = df.copy()
     acv = df["expected_acv"].copy()
 
@@ -148,12 +151,13 @@ def cap_expected_acv(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def assign_acquisition_wave(df: pd.DataFrame, rng: np.random.RandomState) -> pd.DataFrame:
+def assign_acquisition_wave(df: pd.DataFrame, seed: int) -> pd.DataFrame:
     """Assign acquisition_wave (A, B, C) based on lead index position.
 
     Waves A/B/C are roughly chronological: first third = A, middle = B,
     last third = C. A small amount of noise is added at the boundaries.
     """
+    rng = RNGRoot(seed).numpy_child("acquisition_wave")
     df = df.copy()
     n = len(df)
     waves = np.empty(n, dtype=object)
@@ -222,22 +226,29 @@ def rename_and_select(
 
 def subsample(
     df: pd.DataFrame,
-    rng: np.random.RandomState,
+    seed: int,
     n: int = SUBSAMPLE_N,
     target_rate: float = TARGET_RATE,
 ) -> pd.DataFrame:
     """Stratified subsample to n rows at target_rate conversion."""
+    rng = RNGRoot(seed).numpy_child("subsample")
     positives = df[df["converted"] == 1]
     negatives = df[df["converted"] == 0]
     n_pos = int(n * target_rate)
     n_neg = n - n_pos
 
     if len(positives) < n_pos:
-        print(f"WARNING: only {len(positives)} positives, need {n_pos}", file=sys.stderr)
+        warnings.warn(
+            f"only {len(positives)} positives available, need {n_pos}",
+            stacklevel=2,
+        )
         n_pos = len(positives)
         n_neg = n - n_pos
     if len(negatives) < n_neg:
-        print(f"WARNING: only {len(negatives)} negatives, need {n_neg}", file=sys.stderr)
+        warnings.warn(
+            f"only {len(negatives)} negatives available, need {n_neg}",
+            stacklevel=2,
+        )
         n_neg = len(negatives)
 
     pos_sample = positives.sample(n=n_pos, random_state=rng)
@@ -247,7 +258,7 @@ def subsample(
     )
 
 
-def inject_missingness(df: pd.DataFrame, rng: np.random.RandomState) -> pd.DataFrame:
+def inject_missingness(df: pd.DataFrame, seed: int) -> pd.DataFrame:
     """Apply structured missingness per the v6 contract.
 
     Patterns:
@@ -258,6 +269,7 @@ def inject_missingness(df: pd.DataFrame, rng: np.random.RandomState) -> pd.DataF
     5. Structural + MCAR: days_since_first_touch — NaN when no touches + 2% MCAR
     6. MCAR: days_since_last_touch — additional 3% on top of structural
     """
+    rng = RNGRoot(seed).numpy_child("missingness")
     df = df.copy()
     n = len(df)
 
