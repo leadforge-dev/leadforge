@@ -135,6 +135,7 @@ class TestSchemaChecks:
                 "target_exists",
                 "target_binary",
                 "target_no_missing",
+                "target_both_classes",
                 "no_banned_columns",
                 "no_id_columns",
                 "duplicates",
@@ -171,6 +172,20 @@ class TestSchemaChecks:
         binary_check = next(c for c in report.checks if c.name == "target_binary")
         assert not binary_check.passed
         assert report.baseline is None
+
+    def test_single_class_target_short_circuits(self, tmp_path):
+        df = _make_dataset(n=200)
+        df["converted"] = 0  # all negatives
+        path = _save(df, tmp_path, "single_class.csv")
+        report = validate_dataset(path)
+        both = next(c for c in report.checks if c.name == "target_both_classes")
+        assert not both.passed
+        assert report.baseline is None
+
+    def test_target_both_classes_passes(self, good_csv):
+        report = validate_dataset(good_csv)
+        both = next(c for c in report.checks if c.name == "target_both_classes")
+        assert both.passed
 
     def test_banned_columns_detected(self, tmp_path):
         df = _make_dataset(n=200, include_leakage=False)
@@ -463,6 +478,16 @@ class TestValueMetrics:
         assert vm.captured_acv_by_prob >= 0
         assert vm.captured_acv_by_ev >= 0
 
+    def test_value_metrics_with_nan_acv(self, tmp_path):
+        """NaN in expected_acv should not propagate NaN into value metrics."""
+        df = _make_dataset(n=200, include_leakage=False)
+        df.loc[:9, "expected_acv"] = np.nan
+        path = _save(df, tmp_path)
+        report = validate_dataset(path, ValidationConfig(enforce_row_count=False))
+        for vm in report.value_metrics:
+            assert not np.isnan(vm.captured_acv_by_prob)
+            assert not np.isnan(vm.captured_acv_by_ev)
+
     def test_no_acv_column_returns_empty(self, tmp_path):
         df = _make_dataset(n=200, include_leakage=False).drop(columns=["expected_acv"])
         path = _save(df, tmp_path)
@@ -507,6 +532,15 @@ class TestReport:
         assert "passed" in d
         assert "checks" in d
         assert isinstance(d["checks"], list)
+
+    def test_to_dict_includes_pr_auc_deltas(self, good_csv):
+        """to_dict should include PR-AUC deltas for trap metrics."""
+        report = validate_dataset(good_csv)
+        if report.trap_metrics:
+            d = report.to_dict()
+            for tm in d["trap_metrics"]:
+                assert "deltas_pr_auc" in tm
+                assert "mean_delta_pr_auc" in tm
 
     def test_emit_release_snippet(self, good_csv):
         report = validate_dataset(good_csv)

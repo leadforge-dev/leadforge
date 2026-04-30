@@ -279,6 +279,8 @@ class ValidationReport:
                     "max_delta_auc": round(tm.max_delta_auc, 4),
                     "seeds": tm.seeds,
                     "deltas_auc": [round(d, 4) for d in tm.deltas_auc],
+                    "mean_delta_pr_auc": round(float(np.mean(tm.deltas_pr_auc)), 4),
+                    "deltas_pr_auc": [round(d, 4) for d in tm.deltas_pr_auc],
                 }
                 for tm in self.trap_metrics
             ]
@@ -502,7 +504,7 @@ def _evaluate_value_aware(
     pipe.fit(x_train, y_train)
     probs = pipe.predict_proba(x_test)[:, 1]
 
-    test_acv = df.loc[x_test.index, "expected_acv"].values
+    test_acv = pd.to_numeric(df.loc[x_test.index, "expected_acv"], errors="coerce").fillna(0).values
     test_converted = y_test.values
     expected_value = probs * test_acv
 
@@ -558,6 +560,13 @@ def _check_schema(df: pd.DataFrame, cfg: ValidationConfig) -> list[CheckResult]:
         results.append(CheckResult("target_no_missing", False, "target has missing values"))
     else:
         results.append(CheckResult("target_no_missing", True))
+    # Both classes must be present for stratified splitting
+    if target_vals == {0, 1}:
+        results.append(CheckResult("target_both_classes", True))
+    else:
+        results.append(
+            CheckResult("target_both_classes", False, f"need both {{0, 1}}, got {target_vals}")
+        )
 
     # Banned columns
     present = BANNED_COLUMNS & set(df.columns)
@@ -826,8 +835,12 @@ def validate_dataset(
     report.checks.extend(schema_checks)
     if TARGET not in df.columns:
         return report
-    # Short-circuit if target is unusable (non-binary or has NaNs)
-    if any(not c.passed for c in schema_checks if c.name in ("target_binary", "target_no_missing")):
+    # Short-circuit if target is unusable (non-binary, has NaNs, or single class)
+    if any(
+        not c.passed
+        for c in schema_checks
+        if c.name in ("target_binary", "target_no_missing", "target_both_classes")
+    ):
         return report
 
     # Conversion rate
