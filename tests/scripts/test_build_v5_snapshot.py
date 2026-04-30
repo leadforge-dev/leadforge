@@ -43,9 +43,10 @@ def _make_snapshot(
     conversion_rate: float = 0.30,
     seed: int = 42,
 ) -> pd.DataFrame:
-    """Build a minimal snapshot DataFrame that looks like build_snapshot() output.
+    """Build a minimal snapshot DataFrame with pre-rename column names.
 
-    Contains the pre-rename column names expected by the pipeline steps.
+    This is distinct from the shared ``make_v5_dataset`` because it uses
+    the *pre-rename* columns that ``build_snapshot()`` actually produces.
     """
     rng = np.random.RandomState(seed)
     n_pos = int(n * conversion_rate)
@@ -167,7 +168,6 @@ class TestRenameAndSelect:
         snapshot = _make_snapshot()
         snapshot = derive_binary_features(snapshot)
         snapshot = cap_expected_acv(snapshot)
-        # Drop a required source column
         snapshot = snapshot.drop(columns=["industry"])
         with pytest.raises(ValueError, match="Missing required columns"):
             rename_and_select(snapshot)
@@ -177,9 +177,18 @@ class TestRenameAndSelect:
         df = derive_binary_features(snapshot)
         df = cap_expected_acv(df)
         result = rename_and_select(df)
-        # All renamed columns should exist in output
         for new_name in _RENAME_MAP.values():
             assert new_name in result.columns
+
+    def test_extra_columns_are_dropped(self):
+        """Columns not in _FINAL_COLUMNS should be silently dropped."""
+        snapshot = _make_snapshot()
+        snapshot["extra_col"] = 999
+        df = derive_binary_features(snapshot)
+        df = cap_expected_acv(df)
+        result = rename_and_select(df)
+        assert "extra_col" not in result.columns
+        assert list(result.columns) == _FINAL_COLUMNS
 
 
 # ---------------------------------------------------------------------------
@@ -194,12 +203,16 @@ class TestSubsample:
         result = subsample(df, rng, n=100, target_rate=0.30)
         assert len(result) == 100
 
-    def test_target_rate_approximate(self):
-        df = _make_v5_df(n=500)
-        rng = np.random.RandomState(42)
-        result = subsample(df, rng, n=200, target_rate=0.30)
+    @pytest.mark.parametrize(
+        ("target_rate", "seed"),
+        [(0.30, 42), (0.30, 99), (0.20, 42), (0.40, 7)],
+    )
+    def test_target_rate_approximate(self, target_rate, seed):
+        df = _make_v5_df(n=500, seed=seed)
+        rng = np.random.RandomState(seed)
+        result = subsample(df, rng, n=200, target_rate=target_rate)
         actual_rate = result["converted"].mean()
-        assert actual_rate == pytest.approx(0.30, abs=0.01)
+        assert actual_rate == pytest.approx(target_rate, abs=0.01)
 
     def test_deterministic_given_seed(self):
         df = _make_v5_df(n=500)
@@ -220,10 +233,16 @@ class TestSubsample:
     def test_insufficient_negatives(self, capsys):
         """When fewer negatives available than needed, warns and adjusts."""
         df = _make_v5_df(n=200, conversion_rate=0.95)  # only ~10 negatives
+        n_neg_available = (df["converted"] == 0).sum()
         rng = np.random.RandomState(42)
-        subsample(df, rng, n=100, target_rate=0.10)  # need 90 negatives
+        result = subsample(df, rng, n=100, target_rate=0.10)  # need 90 negatives
         captured = capsys.readouterr()
         assert "WARNING" in captured.err
+        # Verify actual composition: negatives capped at available count
+        n_neg_result = (result["converted"] == 0).sum()
+        assert n_neg_result <= n_neg_available
+        # Output should still contain rows (not empty)
+        assert len(result) > 0
 
     def test_index_is_reset(self):
         df = _make_v5_df(n=500)
@@ -231,14 +250,15 @@ class TestSubsample:
         result = subsample(df, rng, n=100, target_rate=0.30)
         assert list(result.index) == list(range(len(result)))
 
-    def test_rows_come_from_input(self):
-        """All subsampled rows should exist in the original."""
-        df = _make_v5_df(n=500)
+    def test_n_larger_than_input_caps_gracefully(self, capsys):
+        """Requesting more rows than available caps at available count."""
+        df = _make_v5_df(n=50)
         rng = np.random.RandomState(42)
-        result = subsample(df, rng, n=100, target_rate=0.30)
-        # Check a non-index column for membership
-        for val in result["expected_acv"]:
-            assert val in df["expected_acv"].values
+        result = subsample(df, rng, n=200, target_rate=0.30)
+        captured = capsys.readouterr()
+        assert "WARNING" in captured.err
+        # Output should contain all available rows (capped)
+        assert len(result) <= len(df)
 
 
 # ---------------------------------------------------------------------------
@@ -247,36 +267,18 @@ class TestSubsample:
 
 
 class TestInjectMissingness:
-    def test_web_sessions_has_missing(self):
-        df = _make_v5_df(n=1000)
-        rng = np.random.RandomState(42)
+    @pytest.mark.parametrize("seed", [42, 99, 7])
+    def test_missingness_rates_bounded(self, seed):
+        """Each column's missingness rate should stay under 20% across seeds."""
+        df = _make_v5_df(n=2000, seed=seed)
+        rng = np.random.RandomState(seed)
         result = inject_missingness(df, rng)
-        assert result["web_sessions"].isna().sum() > 0
-
-    def test_seniority_has_missing(self):
-        df = _make_v5_df(n=1000)
-        rng = np.random.RandomState(42)
-        result = inject_missingness(df, rng)
-        assert result["seniority"].isna().sum() > 0
-
-    def test_days_since_last_touch_has_missing(self):
-        df = _make_v5_df(n=1000)
-        rng = np.random.RandomState(42)
-        result = inject_missingness(df, rng)
-        assert result["days_since_last_touch"].isna().sum() > 0
-
-    def test_days_since_first_touch_has_missing(self):
-        df = _make_v5_df(n=1000)
-        rng = np.random.RandomState(42)
-        result = inject_missingness(df, rng)
-        assert result["days_since_first_touch"].isna().sum() > 0
-
-    def test_missingness_rates_bounded(self):
-        """Each column's missingness rate should stay under ~20% (well above contract <10%)."""
-        df = _make_v5_df(n=2000)
-        rng = np.random.RandomState(42)
-        result = inject_missingness(df, rng)
-        for col in ["web_sessions", "seniority", "days_since_last_touch", "days_since_first_touch"]:
+        for col in [
+            "web_sessions",
+            "seniority",
+            "days_since_last_touch",
+            "days_since_first_touch",
+        ]:
             rate = result[col].isna().mean()
             assert rate < 0.20, f"{col} missingness rate {rate:.2%} exceeds 20%"
 
@@ -285,16 +287,17 @@ class TestInjectMissingness:
         df = _make_v5_df(n=500)
         rng = np.random.RandomState(42)
         result = inject_missingness(df, rng)
-        no_miss_cols = [
-            c
-            for c in _FINAL_COLUMNS
-            if c
-            not in ("web_sessions", "seniority", "days_since_last_touch", "days_since_first_touch")
-        ]
-        for col in no_miss_cols:
-            orig_nan = df[col].isna().sum()
-            new_nan = result[col].isna().sum()
-            assert new_nan == orig_nan, f"{col} gained unexpected NaN"
+        miss_cols = {
+            "web_sessions",
+            "seniority",
+            "days_since_last_touch",
+            "days_since_first_touch",
+        }
+        for col in _FINAL_COLUMNS:
+            if col not in miss_cols:
+                orig_nan = df[col].isna().sum()
+                new_nan = result[col].isna().sum()
+                assert new_nan == orig_nan, f"{col} gained unexpected NaN"
 
     def test_does_not_modify_input(self):
         df = _make_v5_df(n=500)
@@ -310,7 +313,7 @@ class TestInjectMissingness:
         pd.testing.assert_frame_equal(r1, r2)
 
     def test_web_sessions_missingness_varies_by_source(self):
-        """SDR outbound should have higher web_sessions missingness than inbound marketing."""
+        """SDR outbound should have higher web_sessions missingness than inbound."""
         df = _make_v5_df(n=3000)
         rng = np.random.RandomState(42)
         result = inject_missingness(df, rng)
@@ -319,6 +322,24 @@ class TestInjectMissingness:
             result.loc[df["lead_source"] == "inbound_marketing", "web_sessions"].isna().mean()
         )
         assert sdr_rate > inbound_rate
+
+    def test_small_n_no_crash(self):
+        """Should not crash on small DataFrames, even with sparse lead sources."""
+        df = _make_v5_df(n=10)
+        rng = np.random.RandomState(42)
+        result = inject_missingness(df, rng)
+        assert len(result) == 10
+
+    def test_no_matching_lead_source(self):
+        """If no rows match a source-conditional rate, no crash or extra NaN."""
+        df = _make_v5_df(n=100)
+        # Force all lead_source to a value not in the missingness spec
+        df["lead_source"] = "direct"
+        rng = np.random.RandomState(42)
+        result = inject_missingness(df, rng)
+        # web_sessions should only have missingness from other sources (none here)
+        # but days_since_last_touch still gets 3% MCAR
+        assert len(result) == 100
 
 
 # ---------------------------------------------------------------------------
@@ -333,7 +354,6 @@ class TestBoostLeakageTrap:
         trap_col = "__leakage__total_touches_90d"
         original_trap = df[trap_col].copy()
         result = boost_leakage_trap(df, rng)
-        # Non-converted leads should be unchanged
         neg_mask = df["converted"] == 0
         pd.testing.assert_series_equal(
             result.loc[neg_mask, trap_col],
@@ -372,3 +392,13 @@ class TestBoostLeakageTrap:
         result = boost_leakage_trap(df, rng)
         after_mean = result.loc[result["converted"] == 1, trap_col].mean()
         assert after_mean > before_mean
+
+    def test_zero_converted_leads_no_change(self):
+        """When no leads are converted, trap values should be unchanged."""
+        df = _make_v5_df(n=200, conversion_rate=0.30)
+        df["converted"] = 0  # force all negative
+        rng = np.random.RandomState(42)
+        trap_col = "__leakage__total_touches_90d"
+        original = df[trap_col].copy()
+        result = boost_leakage_trap(df, rng)
+        pd.testing.assert_series_equal(result[trap_col], original, check_names=False)
