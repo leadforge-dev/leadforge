@@ -142,7 +142,7 @@ def subsample(
 def inject_missingness(df: pd.DataFrame, rng: np.random.RandomState) -> pd.DataFrame:
     """Apply structured missingness per the v5 contract.
 
-    Patterns (all <10% per column):
+    Conditional rates per source (overall per-column rate stays <10%):
     - web_sessions: SDR outbound 15%, inbound marketing 2%, partner referral 5%
     - seniority: partner referral 8%, others 1%
     - days_since_last_touch: structural NaN (no touches) + 3% MCAR
