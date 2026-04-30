@@ -57,3 +57,28 @@ jobs:
           path: .coverage.${{ matrix.python-version }}
           include-hidden-files: true
           if-no-files-found: ignore
+
+  validate-dataset:
+    name: Validate lead scoring dataset
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev,scripts]"
+      - name: Check for v5 dataset
+        id: check
+        run: |
+          if [ -f "lead_scoring_intro_v5.csv" ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "csv=lead_scoring_intro_v5.csv" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Run validator
+        if: steps.check.outputs.found == 'true'
+        run: python scripts/validate_lead_scoring_dataset.py --csv "${{ steps.check.outputs.csv }}" --enforce-1000
+      - name: Skip (no dataset)
+        if: steps.check.outputs.found != 'true'
+        run: echo "No lead_scoring_intro_v5.csv found in repo root — skipping validation"

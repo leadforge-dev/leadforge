@@ -5,7 +5,7 @@ Usage:
     python scripts/build_v5_snapshot.py OUTPUT_CSV
 
 Produces a 1000-row × 19-column CSV at ~30% conversion rate with:
-- Day-14 windowed features
+- Day-10 windowed features
 - Structured missingness (MAR for web_sessions, seniority; MCAR on days_since_last_touch)
 - Leakage trap (__leakage__total_touches_90d using full 90-day data)
 - Expected ACV capped to narrative range [18k, 120k]
@@ -29,7 +29,7 @@ from leadforge.render.snapshots import build_snapshot
 # ---------------------------------------------------------------------------
 SEED = 42
 N_LEADS = 5000
-SNAPSHOT_DAY = 14
+SNAPSHOT_DAY = 10
 SUBSAMPLE_N = 1000
 TARGET_RATE = 0.30
 
@@ -187,8 +187,27 @@ def inject_missingness(df: pd.DataFrame, rng: np.random.RandomState) -> pd.DataF
     return df
 
 
+def boost_leakage_trap(df: pd.DataFrame, rng: np.random.RandomState) -> pd.DataFrame:
+    """Amplify the leakage trap signal to ensure robust detectability.
+
+    Adds target-correlated noise to ``__leakage__total_touches_90d`` so
+    that converted leads accumulate extra post-snapshot touches.  This
+    simulates a realistic scenario where the feature aggregates engagement
+    activity that occurs *after* the conversion decision is made.
+    """
+    df = df.copy()
+    trap_col = "__leakage__total_touches_90d"
+    n = len(df)
+    converted = df["converted"].values
+    # Converted leads: add a Poisson(1)-distributed number of extra
+    # "post-conversion" touches (typically small, but unbounded)
+    boost = converted * rng.poisson(1, size=n)
+    df[trap_col] = df[trap_col] + boost
+    return df
+
+
 def build_v5_dataset(seed: int = SEED) -> pd.DataFrame:
-    """Full pipeline: generate → snapshot → derive → cap ACV → rename → subsample → missingness."""
+    """Full pipeline: generate → derive → cap ACV → rename → subsample → boost → missingness."""
     rng = np.random.RandomState(seed)
 
     print("Generating bundle...", file=sys.stderr)
@@ -206,6 +225,9 @@ def build_v5_dataset(seed: int = SEED) -> pd.DataFrame:
     print("Subsampling...", file=sys.stderr)
     df = subsample(df, rng)
     print(f"  Subsampled: {len(df)} rows, conversion={df['converted'].mean():.1%}", file=sys.stderr)
+
+    print("Boosting leakage trap...", file=sys.stderr)
+    df = boost_leakage_trap(df, rng)
 
     print("Injecting missingness...", file=sys.stderr)
     df = inject_missingness(df, rng)
