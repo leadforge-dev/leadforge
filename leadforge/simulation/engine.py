@@ -149,6 +149,8 @@ def simulate_world(
     config: GenerationConfig,
     population: PopulationResult,
     world_graph: WorldGraph,
+    *,
+    latent_touch_intensity: bool = False,
 ) -> SimulationResult:
     """Run the discrete-time simulation for all leads in *population*.
 
@@ -176,7 +178,9 @@ def simulate_world(
     event_rng = root.child("simulation_events")
     post_sim_rng = root.child("simulation_post_sim")
 
-    mechanisms = assign_mechanisms(world_graph.motif_family, mech_rng)
+    mechanisms = assign_mechanisms(
+        world_graph.motif_family, mech_rng, latent_touch_intensity=latent_touch_intensity
+    )
     stage_seq = StageSequence()
 
     # Build lookup indexes.

@@ -182,6 +182,12 @@ LEAD_SNAPSHOT_FEATURES: tuple[FeatureSpec, ...] = (
         "engagement",
     ),
     FeatureSpec(
+        "touches_last_7_days",
+        "Int64",
+        "Number of touches in the last 7 days before snapshot cutoff.",
+        "engagement",
+    ),
+    FeatureSpec(
         "days_since_first_touch",
         "Float64",
         "Days between first touch and snapshot cutoff (NaN if no touches).",

@@ -27,7 +27,7 @@ import random
 from typing import Any
 
 from leadforge.mechanisms.base import MechanismAssignment
-from leadforge.mechanisms.counts import RecencyDecayIntensity
+from leadforge.mechanisms.counts import LatentDecayIntensity, RecencyDecayIntensity
 from leadforge.mechanisms.hazards import ConversionHazard
 from leadforge.mechanisms.measurement import NoisyProxy
 from leadforge.mechanisms.scores import LatentScore
@@ -119,6 +119,41 @@ _TOUCH_BASE_RATES: dict[str, float] = {
     "buying_committee_friction": 0.30,
 }
 
+# Latent weights for touch intensity (LatentDecayIntensity) per motif family.
+# These make touch emission depend on the same latent traits that drive
+# conversion, creating a causal link: latent → touches AND latent → conversion.
+_TOUCH_LATENT_WEIGHTS: dict[str, dict[str, float]] = {
+    "fit_dominant": {
+        "latent_account_fit": 1.5,
+        "latent_engagement_propensity": 1.0,
+        "latent_problem_awareness": 0.5,
+    },
+    "intent_dominant": {
+        "latent_engagement_propensity": 2.0,
+        "latent_problem_awareness": 1.0,
+        "latent_account_fit": 0.5,
+    },
+    "sales_execution_sensitive": {
+        "latent_engagement_propensity": 1.5,
+        "latent_responsiveness": 1.0,
+        "latent_account_fit": 0.5,
+    },
+    "demo_trial_mediated": {
+        "latent_engagement_propensity": 2.0,
+        "latent_problem_awareness": 1.0,
+        "latent_account_fit": 0.5,
+    },
+    "buying_committee_friction": {
+        "latent_contact_authority": 1.0,
+        "latent_engagement_propensity": 1.0,
+        "latent_account_fit": 0.5,
+    },
+}
+_DEFAULT_TOUCH_LATENT_WEIGHTS: dict[str, float] = {
+    "latent_engagement_propensity": 1.0,
+    "latent_account_fit": 0.5,
+}
+
 # Fallback weights/params for unknown motif families.
 _DEFAULT_CONVERSION_WEIGHTS: dict[str, float] = {
     "latent_account_fit": 1.0,
@@ -137,6 +172,8 @@ _DEFAULT_TOUCH_BASE_RATE: float = 0.40
 def assign_mechanisms(
     motif_family: str,
     rng: random.Random,
+    *,
+    latent_touch_intensity: bool = False,
 ) -> MechanismAssignment:
     """Build a :class:`~leadforge.mechanisms.base.MechanismAssignment` for *motif_family*.
 
@@ -149,6 +186,11 @@ def assign_mechanisms(
         rng: Seeded :class:`random.Random` instance for any stochastic
             parameter perturbation (currently unused but reserved for future
             use so the signature is stable).
+        latent_touch_intensity: When ``True``, use
+            :class:`~leadforge.mechanisms.counts.LatentDecayIntensity` instead
+            of :class:`~leadforge.mechanisms.counts.RecencyDecayIntensity` for
+            touch emission, making touch intensity depend on the same latent
+            traits that drive conversion.
 
     Returns:
         A fully populated :class:`~leadforge.mechanisms.base.MechanismAssignment`.
@@ -171,11 +213,22 @@ def assign_mechanisms(
         min_dwell_days=2,
     )
 
-    touch_intensity = RecencyDecayIntensity(
-        base_rate=touch_rate,
-        decay_factor=0.97,
-        floor_rate=0.02,
-    )
+    touch_intensity: RecencyDecayIntensity | LatentDecayIntensity
+    if latent_touch_intensity:
+        touch_latent_w = _TOUCH_LATENT_WEIGHTS.get(motif_family, _DEFAULT_TOUCH_LATENT_WEIGHTS)
+        touch_intensity = LatentDecayIntensity(
+            base_rate=touch_rate,
+            decay_factor=0.97,
+            floor_rate=0.02,
+            latent_weights=touch_latent_w,
+            boost=1.2,
+        )
+    else:
+        touch_intensity = RecencyDecayIntensity(
+            base_rate=touch_rate,
+            decay_factor=0.97,
+            floor_rate=0.02,
+        )
 
     measurement = NoisyProxy(
         latent_key="latent_account_fit",

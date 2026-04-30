@@ -187,7 +187,10 @@ class Generator:
             world_graph,
             category_latent_correlations=category_latent_correlations,
         )
-        result = simulate_world(config, population, world_graph)
+        latent_touch_intensity = kwargs.pop("latent_touch_intensity", False)
+        result = simulate_world(
+            config, population, world_graph, latent_touch_intensity=latent_touch_intensity
+        )
 
         spec = WorldSpec(config=config, narrative=narrative)
         return WorldBundle(
