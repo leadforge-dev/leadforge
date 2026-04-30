@@ -77,8 +77,8 @@ def _make_v6_df(
     rng = np.random.RandomState(seed)
     snapshot = _make_snapshot(n=n, conversion_rate=conversion_rate, seed=seed)
     df = derive_features(snapshot)
-    df = softcap_expected_acv(df, rng)
-    df = assign_acquisition_wave(df, rng)
+    df = softcap_expected_acv(df, seed=seed)
+    df = assign_acquisition_wave(df, seed=seed)
     if instructor:
         df[INSTRUCTOR_TRAP_COL] = rng.poisson(10, size=n)
     return rename_and_select(df, instructor=instructor)
@@ -117,35 +117,31 @@ class TestDeriveFeatures:
 
 class TestSoftcapExpectedACV:
     def test_floor_enforced(self):
-        rng = np.random.RandomState(42)
         snapshot = _make_snapshot()
         snapshot["expected_acv"] = 1_000.0
-        result = softcap_expected_acv(snapshot, rng)
+        result = softcap_expected_acv(snapshot, seed=42)
         assert result["expected_acv"].min() >= ACV_FLOOR
 
     def test_cap_soft(self):
         """Values above cap should be pulled near the cap, not all clipped to it."""
-        rng = np.random.RandomState(42)
         snapshot = _make_snapshot()
         snapshot["expected_acv"] = 200_000.0
-        result = softcap_expected_acv(snapshot, rng)
+        result = softcap_expected_acv(snapshot, seed=42)
         assert result["expected_acv"].max() <= ACV_CAP
         # Should NOT all be exactly the cap (soft winsorize adds noise)
         unique_vals = result["expected_acv"].nunique()
         assert unique_vals > 1
 
     def test_within_range_mostly_unchanged(self):
-        rng = np.random.RandomState(42)
         snapshot = _make_snapshot()
         snapshot["expected_acv"] = 50_000.0
-        result = softcap_expected_acv(snapshot, rng)
+        result = softcap_expected_acv(snapshot, seed=42)
         assert (result["expected_acv"] == 50_000.0).all()
 
     def test_does_not_modify_input(self):
-        rng = np.random.RandomState(42)
         snapshot = _make_snapshot()
         original = snapshot.copy()
-        softcap_expected_acv(snapshot, rng)
+        softcap_expected_acv(snapshot, seed=42)
         pd.testing.assert_frame_equal(snapshot, original)
 
 
@@ -156,15 +152,13 @@ class TestSoftcapExpectedACV:
 
 class TestAssignAcquisitionWave:
     def test_three_waves(self):
-        rng = np.random.RandomState(42)
         snapshot = _make_snapshot(n=300)
-        result = assign_acquisition_wave(snapshot, rng)
+        result = assign_acquisition_wave(snapshot, seed=42)
         assert set(result["acquisition_wave"].unique()) == {"A", "B", "C"}
 
     def test_roughly_equal_distribution(self):
-        rng = np.random.RandomState(42)
         snapshot = _make_snapshot(n=3000)
-        result = assign_acquisition_wave(snapshot, rng)
+        result = assign_acquisition_wave(snapshot, seed=42)
         counts = result["acquisition_wave"].value_counts()
         for wave in ["A", "B", "C"]:
             assert 800 < counts[wave] < 1200  # ~1000 expected per wave
@@ -189,11 +183,10 @@ class TestRenameAndSelect:
         assert df["converted"].dtype in (np.int64, np.int32, int)
 
     def test_missing_column_raises(self):
-        rng = np.random.RandomState(42)
         snapshot = _make_snapshot()
         snapshot = derive_features(snapshot)
-        snapshot = softcap_expected_acv(snapshot, rng)
-        snapshot = assign_acquisition_wave(snapshot, rng)
+        snapshot = softcap_expected_acv(snapshot, seed=42)
+        snapshot = assign_acquisition_wave(snapshot, seed=42)
         snapshot = snapshot.drop(columns=["industry"])
         with pytest.raises(ValueError, match="Missing required columns"):
             rename_and_select(snapshot)
@@ -207,22 +200,20 @@ class TestRenameAndSelect:
 class TestSubsample:
     def test_output_size(self):
         df = _make_v6_df(n=500)
-        rng = np.random.RandomState(42)
-        result = subsample(df, rng, n=100, target_rate=0.30)
+        result = subsample(df, seed=42, n=100, target_rate=0.30)
         assert len(result) == 100
 
     @pytest.mark.parametrize("target_rate", [0.30, 0.20, 0.40])
     def test_target_rate_approximate(self, target_rate):
         df = _make_v6_df(n=500)
-        rng = np.random.RandomState(42)
-        result = subsample(df, rng, n=200, target_rate=target_rate)
+        result = subsample(df, seed=42, n=200, target_rate=target_rate)
         actual_rate = result["converted"].mean()
         assert actual_rate == pytest.approx(target_rate, abs=0.01)
 
     def test_deterministic_given_seed(self):
         df = _make_v6_df(n=500)
-        r1 = subsample(df, np.random.RandomState(42), n=100, target_rate=0.30)
-        r2 = subsample(df, np.random.RandomState(42), n=100, target_rate=0.30)
+        r1 = subsample(df, seed=42, n=100, target_rate=0.30)
+        r2 = subsample(df, seed=42, n=100, target_rate=0.30)
         pd.testing.assert_frame_equal(r1, r2)
 
 
@@ -236,8 +227,7 @@ class TestInjectMissingness:
     def test_missingness_rates_bounded(self, seed):
         """Each column's missingness rate should stay under 10% across seeds."""
         df = _make_v6_df(n=2000, seed=seed)
-        rng = np.random.RandomState(seed)
-        result = inject_missingness(df, rng)
+        result = inject_missingness(df, seed=seed)
         for col in [
             "web_sessions",
             "seniority",
@@ -251,15 +241,13 @@ class TestInjectMissingness:
     def test_expected_acv_gets_mcar(self):
         """expected_acv should have MCAR missingness."""
         df = _make_v6_df(n=5000)
-        rng = np.random.RandomState(42)
-        result = inject_missingness(df, rng)
+        result = inject_missingness(df, seed=42)
         assert result["expected_acv"].isna().sum() > 0
 
     def test_other_columns_not_affected(self):
         """Columns not in the missingness spec should have no new NaN."""
         df = _make_v6_df(n=500)
-        rng = np.random.RandomState(42)
-        result = inject_missingness(df, rng)
+        result = inject_missingness(df, seed=42)
         miss_cols = {
             "web_sessions",
             "seniority",
@@ -276,21 +264,19 @@ class TestInjectMissingness:
     def test_does_not_modify_input(self):
         df = _make_v6_df(n=500)
         original = df.copy()
-        rng = np.random.RandomState(42)
-        inject_missingness(df, rng)
+        inject_missingness(df, seed=42)
         pd.testing.assert_frame_equal(df, original)
 
     def test_deterministic_given_seed(self):
         df = _make_v6_df(n=500)
-        r1 = inject_missingness(df, np.random.RandomState(42))
-        r2 = inject_missingness(df, np.random.RandomState(42))
+        r1 = inject_missingness(df, seed=42)
+        r2 = inject_missingness(df, seed=42)
         pd.testing.assert_frame_equal(r1, r2)
 
     def test_web_sessions_missingness_varies_by_source(self):
         """SDR outbound should have higher web_sessions missingness than inbound."""
         df = _make_v6_df(n=3000)
-        rng = np.random.RandomState(42)
-        result = inject_missingness(df, rng)
+        result = inject_missingness(df, seed=42)
         sdr_rate = result.loc[df["lead_source"] == "sdr_outbound", "web_sessions"].isna().mean()
         inbound_rate = (
             result.loc[df["lead_source"] == "inbound_marketing", "web_sessions"].isna().mean()

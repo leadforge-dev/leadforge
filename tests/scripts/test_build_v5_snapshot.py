@@ -185,8 +185,7 @@ class TestRenameAndSelect:
 class TestSubsample:
     def test_output_size(self):
         df = _make_v5_df(n=500)
-        rng = np.random.RandomState(42)
-        result = subsample(df, rng, n=100, target_rate=0.30)
+        result = subsample(df, seed=42, n=100, target_rate=0.30)
         assert len(result) == 100
 
     @pytest.mark.parametrize(
@@ -195,35 +194,30 @@ class TestSubsample:
     )
     def test_target_rate_approximate(self, target_rate, seed):
         df = _make_v5_df(n=500, seed=seed)
-        rng = np.random.RandomState(seed)
-        result = subsample(df, rng, n=200, target_rate=target_rate)
+        result = subsample(df, seed=seed, n=200, target_rate=target_rate)
         actual_rate = result["converted"].mean()
         assert actual_rate == pytest.approx(target_rate, abs=0.01)
 
     def test_deterministic_given_seed(self):
         df = _make_v5_df(n=500)
-        r1 = subsample(df, np.random.RandomState(42), n=100, target_rate=0.30)
-        r2 = subsample(df, np.random.RandomState(42), n=100, target_rate=0.30)
+        r1 = subsample(df, seed=42, n=100, target_rate=0.30)
+        r2 = subsample(df, seed=42, n=100, target_rate=0.30)
         pd.testing.assert_frame_equal(r1, r2)
 
-    def test_insufficient_positives(self, capsys):
+    def test_insufficient_positives(self):
         """When fewer positives available than needed, warns and adjusts."""
         df = _make_v5_df(n=200, conversion_rate=0.05)  # only ~10 positives
-        rng = np.random.RandomState(42)
-        result = subsample(df, rng, n=100, target_rate=0.50)  # need 50 positives
-        captured = capsys.readouterr()
-        assert "WARNING" in captured.err
+        with pytest.warns(UserWarning, match="positives available"):
+            result = subsample(df, seed=42, n=100, target_rate=0.50)  # need 50 positives
         # All available positives should be included
         assert result["converted"].sum() <= 10
 
-    def test_insufficient_negatives(self, capsys):
+    def test_insufficient_negatives(self):
         """When fewer negatives available than needed, warns and adjusts."""
         df = _make_v5_df(n=200, conversion_rate=0.95)  # only ~10 negatives
         n_neg_available = (df["converted"] == 0).sum()
-        rng = np.random.RandomState(42)
-        result = subsample(df, rng, n=100, target_rate=0.10)  # need 90 negatives
-        captured = capsys.readouterr()
-        assert "WARNING" in captured.err
+        with pytest.warns(UserWarning, match="negatives available"):
+            result = subsample(df, seed=42, n=100, target_rate=0.10)  # need 90 negatives
         # Verify actual composition: negatives capped at available count
         n_neg_result = (result["converted"] == 0).sum()
         assert n_neg_result <= n_neg_available
@@ -232,17 +226,14 @@ class TestSubsample:
 
     def test_index_is_reset(self):
         df = _make_v5_df(n=500)
-        rng = np.random.RandomState(42)
-        result = subsample(df, rng, n=100, target_rate=0.30)
+        result = subsample(df, seed=42, n=100, target_rate=0.30)
         assert list(result.index) == list(range(len(result)))
 
-    def test_n_larger_than_input_caps_gracefully(self, capsys):
+    def test_n_larger_than_input_caps_gracefully(self):
         """Requesting more rows than available caps at available count."""
         df = _make_v5_df(n=50)
-        rng = np.random.RandomState(42)
-        result = subsample(df, rng, n=200, target_rate=0.30)
-        captured = capsys.readouterr()
-        assert "WARNING" in captured.err
+        with pytest.warns(UserWarning, match="available"):
+            result = subsample(df, seed=42, n=200, target_rate=0.30)
         # Output should contain all available rows (capped)
         assert len(result) <= len(df)
 
@@ -257,8 +248,7 @@ class TestInjectMissingness:
     def test_missingness_rates_bounded(self, seed):
         """Each column's missingness rate should stay under 20% across seeds."""
         df = _make_v5_df(n=2000, seed=seed)
-        rng = np.random.RandomState(seed)
-        result = inject_missingness(df, rng)
+        result = inject_missingness(df, seed=seed)
         for col in [
             "web_sessions",
             "seniority",
@@ -271,8 +261,7 @@ class TestInjectMissingness:
     def test_other_columns_not_affected(self):
         """Columns not in the missingness spec should have no new NaN."""
         df = _make_v5_df(n=500)
-        rng = np.random.RandomState(42)
-        result = inject_missingness(df, rng)
+        result = inject_missingness(df, seed=42)
         miss_cols = {
             "web_sessions",
             "seniority",
@@ -288,21 +277,19 @@ class TestInjectMissingness:
     def test_does_not_modify_input(self):
         df = _make_v5_df(n=500)
         original = df.copy()
-        rng = np.random.RandomState(42)
-        inject_missingness(df, rng)
+        inject_missingness(df, seed=42)
         pd.testing.assert_frame_equal(df, original)
 
     def test_deterministic_given_seed(self):
         df = _make_v5_df(n=500)
-        r1 = inject_missingness(df, np.random.RandomState(42))
-        r2 = inject_missingness(df, np.random.RandomState(42))
+        r1 = inject_missingness(df, seed=42)
+        r2 = inject_missingness(df, seed=42)
         pd.testing.assert_frame_equal(r1, r2)
 
     def test_web_sessions_missingness_varies_by_source(self):
         """SDR outbound should have higher web_sessions missingness than inbound."""
         df = _make_v5_df(n=3000)
-        rng = np.random.RandomState(42)
-        result = inject_missingness(df, rng)
+        result = inject_missingness(df, seed=42)
         sdr_rate = result.loc[df["lead_source"] == "sdr_outbound", "web_sessions"].isna().mean()
         inbound_rate = (
             result.loc[df["lead_source"] == "inbound_marketing", "web_sessions"].isna().mean()
@@ -312,8 +299,7 @@ class TestInjectMissingness:
     def test_small_n_no_crash(self):
         """Should not crash on small DataFrames, even with sparse lead sources."""
         df = _make_v5_df(n=10)
-        rng = np.random.RandomState(42)
-        result = inject_missingness(df, rng)
+        result = inject_missingness(df, seed=42)
         assert len(result) == 10
 
     def test_no_matching_lead_source(self):
@@ -321,8 +307,7 @@ class TestInjectMissingness:
         df = _make_v5_df(n=100)
         # Force all lead_source to a value not in the missingness spec
         df["lead_source"] = "direct"
-        rng = np.random.RandomState(42)
-        result = inject_missingness(df, rng)
+        result = inject_missingness(df, seed=42)
         # web_sessions should only have missingness from other sources (none here)
         # but days_since_last_touch still gets 3% MCAR
         assert len(result) == 100
@@ -336,10 +321,9 @@ class TestInjectMissingness:
 class TestBoostLeakageTrap:
     def test_only_converted_leads_boosted(self):
         df = _make_v5_df(n=500)
-        rng = np.random.RandomState(42)
         trap_col = "__leakage__total_touches_90d"
         original_trap = df[trap_col].copy()
-        result = boost_leakage_trap(df, rng)
+        result = boost_leakage_trap(df, seed=42)
         neg_mask = df["converted"] == 0
         pd.testing.assert_series_equal(
             result.loc[neg_mask, trap_col],
@@ -349,33 +333,30 @@ class TestBoostLeakageTrap:
 
     def test_converted_leads_get_higher_or_equal(self):
         df = _make_v5_df(n=500)
-        rng = np.random.RandomState(42)
         trap_col = "__leakage__total_touches_90d"
         original_trap = df[trap_col].copy()
-        result = boost_leakage_trap(df, rng)
+        result = boost_leakage_trap(df, seed=42)
         pos_mask = df["converted"] == 1
         assert (result.loc[pos_mask, trap_col] >= original_trap[pos_mask]).all()
 
     def test_does_not_modify_input(self):
         df = _make_v5_df(n=500)
         original = df.copy()
-        rng = np.random.RandomState(42)
-        boost_leakage_trap(df, rng)
+        boost_leakage_trap(df, seed=42)
         pd.testing.assert_frame_equal(df, original)
 
     def test_deterministic_given_seed(self):
         df = _make_v5_df(n=500)
-        r1 = boost_leakage_trap(df, np.random.RandomState(42))
-        r2 = boost_leakage_trap(df, np.random.RandomState(42))
+        r1 = boost_leakage_trap(df, seed=42)
+        r2 = boost_leakage_trap(df, seed=42)
         pd.testing.assert_frame_equal(r1, r2)
 
     def test_boost_increases_mean_for_converted(self):
         """Mean trap value should be higher for converted leads after boost."""
         df = _make_v5_df(n=1000)
-        rng = np.random.RandomState(42)
         trap_col = "__leakage__total_touches_90d"
         before_mean = df.loc[df["converted"] == 1, trap_col].mean()
-        result = boost_leakage_trap(df, rng)
+        result = boost_leakage_trap(df, seed=42)
         after_mean = result.loc[result["converted"] == 1, trap_col].mean()
         assert after_mean > before_mean
 
@@ -383,8 +364,7 @@ class TestBoostLeakageTrap:
         """When no leads are converted, trap values should be unchanged."""
         df = _make_v5_df(n=200, conversion_rate=0.30)
         df["converted"] = 0  # force all negative
-        rng = np.random.RandomState(42)
         trap_col = "__leakage__total_touches_90d"
         original = df[trap_col].copy()
-        result = boost_leakage_trap(df, rng)
+        result = boost_leakage_trap(df, seed=42)
         pd.testing.assert_series_equal(result[trap_col], original, check_names=False)

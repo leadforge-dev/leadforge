@@ -1,5 +1,6 @@
 """Tests for leadforge.core.rng."""
 
+import numpy as np
 import pytest
 
 from leadforge.core.rng import RNGRoot
@@ -60,3 +61,20 @@ def test_rng_root_rejects_negative_seed() -> None:
 
 def test_rng_root_repr() -> None:
     assert repr(RNGRoot(42)) == "RNGRoot(seed=42)"
+
+
+def test_numpy_child_returns_random_state() -> None:
+    rng = RNGRoot(42).numpy_child("subsample")
+    assert isinstance(rng, np.random.RandomState)
+
+
+def test_numpy_child_deterministic() -> None:
+    r1 = RNGRoot(42).numpy_child("missingness")
+    r2 = RNGRoot(42).numpy_child("missingness")
+    assert list(r1.random(10)) == list(r2.random(10))
+
+
+def test_numpy_child_independent_names() -> None:
+    r1 = RNGRoot(42).numpy_child("subsample")
+    r2 = RNGRoot(42).numpy_child("missingness")
+    assert list(r1.random(10)) != list(r2.random(10))

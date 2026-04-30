@@ -7,10 +7,12 @@ orchestration (bundle generation, file I/O) lives in
 
 from __future__ import annotations
 
-import sys
+import warnings
 
 import numpy as np
 import pandas as pd
+
+from leadforge.core.rng import RNGRoot
 
 __all__ = [
     "ACV_CAP",
@@ -114,22 +116,29 @@ def rename_and_select(df: pd.DataFrame) -> pd.DataFrame:
 
 def subsample(
     df: pd.DataFrame,
-    rng: np.random.RandomState,
+    seed: int,
     n: int = SUBSAMPLE_N,
     target_rate: float = TARGET_RATE,
 ) -> pd.DataFrame:
     """Stratified subsample to n rows at target_rate conversion."""
+    rng = RNGRoot(seed).numpy_child("subsample")
     positives = df[df["converted"] == 1]
     negatives = df[df["converted"] == 0]
     n_pos = int(n * target_rate)
     n_neg = n - n_pos
 
     if len(positives) < n_pos:
-        print(f"WARNING: only {len(positives)} positives, need {n_pos}", file=sys.stderr)
+        warnings.warn(
+            f"only {len(positives)} positives available, need {n_pos}",
+            stacklevel=2,
+        )
         n_pos = len(positives)
         n_neg = n - n_pos
     if len(negatives) < n_neg:
-        print(f"WARNING: only {len(negatives)} negatives, need {n_neg}", file=sys.stderr)
+        warnings.warn(
+            f"only {len(negatives)} negatives available, need {n_neg}",
+            stacklevel=2,
+        )
         n_neg = len(negatives)
 
     pos_sample = positives.sample(n=n_pos, random_state=rng)
@@ -139,7 +148,7 @@ def subsample(
     )
 
 
-def inject_missingness(df: pd.DataFrame, rng: np.random.RandomState) -> pd.DataFrame:
+def inject_missingness(df: pd.DataFrame, seed: int) -> pd.DataFrame:
     """Apply structured missingness per the v5 contract.
 
     Conditional rates per source (overall per-column rate stays <10%):
@@ -148,6 +157,7 @@ def inject_missingness(df: pd.DataFrame, rng: np.random.RandomState) -> pd.DataF
     - days_since_last_touch: structural NaN (no touches) + 3% MCAR
     - days_since_first_touch: structural NaN (no touches) + 2% MCAR
     """
+    rng = RNGRoot(seed).numpy_child("missingness")
     df = df.copy()
     n = len(df)
 
@@ -176,7 +186,7 @@ def inject_missingness(df: pd.DataFrame, rng: np.random.RandomState) -> pd.DataF
     return df
 
 
-def boost_leakage_trap(df: pd.DataFrame, rng: np.random.RandomState) -> pd.DataFrame:
+def boost_leakage_trap(df: pd.DataFrame, seed: int) -> pd.DataFrame:
     """Amplify the leakage trap signal to ensure robust detectability.
 
     Adds target-correlated noise to ``__leakage__total_touches_90d`` so
@@ -184,6 +194,7 @@ def boost_leakage_trap(df: pd.DataFrame, rng: np.random.RandomState) -> pd.DataF
     simulates a realistic scenario where the feature aggregates engagement
     activity that occurs *after* the conversion decision is made.
     """
+    rng = RNGRoot(seed).numpy_child("leakage_trap")
     df = df.copy()
     trap_col = "__leakage__total_touches_90d"
     n = len(df)
