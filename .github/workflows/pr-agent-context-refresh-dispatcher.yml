@@ -163,6 +163,8 @@ jobs:
                     pull_request_number: String(pr.number),
                     pull_request_head_sha: pr.head.sha,
                     pull_request_base_sha: pr.base.sha,
+                    trigger_event_name: 'schedule',
+                    trigger_event_action: '',
                   },
                 });
 
