@@ -20,102 +20,30 @@ from leadforge.validation.lead_scoring import (
     _check_schema,
     validate_dataset,
 )
+from tests.conftest import make_v5_dataset, save_csv
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
 
-def _make_dataset(
-    n: int = 200,
-    conversion_rate: float = 0.30,
-    include_leakage: bool = True,
-    deterministic_col: bool = False,
-    seed: int = 99,
-) -> pd.DataFrame:
-    """Build a small synthetic dataset that passes basic checks."""
-    rng = np.random.RandomState(seed)
-    n_pos = int(n * conversion_rate)
-    n_neg = n - n_pos
-
-    converted = np.array([1] * n_pos + [0] * n_neg)
-    rng.shuffle(converted)
-
-    industries = rng.choice(["manufacturing", "logistics", "services", "healthcare"], size=n)
-    regions = rng.choice(["US", "UK"], size=n)
-    sizes = rng.choice(["200-499", "500-999", "1000-1999", "2000+"], size=n)
-    revenues = rng.choice(["$1M-$10M", "$10M-$50M", "$50M-$200M", "$200M+"], size=n)
-    roles = rng.choice(["finance", "ap_manager", "it_director", "procurement"], size=n)
-    seniority = rng.choice(
-        ["individual_contributor", "manager", "director", "vp", "c_suite"], size=n
-    )
-    sources = rng.choice(["inbound_marketing", "sdr_outbound", "partner_referral"], size=n)
-
-    df = pd.DataFrame(
-        {
-            "industry": industries,
-            "region": regions,
-            "company_size": sizes,
-            "company_revenue": revenues,
-            "contact_role": roles,
-            "seniority": seniority,
-            "lead_source": sources,
-            "opportunity_created": rng.randint(0, 2, size=n),
-            "demo_completed": rng.randint(0, 2, size=n),
-            "expected_acv": rng.uniform(18_000, 120_000, size=n).round(0),
-            "inbound_touches": rng.poisson(3, size=n),
-            "outbound_touches": rng.poisson(2, size=n),
-            "touches_week_1": rng.poisson(2, size=n),
-            "days_since_first_touch": rng.uniform(0, 14, size=n).round(1),
-            "web_sessions": rng.poisson(4, size=n).astype(float),
-            "sales_activities": rng.poisson(3, size=n),
-            "days_since_last_touch": rng.uniform(0, 14, size=n).round(1),
-            "converted": converted,
-        }
-    )
-
-    # Inject some missingness
-    miss_idx = rng.choice(n, size=int(n * 0.05), replace=False)
-    df.loc[miss_idx, "web_sessions"] = np.nan
-
-    if include_leakage:
-        # Leakage: positively correlated with target
-        noise = rng.poisson(3, size=n)
-        df["__leakage__total_touches_90d"] = converted * rng.poisson(8, size=n) + noise
-
-    if deterministic_col:
-        # Make a column that perfectly predicts conversion for a large group
-        df["bad_feature"] = "normal"
-        # First 60 rows all converted = 1
-        df.loc[:59, "bad_feature"] = "leaked"
-        df.loc[:59, "converted"] = 1
-
-    return df
-
-
-def _save(df: pd.DataFrame, tmp_path, name: str = "data.csv"):
-    path = tmp_path / name
-    df.to_csv(path, index=False)
-    return path
-
-
 @pytest.fixture
 def good_csv(tmp_path):
     """Write a well-formed synthetic dataset."""
-    return _save(_make_dataset(n=200, include_leakage=True), tmp_path, "good.csv")
+    return save_csv(make_v5_dataset(n=200, include_leakage=True), tmp_path, "good.csv")
 
 
 @pytest.fixture
 def bad_deterministic_csv(tmp_path):
     """Write a dataset with a deterministic group."""
-    return _save(_make_dataset(n=200, deterministic_col=True), tmp_path, "bad.csv")
+    return save_csv(make_v5_dataset(n=200, deterministic_col=True), tmp_path, "bad.csv")
 
 
 @pytest.fixture
 def no_target_csv(tmp_path):
     """Write a dataset missing the target column."""
-    df = _make_dataset(n=200).drop(columns=["converted"])
-    return _save(df, tmp_path, "no_target.csv")
+    df = make_v5_dataset(n=200).drop(columns=["converted"])
+    return save_csv(df, tmp_path, "no_target.csv")
 
 
 # ---------------------------------------------------------------------------
@@ -154,9 +82,9 @@ class TestSchemaChecks:
         assert not target_check.passed
 
     def test_nan_target_short_circuits(self, tmp_path):
-        df = _make_dataset(n=200)
+        df = make_v5_dataset(n=200)
         df.loc[0, "converted"] = np.nan
-        path = _save(df, tmp_path, "nan_target.csv")
+        path = save_csv(df, tmp_path, "nan_target.csv")
         report = validate_dataset(path)
         # target_no_missing should fail
         no_miss = next(c for c in report.checks if c.name == "target_no_missing")
@@ -165,18 +93,18 @@ class TestSchemaChecks:
         assert report.baseline is None
 
     def test_nonbinary_target_short_circuits(self, tmp_path):
-        df = _make_dataset(n=200)
+        df = make_v5_dataset(n=200)
         df.loc[0, "converted"] = 2
-        path = _save(df, tmp_path, "nonbinary.csv")
+        path = save_csv(df, tmp_path, "nonbinary.csv")
         report = validate_dataset(path)
         binary_check = next(c for c in report.checks if c.name == "target_binary")
         assert not binary_check.passed
         assert report.baseline is None
 
     def test_single_class_target_short_circuits(self, tmp_path):
-        df = _make_dataset(n=200)
+        df = make_v5_dataset(n=200)
         df["converted"] = 0  # all negatives
-        path = _save(df, tmp_path, "single_class.csv")
+        path = save_csv(df, tmp_path, "single_class.csv")
         report = validate_dataset(path)
         both = next(c for c in report.checks if c.name == "target_both_classes")
         assert not both.passed
@@ -188,7 +116,7 @@ class TestSchemaChecks:
         assert both.passed
 
     def test_banned_columns_detected(self, tmp_path):
-        df = _make_dataset(n=200, include_leakage=False)
+        df = make_v5_dataset(n=200, include_leakage=False)
         df["current_stage"] = "active"
         cfg = ValidationConfig(enforce_row_count=False)
         checks = _check_schema(df, cfg)
@@ -197,7 +125,7 @@ class TestSchemaChecks:
         assert "current_stage" in banned.details
 
     def test_id_columns_detected(self, tmp_path):
-        df = _make_dataset(n=200, include_leakage=False)
+        df = make_v5_dataset(n=200, include_leakage=False)
         df["lead_id"] = range(len(df))
         cfg = ValidationConfig(enforce_row_count=False)
         checks = _check_schema(df, cfg)
@@ -205,21 +133,21 @@ class TestSchemaChecks:
         assert not id_check.passed
 
     def test_enforce_row_count(self, tmp_path):
-        df = _make_dataset(n=200, include_leakage=False)
+        df = make_v5_dataset(n=200, include_leakage=False)
         cfg = ValidationConfig(enforce_row_count=True, expected_rows=1000)
         checks = _check_schema(df, cfg)
         rc = next(c for c in checks if c.name == "row_count")
         assert not rc.passed
 
     def test_exact_row_count_passes(self, tmp_path):
-        df = _make_dataset(n=200, include_leakage=False)
+        df = make_v5_dataset(n=200, include_leakage=False)
         cfg = ValidationConfig(enforce_row_count=True, expected_rows=200)
         checks = _check_schema(df, cfg)
         rc = next(c for c in checks if c.name == "row_count")
         assert rc.passed
 
     def test_duplicate_rows_detected(self, tmp_path):
-        df = _make_dataset(n=50, include_leakage=False)
+        df = make_v5_dataset(n=50, include_leakage=False)
         # Duplicate a lot of rows
         df = pd.concat([df, df], ignore_index=True)
         cfg = ValidationConfig(enforce_row_count=False)
@@ -237,7 +165,7 @@ class TestSchemaChecks:
         assert "missing" in feat.details
 
     def test_total_touches_all_naming(self):
-        df = _make_dataset(n=200, include_leakage=False)
+        df = make_v5_dataset(n=200, include_leakage=False)
         df["total_touches_all"] = 5
         cfg = ValidationConfig(enforce_row_count=False)
         checks = _check_schema(df, cfg)
@@ -245,7 +173,7 @@ class TestSchemaChecks:
         assert not naming.passed
 
     def test_no_leakage_columns(self):
-        df = _make_dataset(n=200, include_leakage=False)
+        df = make_v5_dataset(n=200, include_leakage=False)
         cfg = ValidationConfig(enforce_row_count=False)
         checks = _check_schema(df, cfg)
         naming = next(c for c in checks if c.name == "leakage_naming")
@@ -253,7 +181,7 @@ class TestSchemaChecks:
         assert "no leakage" in naming.details
 
     def test_multiple_leakage_columns(self):
-        df = _make_dataset(n=200, include_leakage=True)
+        df = make_v5_dataset(n=200, include_leakage=True)
         df["__leakage__another"] = 1
         cfg = ValidationConfig(enforce_row_count=False)
         checks = _check_schema(df, cfg)
@@ -269,14 +197,14 @@ class TestSchemaChecks:
 
 class TestMissingness:
     def test_high_missingness_fails(self):
-        df = _make_dataset(n=200, include_leakage=False)
+        df = make_v5_dataset(n=200, include_leakage=False)
         df.loc[:40, "inbound_touches"] = np.nan  # >20% missing
         cfg = ValidationConfig(max_col_missing_rate=0.10)
         checks, miss_map = _check_missingness(df, cfg)
         assert not checks[0].passed
 
     def test_low_missingness_passes(self):
-        df = _make_dataset(n=200, include_leakage=False)
+        df = make_v5_dataset(n=200, include_leakage=False)
         cfg = ValidationConfig(max_col_missing_rate=0.10)
         checks, _ = _check_missingness(df, cfg)
         assert checks[0].passed
@@ -296,7 +224,7 @@ class TestGroupDeterminism:
 
     def test_low_conversion_group_fails(self, tmp_path):
         """A group where conversion rate is near 0% should also fail."""
-        df = _make_dataset(n=200, include_leakage=False)
+        df = make_v5_dataset(n=200, include_leakage=False)
         df["bad_feature"] = "normal"
         # First 60 rows all converted = 0 for this group
         df.loc[:59, "bad_feature"] = "zero_group"
@@ -320,12 +248,12 @@ class TestGroupDeterminism:
 class TestConversionRate:
     def test_rate_outside_range_fails(self):
         # 5% conversion rate — below 15%
-        df = _make_dataset(n=200, conversion_rate=0.05, include_leakage=False)
+        df = make_v5_dataset(n=200, conversion_rate=0.05, include_leakage=False)
         checks = _check_conversion_rate(df)
         assert not checks[0].passed
 
     def test_rate_in_range_passes(self):
-        df = _make_dataset(n=200, conversion_rate=0.30, include_leakage=False)
+        df = make_v5_dataset(n=200, conversion_rate=0.30, include_leakage=False)
         checks = _check_conversion_rate(df)
         assert checks[0].passed
 
@@ -337,31 +265,31 @@ class TestConversionRate:
 
 class TestACVRange:
     def test_no_acv_column_skips(self):
-        df = _make_dataset(n=200, include_leakage=False).drop(columns=["expected_acv"])
+        df = make_v5_dataset(n=200, include_leakage=False).drop(columns=["expected_acv"])
         checks = _check_acv_range(df)
         assert checks[0].passed
         assert "skip" in checks[0].details
 
     def test_acv_all_nan_fails(self):
-        df = _make_dataset(n=200, include_leakage=False)
+        df = make_v5_dataset(n=200, include_leakage=False)
         df["expected_acv"] = np.nan
         checks = _check_acv_range(df)
         assert not checks[0].passed
 
     def test_acv_below_floor_fails(self):
-        df = _make_dataset(n=200, include_leakage=False)
+        df = make_v5_dataset(n=200, include_leakage=False)
         df.loc[0, "expected_acv"] = 1000  # way below 18k
         checks = _check_acv_range(df)
         assert not checks[0].passed
 
     def test_acv_above_cap_fails(self):
-        df = _make_dataset(n=200, include_leakage=False)
+        df = make_v5_dataset(n=200, include_leakage=False)
         df.loc[0, "expected_acv"] = 200_000  # way above 120k
         checks = _check_acv_range(df)
         assert not checks[0].passed
 
     def test_acv_in_range_passes(self):
-        df = _make_dataset(n=200, include_leakage=False)
+        df = make_v5_dataset(n=200, include_leakage=False)
         checks = _check_acv_range(df)
         assert checks[0].passed
 
@@ -414,8 +342,8 @@ class TestBaselineMetrics:
 
     def test_k_larger_than_test_set_skipped(self, tmp_path):
         """If k > test set size, that k is skipped."""
-        df = _make_dataset(n=20, include_leakage=False)
-        path = _save(df, tmp_path)
+        df = make_v5_dataset(n=20, include_leakage=False)
+        path = save_csv(df, tmp_path)
         # ks=(25, 50) but test set is only ~6 rows
         report = validate_dataset(path, ValidationConfig(enforce_row_count=False))
         assert report.baseline is not None
@@ -438,8 +366,8 @@ class TestLeakageTrap:
         assert tm.mean_delta_auc > 0
 
     def test_no_trap_columns_skips(self, tmp_path):
-        df = _make_dataset(n=200, include_leakage=False)
-        path = _save(df, tmp_path)
+        df = make_v5_dataset(n=200, include_leakage=False)
+        path = save_csv(df, tmp_path)
         report = validate_dataset(path, ValidationConfig(enforce_row_count=False))
         trap_check = [c for c in report.checks if c.name.startswith("leakage_trap")]
         assert len(trap_check) == 1
@@ -448,11 +376,11 @@ class TestLeakageTrap:
 
     def test_weak_trap_fails_checks(self, tmp_path):
         """A trap column with no signal should fail threshold checks."""
-        df = _make_dataset(n=200, include_leakage=False)
+        df = make_v5_dataset(n=200, include_leakage=False)
         rng = np.random.RandomState(42)
         # Add a random column with no leakage signal
         df["__leakage__noise"] = rng.poisson(5, size=len(df))
-        path = _save(df, tmp_path)
+        path = save_csv(df, tmp_path)
         cfg = ValidationConfig(
             enforce_row_count=False,
             trap_mean_delta=0.05,  # high threshold
@@ -480,17 +408,17 @@ class TestValueMetrics:
 
     def test_value_metrics_with_nan_acv(self, tmp_path):
         """NaN in expected_acv should not propagate NaN into value metrics."""
-        df = _make_dataset(n=200, include_leakage=False)
+        df = make_v5_dataset(n=200, include_leakage=False)
         df.loc[:9, "expected_acv"] = np.nan
-        path = _save(df, tmp_path)
+        path = save_csv(df, tmp_path)
         report = validate_dataset(path, ValidationConfig(enforce_row_count=False))
         for vm in report.value_metrics:
             assert not np.isnan(vm.captured_acv_by_prob)
             assert not np.isnan(vm.captured_acv_by_ev)
 
     def test_no_acv_column_returns_empty(self, tmp_path):
-        df = _make_dataset(n=200, include_leakage=False).drop(columns=["expected_acv"])
-        path = _save(df, tmp_path)
+        df = make_v5_dataset(n=200, include_leakage=False).drop(columns=["expected_acv"])
+        path = save_csv(df, tmp_path)
         report = validate_dataset(path, ValidationConfig(enforce_row_count=False))
         assert report.value_metrics == []
 
