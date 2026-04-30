@@ -102,18 +102,18 @@ Evaluated on a 70/30 stratified hold-out split (seed 42).
 
 | Metric | Value |
 |---|---|
-| ROC-AUC | 0.627 |
-| PR-AUC | 0.405 |
+| ROC-AUC | 0.667 |
+| PR-AUC | 0.429 |
 | Base rate | 30.0% |
-| Precision@25 | 0.480 (Lift: 1.60x) |
-| Precision@50 | 0.420 (Lift: 1.40x) |
+| Precision@25 | 0.520 (Lift: 1.73x) |
+| Precision@50 | 0.480 (Lift: 1.60x) |
 
 ### Tree model comparison (5-seed average)
 
 | Model | Mean AUC | vs LR |
 |---|---|---|
-| Logistic Regression | 0.658 | — |
-| GBM (100 trees) | 0.680 | +0.022 |
+| Logistic Regression | 0.627 | — |
+| GBM (100 trees) | 0.643 | +0.016 |
 
 GBM reliably outperforms LR due to nonlinear interactions in the DGP (latent trait interactions with engagement patterns).
 
@@ -121,8 +121,8 @@ GBM reliably outperforms LR due to nonlinear interactions in the DGP (latent tra
 
 | K | By P(convert) | By expected value | Uplift |
 |---|---|---|---|
-| 25 | $884,208 | $1,039,434 | +17.6% |
-| 50 | $1,379,208 | $1,949,380 | +41.3% |
+| 25 | $1,203,430 | $1,380,990 | +14.8% |
+| 50 | $1,809,281 | $2,014,459 | +11.3% |
 
 ### Leakage trap evaluation (instructor dataset)
 
@@ -130,9 +130,9 @@ GBM reliably outperforms LR due to nonlinear interactions in the DGP (latent tra
 |---|---|
 | Column | `__leakage__touches_post_snapshot_15_90` |
 | Seeds | 10 (42–51) |
-| Mean AUC delta | 0.0458 |
-| Min AUC delta | 0.0343 |
-| Max AUC delta | 0.0599 |
+| Mean AUC delta | 0.0453 |
+| Min AUC delta | 0.0214 |
+| Max AUC delta | 0.0696 |
 
 The trap is **causally grounded**: post-snapshot touches are higher for leads with higher latent intent/fit (the same traits that drive conversion). No label-noise injection is used.
 
