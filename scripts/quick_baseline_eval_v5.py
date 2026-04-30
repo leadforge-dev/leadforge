@@ -28,17 +28,40 @@ LEAKAGE_TRAP = "__leakage__total_touches_90d"
 SEED = 42
 
 
-def prepare(df: pd.DataFrame, exclude: list[str] | None = None) -> tuple[pd.DataFrame, pd.Series]:
-    """Encode categoricals, impute, return X and y."""
+def split_and_preprocess(
+    df: pd.DataFrame,
+    exclude: list[str] | None = None,
+    seed: int = SEED,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
+    """Split first, then fit preprocessing on train only.
+
+    Returns (x_train, x_test, y_train, y_test) with numeric columns,
+    label-encoded categoricals, and train-median imputation.
+    """
     feature_cols = [c for c in df.columns if c != TARGET and c not in (exclude or [])]
-    x = df[feature_cols].copy()
+    x_raw = df[feature_cols].copy()
     y = df[TARGET].astype(int)
-    for col in x.select_dtypes(include=["object", "category"]).columns:
+
+    x_train_raw, x_test_raw, y_train, y_test = train_test_split(
+        x_raw, y, test_size=0.30, random_state=seed, stratify=y
+    )
+
+    cat_cols = list(x_train_raw.select_dtypes(include=["object", "category"]).columns)
+    for col in cat_cols:
         le = LabelEncoder()
-        x[col] = le.fit_transform(x[col].astype(str).fillna("__MISSING__"))
-    x = x.select_dtypes(include=[np.number])
-    x = x.fillna(x.median())
-    return x, y
+        le.fit(x_train_raw[col].astype(str).fillna("__MISSING__"))
+        x_train_raw[col] = le.transform(x_train_raw[col].astype(str).fillna("__MISSING__"))
+        test_vals = x_test_raw[col].astype(str).fillna("__MISSING__")
+        test_vals = test_vals.where(test_vals.isin(le.classes_), "__MISSING__")
+        x_test_raw[col] = le.transform(test_vals)
+
+    x_train = x_train_raw.select_dtypes(include=[np.number]).copy()
+    x_test = x_test_raw[x_train.columns].copy()
+    train_medians = x_train.median()
+    x_train = x_train.fillna(train_medians)
+    x_test = x_test.fillna(train_medians)
+
+    return x_train, x_test, y_train, y_test
 
 
 def evaluate(name: str, y_true: pd.Series, probs: np.ndarray) -> dict[str, float]:
@@ -82,10 +105,8 @@ def main() -> None:
     print("BASELINE (without leakage trap)")
     print(f"{'=' * 60}")
 
-    x, y = prepare(df, exclude=[LEAKAGE_TRAP])
-    x_train, x_test, y_train, y_test = train_test_split(
-        x, y, test_size=0.30, random_state=SEED, stratify=y
-    )
+    x_train, x_test, y_train, y_test = split_and_preprocess(df, exclude=[LEAKAGE_TRAP])
+
     scaler = StandardScaler()
     x_train_s = scaler.fit_transform(x_train)
     x_test_s = scaler.transform(x_test)
@@ -104,10 +125,7 @@ def main() -> None:
         print("WITH LEAKAGE TRAP (for comparison — students should detect this)")
         print(f"{'=' * 60}")
 
-        x_full, y_full = prepare(df)
-        x_train_f, x_test_f, y_train_f, y_test_f = train_test_split(
-            x_full, y_full, test_size=0.30, random_state=SEED, stratify=y_full
-        )
+        x_train_f, x_test_f, y_train_f, y_test_f = split_and_preprocess(df)
         scaler_f = StandardScaler()
         x_train_fs = scaler_f.fit_transform(x_train_f)
         x_test_fs = scaler_f.transform(x_test_f)
@@ -116,14 +134,11 @@ def main() -> None:
         lr_f.fit(x_train_fs, y_train_f)
         m_with = evaluate("LR with trap", y_test_f, lr_f.predict_proba(x_test_fs)[:, 1])
 
-        lr_without = LogisticRegression(max_iter=2000, random_state=SEED)
-        x_no, _ = prepare(df, exclude=[LEAKAGE_TRAP])
-        x_train_n, x_test_n, _, _ = train_test_split(
-            x_no, y_full, test_size=0.30, random_state=SEED, stratify=y_full
-        )
+        x_train_n, x_test_n, _, _ = split_and_preprocess(df, exclude=[LEAKAGE_TRAP])
         scaler_n = StandardScaler()
         x_train_ns = scaler_n.fit_transform(x_train_n)
         x_test_ns = scaler_n.transform(x_test_n)
+        lr_without = LogisticRegression(max_iter=2000, random_state=SEED)
         lr_without.fit(x_train_ns, y_train_f)
         m_without = evaluate("LR without trap", y_test_f, lr_without.predict_proba(x_test_ns)[:, 1])
 
@@ -138,9 +153,8 @@ def main() -> None:
     print(f"\n{'=' * 60}")
     print("FEATURE IMPORTANCE (Random Forest, without trap)")
     print(f"{'=' * 60}")
-    x_imp, _ = prepare(df, exclude=[LEAKAGE_TRAP])
     importances = sorted(
-        zip(x_imp.columns, rf.feature_importances_, strict=False),
+        zip(x_train.columns, rf.feature_importances_, strict=False),
         key=lambda t: t[1],
         reverse=True,
     )
@@ -153,10 +167,9 @@ def main() -> None:
         print(f"\n{'=' * 60}")
         print("VALUE-AWARE SCORING DEMO")
         print(f"{'=' * 60}")
-        x_val, y_val = prepare(df, exclude=[LEAKAGE_TRAP])
-        x_tr, x_te, y_tr, y_te = train_test_split(
-            x_val, y_val, test_size=0.30, random_state=SEED, stratify=y_val
-        )
+
+        # Reuse the baseline split (same seed, same rows)
+        x_tr, x_te, y_tr, y_te = split_and_preprocess(df, exclude=[LEAKAGE_TRAP])
         scaler_v = StandardScaler()
         x_tr_s = scaler_v.fit_transform(x_tr)
         x_te_s = scaler_v.transform(x_te)

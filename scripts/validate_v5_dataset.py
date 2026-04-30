@@ -80,21 +80,54 @@ MAX_DUPLICATE_RATE = 0.01
 # ---------------------------------------------------------------------------
 
 
-def _prepare_features(
-    df: pd.DataFrame, exclude_cols: list[str] | None = None
-) -> tuple[pd.DataFrame, pd.Series]:
-    """Prepare X, y from DataFrame."""
-    feature_cols = [c for c in df.columns if c != TARGET and c not in (exclude_cols or [])]
-    x_df = df[feature_cols].copy()
+def _split_and_preprocess(
+    df: pd.DataFrame,
+    exclude_cols: list[str] | None = None,
+    seed: int = 42,
+) -> tuple[np.ndarray, np.ndarray, pd.Series, pd.Series]:
+    """Split first, then fit preprocessing on train only.
+
+    Returns scaled (x_train, x_test, y_train, y_test).  Label encoding,
+    median imputation, and standard scaling are all fit on the training fold
+    so that test-fold metrics are truly out-of-sample.
+    """
+    exclude = set(exclude_cols or [])
+    feature_cols = [c for c in df.columns if c != TARGET and c not in exclude]
+
+    x_raw = df[feature_cols].copy()
     y = df[TARGET].astype(int)
 
-    for col in x_df.select_dtypes(include=["object", "category"]).columns:
-        le = LabelEncoder()
-        x_df[col] = le.fit_transform(x_df[col].astype(str).fillna("__MISSING__"))
+    x_train_raw, x_test_raw, y_train, y_test = train_test_split(
+        x_raw, y, test_size=0.30, random_state=seed, stratify=y
+    )
 
-    x_df = x_df.select_dtypes(include=[np.number])
-    x_df = x_df.fillna(x_df.median())
-    return x_df, y
+    # Encode categoricals: fit LabelEncoder on train, transform both.
+    cat_cols = list(x_train_raw.select_dtypes(include=["object", "category"]).columns)
+    encoders: dict[str, LabelEncoder] = {}
+    for col in cat_cols:
+        le = LabelEncoder()
+        le.fit(x_train_raw[col].astype(str).fillna("__MISSING__"))
+        encoders[col] = le
+        x_train_raw[col] = le.transform(x_train_raw[col].astype(str).fillna("__MISSING__"))
+        # Unseen test categories get mapped to "__MISSING__"
+        test_vals = x_test_raw[col].astype(str).fillna("__MISSING__")
+        test_vals = test_vals.where(test_vals.isin(le.classes_), "__MISSING__")
+        # Ensure __MISSING__ is in classes (it always is since we fillna above)
+        x_test_raw[col] = le.transform(test_vals)
+
+    # Select numeric columns and impute with train medians.
+    x_train_num = x_train_raw.select_dtypes(include=[np.number]).copy()
+    x_test_num = x_test_raw[x_train_num.columns].copy()
+    train_medians = x_train_num.median()
+    x_train_num = x_train_num.fillna(train_medians)
+    x_test_num = x_test_num.fillna(train_medians)
+
+    # Scale.
+    scaler = StandardScaler()
+    x_train_s = scaler.fit_transform(x_train_num)
+    x_test_s = scaler.transform(x_test_num)
+
+    return x_train_s, x_test_s, y_train, y_test
 
 
 def _fit_lr_holdout(
@@ -103,14 +136,7 @@ def _fit_lr_holdout(
     seed: int = 42,
 ) -> dict[str, float]:
     """Fit LR on 70/30 hold-out split and return metrics."""
-    x_df, y = _prepare_features(df, exclude_cols)
-    x_train, x_test, y_train, y_test = train_test_split(
-        x_df, y, test_size=0.30, random_state=seed, stratify=y
-    )
-
-    scaler = StandardScaler()
-    x_train_s = scaler.fit_transform(x_train)
-    x_test_s = scaler.transform(x_test)
+    x_train_s, x_test_s, y_train, y_test = _split_and_preprocess(df, exclude_cols, seed)
 
     lr = LogisticRegression(max_iter=2000, random_state=42)
     lr.fit(x_train_s, y_train)
@@ -142,14 +168,7 @@ def _fit_lr_auc_only(
     seed: int = 42,
 ) -> float:
     """Fit LR on hold-out split and return only AUC (for multi-seed checks)."""
-    x_df, y = _prepare_features(df, exclude_cols)
-    x_train, x_test, y_train, y_test = train_test_split(
-        x_df, y, test_size=0.30, random_state=seed, stratify=y
-    )
-    scaler = StandardScaler()
-    x_train_s = scaler.fit_transform(x_train)
-    x_test_s = scaler.transform(x_test)
-
+    x_train_s, x_test_s, y_train, y_test = _split_and_preprocess(df, exclude_cols, seed)
     lr = LogisticRegression(max_iter=2000, random_state=42)
     lr.fit(x_train_s, y_train)
     probs = lr.predict_proba(x_test_s)[:, 1]
@@ -261,34 +280,50 @@ def check_missingness(df: pd.DataFrame) -> list[str]:
         if df["web_sessions"].isna().sum() == 0:
             errors.append("web_sessions has no nulls")
         else:
-            outbound_rate = (
-                df.loc[df["lead_source"] == "sdr_outbound", "web_sessions"].isna().mean()
-            )
-            inbound_rate = (
-                df.loc[df["lead_source"] == "inbound_marketing", "web_sessions"].isna().mean()
-            )
-            if inbound_rate > 0 and outbound_rate / inbound_rate < 3.0:
+            outbound_mask = df["lead_source"] == "sdr_outbound"
+            inbound_mask = df["lead_source"] == "inbound_marketing"
+            if not outbound_mask.any():
                 errors.append(
-                    f"web_sessions missing ratio outbound/inbound = "
-                    f"{outbound_rate / inbound_rate:.1f}x (need >3x)"
+                    "web_sessions missingness check requires at least one sdr_outbound row"
                 )
-            elif inbound_rate == 0 and outbound_rate == 0:
-                errors.append("web_sessions has no source-conditional missingness")
+            elif not inbound_mask.any():
+                errors.append(
+                    "web_sessions missingness check requires at least one inbound_marketing row"
+                )
+            else:
+                outbound_rate = df.loc[outbound_mask, "web_sessions"].isna().mean()
+                inbound_rate = df.loc[inbound_mask, "web_sessions"].isna().mean()
+                if inbound_rate > 0 and outbound_rate / inbound_rate < 3.0:
+                    errors.append(
+                        f"web_sessions missing ratio outbound/inbound = "
+                        f"{outbound_rate / inbound_rate:.1f}x (need >3x)"
+                    )
+                elif inbound_rate == 0 and outbound_rate == 0:
+                    errors.append("web_sessions has no source-conditional missingness")
 
     # seniority must have nulls
     if "seniority" in df.columns:
         if df["seniority"].isna().sum() == 0:
             errors.append("seniority has no nulls")
         else:
-            partner_rate = (
-                df.loc[df["lead_source"] == "partner_referral", "seniority"].isna().mean()
-            )
-            other_rate = df.loc[df["lead_source"] != "partner_referral", "seniority"].isna().mean()
-            if other_rate > 0 and partner_rate / other_rate < 3.0:
+            partner_mask = df["lead_source"] == "partner_referral"
+            other_mask = ~partner_mask
+            if not partner_mask.any():
                 errors.append(
-                    f"seniority missing ratio partner/other = "
-                    f"{partner_rate / other_rate:.1f}x (need >3x)"
+                    "seniority missingness check requires at least one partner_referral row"
                 )
+            elif not other_mask.any():
+                errors.append(
+                    "seniority missingness check requires at least one non-partner_referral row"
+                )
+            else:
+                partner_rate = df.loc[partner_mask, "seniority"].isna().mean()
+                other_rate = df.loc[other_mask, "seniority"].isna().mean()
+                if other_rate > 0 and partner_rate / other_rate < 3.0:
+                    errors.append(
+                        f"seniority missing ratio partner/other = "
+                        f"{partner_rate / other_rate:.1f}x (need >3x)"
+                    )
 
     # days_since_last_touch must have nulls
     if "days_since_last_touch" in df.columns:
@@ -348,7 +383,10 @@ def check_acv_range(df: pd.DataFrame) -> list[str]:
     """Check 10: expected_acv within narrative-consistent range."""
     errors = []
     if "expected_acv" in df.columns:
-        acv = df["expected_acv"].dropna()
+        acv = pd.to_numeric(df["expected_acv"], errors="coerce").dropna()
+        if acv.empty:
+            errors.append("expected_acv contains no usable numeric values")
+            return errors
         if acv.min() < 18_000 - 1:
             errors.append(f"expected_acv min {acv.min():.0f} below narrative floor 18,000")
         if acv.max() > 120_000 + 1:
