@@ -128,3 +128,87 @@ class RecencyDecayIntensity(Mechanism):
             "decay_factor": self._decay,
             "floor_rate": self._floor,
         }
+
+
+class LatentDecayIntensity(Mechanism):
+    """Poisson intensity that decays with time AND is modulated by latent traits.
+
+    Combines the recency-decay model with a latent-score multiplier so that
+    leads with higher intent/fit have higher touch intensity throughout the
+    simulation.  This creates a causal pathway: latent → touches AND
+    latent → conversion, making post-snapshot touch counts a meaningful but
+    imperfect proxy for conversion propensity.
+
+    Expected count per day::
+
+        lambda = max(floor, base_rate * decay^t * (1 + boost * latent_multiplier))
+
+    where ``latent_multiplier = sum(weight_i * latents[key_i])``.
+
+    Args:
+        base_rate: Expected daily count at ``t=0`` for a lead with zero
+            latent scores.
+        decay_factor: Per-day multiplicative decay in (0, 1].
+        floor_rate: Minimum daily rate (applied after decay and boost).
+        latent_weights: Mapping of latent-key → weight for the multiplier.
+        boost: Scaling factor for the latent multiplier (controls how much
+            latent traits amplify touch intensity).
+    """
+
+    def __init__(
+        self,
+        base_rate: float,
+        decay_factor: float = 0.97,
+        floor_rate: float = 0.01,
+        latent_weights: dict[str, float] | None = None,
+        boost: float = 0.8,
+    ) -> None:
+        if base_rate <= 0:
+            raise ValueError(f"base_rate must be positive, got {base_rate}")
+        if not (0.0 < decay_factor <= 1.0):
+            raise ValueError(f"decay_factor must be in (0, 1], got {decay_factor}")
+        if floor_rate < 0:
+            raise ValueError(f"floor_rate must be non-negative, got {floor_rate}")
+        self._base_rate = base_rate
+        self._decay = decay_factor
+        self._floor = floor_rate
+        self._latent_weights: dict[str, float] = dict(latent_weights) if latent_weights else {}
+        self._boost = boost
+
+    @property
+    def name(self) -> str:
+        return "latent_decay_intensity"
+
+    def expected_count(self, t: int, latents: dict[str, float] | None = None) -> float:
+        """Return the expected daily count at day *t* given *latents*."""
+        latent_mult = 0.0
+        if latents and self._latent_weights:
+            latent_mult = sum(
+                self._latent_weights.get(k, 0.0) * latents.get(k, 0.0) for k in self._latent_weights
+            )
+        rate = self._base_rate * (self._decay**t) * (1.0 + self._boost * latent_mult)
+        return max(self._floor, rate)
+
+    def sample(self, context: MechanismContext, rng: random.Random) -> int:
+        lam = self.expected_count(context.t, context.latents)
+        count = 0
+        p = math.exp(-lam)
+        cum = p
+        u = rng.random()
+        while u > cum:
+            count += 1
+            p *= lam / count
+            cum += p
+            if count > 1000:
+                break
+        return count
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "base_rate": self._base_rate,
+            "decay_factor": self._decay,
+            "floor_rate": self._floor,
+            "latent_weights": self._latent_weights,
+            "boost": self._boost,
+        }

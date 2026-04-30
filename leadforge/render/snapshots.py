@@ -140,6 +140,7 @@ def build_snapshot(
     )
 
     # touches_week_1: count touches within first 7 days of lead creation.
+    # touches_last_7_days: count touches within last 7 days of snapshot window.
     if len(td_windowed) > 0:
         if "_ts" not in td_windowed.columns:
             td_windowed = td_windowed.copy()
@@ -154,6 +155,12 @@ def build_snapshot(
         week1 = td_windowed_copy[td_windowed_copy["_day"] <= 7]
         touches_week_1 = week1.groupby("lead_id").size().reset_index(name="touches_week_1")
 
+        # touches_last_7_days: touches in [effective_window - 7, effective_window]
+        last7 = td_windowed_copy[td_windowed_copy["_day"] > (effective_window - 7)]
+        touches_last_7_days = (
+            last7.groupby("lead_id").size().reset_index(name="touches_last_7_days")
+        )
+
         # days_since_first_touch: snapshot_day - first_touch_day
         first_touch_day = (
             td_windowed_copy.groupby("lead_id")["_day"]
@@ -163,6 +170,7 @@ def build_snapshot(
         )
     else:
         touches_week_1 = pd.DataFrame(columns=["lead_id", "touches_week_1"])
+        touches_last_7_days = pd.DataFrame(columns=["lead_id", "touches_last_7_days"])
         first_touch_day = pd.DataFrame(columns=["lead_id", "_first_touch_day"])
 
     # total_touches_all: count over full horizon (leakage trap when windowed,
@@ -241,6 +249,7 @@ def build_snapshot(
     lead_df = lead_df.merge(any_opps, on="lead_id", how="left")
     lead_df = lead_df.merge(open_opps, on="lead_id", how="left")
     lead_df = lead_df.merge(touches_week_1, on="lead_id", how="left")
+    lead_df = lead_df.merge(touches_last_7_days, on="lead_id", how="left")
     lead_df = lead_df.merge(first_touch_day, on="lead_id", how="left")
     lead_df = lead_df.merge(total_touches_all, on="lead_id", how="left")
 
@@ -249,6 +258,7 @@ def build_snapshot(
     int_agg_cols = [c for c in _INT_AGG_COLS if c in lead_df.columns]
     lead_df[int_agg_cols] = lead_df[int_agg_cols].fillna(0)
     lead_df["touches_week_1"] = lead_df["touches_week_1"].fillna(0)
+    lead_df["touches_last_7_days"] = lead_df["touches_last_7_days"].fillna(0)
     if "total_touches_all" in lead_df.columns:
         lead_df["total_touches_all"] = pd.to_numeric(
             lead_df["total_touches_all"], errors="coerce"

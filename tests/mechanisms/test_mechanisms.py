@@ -9,7 +9,11 @@ import pytest
 
 from leadforge.mechanisms.base import MechanismAssignment, MechanismContext, MechanismSummary
 from leadforge.mechanisms.categorical import CHANNEL_QUALITY_SCORES, CategoricalInfluence
-from leadforge.mechanisms.counts import PoissonIntensity, RecencyDecayIntensity
+from leadforge.mechanisms.counts import (
+    LatentDecayIntensity,
+    PoissonIntensity,
+    RecencyDecayIntensity,
+)
 from leadforge.mechanisms.hazards import ConversionHazard
 from leadforge.mechanisms.influence import (
     AdditiveInfluence,
@@ -555,3 +559,65 @@ def test_fit_dominant_higher_conversion_rate_than_friction() -> None:
         fric_p.append(fric_asgn.conversion_hazard.daily_probability(high_fit_latents))
 
     assert sum(fit_p) / len(fit_p) > sum(fric_p) / len(fric_p)
+
+
+# ===========================================================================
+# LatentDecayIntensity
+# ===========================================================================
+
+
+class TestLatentDecayIntensity:
+    """Tests for the latent-aware touch intensity mechanism (v6)."""
+
+    def test_expected_count_no_latents(self) -> None:
+        """With no latents, should behave like plain RecencyDecayIntensity."""
+        ldi = LatentDecayIntensity(base_rate=0.5, decay_factor=0.97, floor_rate=0.02)
+        rdi = RecencyDecayIntensity(base_rate=0.5, decay_factor=0.97, floor_rate=0.02)
+        for t in [0, 5, 10, 50]:
+            assert ldi.expected_count(t) == pytest.approx(rdi.expected_count(t))
+
+    def test_high_latents_increase_rate(self) -> None:
+        """Higher latent values should produce higher expected counts."""
+        ldi = LatentDecayIntensity(
+            base_rate=0.5,
+            latent_weights={"latent_engagement_propensity": 1.0},
+            boost=1.0,
+        )
+        low = ldi.expected_count(5, {"latent_engagement_propensity": 0.2})
+        high = ldi.expected_count(5, {"latent_engagement_propensity": 0.9})
+        assert high > low
+
+    def test_sample_returns_nonnegative_int(self) -> None:
+        ldi = LatentDecayIntensity(
+            base_rate=0.5,
+            latent_weights={"latent_engagement_propensity": 1.0},
+            boost=0.8,
+        )
+        ctx = MechanismContext(latents=_LATENTS, t=5)
+        for _ in range(100):
+            val = ldi.sample(ctx, _rng())
+            assert isinstance(val, int)
+            assert val >= 0
+
+    def test_to_dict_roundtrip(self) -> None:
+        ldi = LatentDecayIntensity(
+            base_rate=0.5,
+            decay_factor=0.95,
+            floor_rate=0.01,
+            latent_weights={"a": 1.0, "b": 0.5},
+            boost=0.8,
+        )
+        d = ldi.to_dict()
+        assert d["name"] == "latent_decay_intensity"
+        assert d["base_rate"] == 0.5
+        assert d["boost"] == 0.8
+
+    def test_assign_mechanisms_with_latent_touch(self) -> None:
+        """assign_mechanisms with latent_touch_intensity=True uses LatentDecayIntensity."""
+        assignment = assign_mechanisms("fit_dominant", _rng(), latent_touch_intensity=True)
+        assert assignment.touch_intensity.name == "latent_decay_intensity"
+
+    def test_assign_mechanisms_without_latent_touch(self) -> None:
+        """Default (False) still uses RecencyDecayIntensity."""
+        assignment = assign_mechanisms("fit_dominant", _rng())
+        assert assignment.touch_intensity.name == "recency_decay_intensity"

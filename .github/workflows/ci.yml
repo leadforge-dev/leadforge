@@ -68,7 +68,7 @@ jobs:
           python-version: "3.12"
       - run: pip install -e ".[dev,scripts]"
       - name: Check for v5 dataset
-        id: check
+        id: check-v5
         run: |
           if [ -f "lead_scoring_intro_v5.csv" ]; then
             echo "found=true" >> "$GITHUB_OUTPUT"
@@ -76,9 +76,37 @@ jobs:
           else
             echo "found=false" >> "$GITHUB_OUTPUT"
           fi
-      - name: Run validator
-        if: steps.check.outputs.found == 'true'
-        run: python scripts/validate_lead_scoring_dataset.py --csv "${{ steps.check.outputs.csv }}" --enforce-1000
-      - name: Skip (no dataset)
-        if: steps.check.outputs.found != 'true'
-        run: echo "No lead_scoring_intro_v5.csv found in repo root — skipping validation"
+      - name: Run v5 validator
+        if: steps.check-v5.outputs.found == 'true'
+        run: python scripts/validate_lead_scoring_dataset.py --csv "${{ steps.check-v5.outputs.csv }}" --enforce-1000
+      - name: Skip v5 (no dataset)
+        if: steps.check-v5.outputs.found != 'true'
+        run: echo "No lead_scoring_intro_v5.csv found in repo root — skipping v5 validation"
+
+  validate-dataset-v6:
+    name: Validate v6 lead scoring dataset
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev,scripts]"
+      - name: Check for v6 datasets
+        id: check-v6
+        run: |
+          STUDENT="lead_scoring_intro/lead_scoring_intro_v6.csv"
+          INSTRUCTOR="lead_scoring_intro/lead_scoring_intro_v6_instructor.csv"
+          if [ -f "$STUDENT" ] && [ -f "$INSTRUCTOR" ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "student=$STUDENT" >> "$GITHUB_OUTPUT"
+            echo "instructor=$INSTRUCTOR" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Run v6 validator
+        if: steps.check-v6.outputs.found == 'true'
+        run: python scripts/validate_v6_dataset.py "${{ steps.check-v6.outputs.student }}" "${{ steps.check-v6.outputs.instructor }}"
+      - name: Skip v6 (no dataset)
+        if: steps.check-v6.outputs.found != 'true'
+        run: echo "No v6 datasets found — skipping v6 validation"
