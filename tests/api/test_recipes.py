@@ -208,6 +208,57 @@ def test_resolve_config_unsupported_difficulty_raises() -> None:
         recipe.resolve_config(difficulty="advanced")
 
 
+def test_resolve_config_primary_task_defaults_from_recipe() -> None:
+    recipe = Recipe.from_dict(VALID_DICT)
+    cfg = recipe.resolve_config()
+    assert cfg.primary_task == "converted_within_90_days"
+
+
+def test_resolve_config_primary_task_explicit_kwarg() -> None:
+    recipe = Recipe.from_dict(VALID_DICT)
+    cfg = recipe.resolve_config(primary_task="churned_within_60_days")
+    assert cfg.primary_task == "churned_within_60_days"
+
+
+def test_resolve_config_label_window_days_defaults() -> None:
+    recipe = Recipe.from_dict(VALID_DICT)
+    cfg = recipe.resolve_config()
+    assert cfg.label_window_days == 90
+
+
+def test_resolve_config_label_window_days_from_recipe() -> None:
+    data = {**VALID_DICT, "label_window_days": 60}
+    recipe = Recipe.from_dict(data)
+    cfg = recipe.resolve_config()
+    assert cfg.label_window_days == 60
+
+
+def test_resolve_config_label_window_days_explicit_kwarg() -> None:
+    recipe = Recipe.from_dict(VALID_DICT)
+    cfg = recipe.resolve_config(label_window_days=30)
+    assert cfg.label_window_days == 30
+
+
+def test_resolve_config_override_dict_applies_task_fields() -> None:
+    recipe = Recipe.from_dict(VALID_DICT)
+    cfg = recipe.resolve_config(
+        override={"primary_task": "upsold_within_180_days", "label_window_days": 180}
+    )
+    assert cfg.primary_task == "upsold_within_180_days"
+    assert cfg.label_window_days == 180
+
+
+def test_resolve_config_explicit_task_fields_beat_override() -> None:
+    recipe = Recipe.from_dict(VALID_DICT)
+    cfg = recipe.resolve_config(
+        primary_task="my_task",
+        label_window_days=45,
+        override={"primary_task": "other_task", "label_window_days": 120},
+    )
+    assert cfg.primary_task == "my_task"
+    assert cfg.label_window_days == 45
+
+
 # ---------------------------------------------------------------------------
 # Real recipe loading via registry
 # ---------------------------------------------------------------------------

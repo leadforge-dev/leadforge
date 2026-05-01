@@ -40,6 +40,7 @@ class Recipe:
     supported_difficulty: tuple[DifficultyProfile, ...]
     default_population: dict[str, int]
     horizon_days: int
+    label_window_days: int | None = None
 
     # ------------------------------------------------------------------ #
     # Construction
@@ -93,6 +94,17 @@ class Recipe:
         if horizon_days <= 0:
             raise InvalidRecipeError(f"'horizon_days' must be positive, got {horizon_days}")
 
+        label_window_days: int | None = None
+        raw_lwd = data.get("label_window_days")
+        if raw_lwd is not None:
+            if isinstance(raw_lwd, bool) or not isinstance(raw_lwd, int):
+                raise InvalidRecipeError(
+                    f"'label_window_days' must be a positive int, got {type(raw_lwd).__name__!r}"
+                )
+            if raw_lwd <= 0:
+                raise InvalidRecipeError(f"'label_window_days' must be positive, got {raw_lwd}")
+            label_window_days = raw_lwd
+
         return cls(
             id=data["id"],
             title=data["title"],
@@ -103,6 +115,7 @@ class Recipe:
             supported_difficulty=supported_difficulty,
             default_population=dict(pop),
             horizon_days=horizon_days,
+            label_window_days=label_window_days,
         )
 
     # ------------------------------------------------------------------ #
@@ -119,6 +132,8 @@ class Recipe:
         n_contacts: int | None = None,
         n_leads: int | None = None,
         horizon_days: int | None = None,
+        primary_task: str | None = None,
+        label_window_days: int | None = None,
         output_path: str = _MISSING,  # type: ignore[assignment]
         override: dict[str, Any] | None = None,
     ) -> GenerationConfig:
@@ -148,6 +163,8 @@ class Recipe:
             "n_contacts": pkg["n_contacts"],
             "n_leads": pkg["n_leads"],
             "horizon_days": pkg["horizon_days"],
+            "primary_task": pkg["primary_task"],
+            "label_window_days": pkg["label_window_days"],
         }
 
         # Layer 3 — recipe defaults
@@ -156,6 +173,9 @@ class Recipe:
             if key in pop:
                 resolved[key] = pop[key]
         resolved["horizon_days"] = self.horizon_days
+        resolved["primary_task"] = self.primary_task
+        if self.label_window_days is not None:
+            resolved["label_window_days"] = self.label_window_days
 
         # Layer 2 — override dict (beats recipe/package defaults)
         if override:
@@ -164,6 +184,8 @@ class Recipe:
                 "n_contacts",
                 "n_leads",
                 "horizon_days",
+                "primary_task",
+                "label_window_days",
                 "seed",
                 "output_path",
                 "exposure_mode",
@@ -190,6 +212,10 @@ class Recipe:
             resolved["n_leads"] = n_leads
         if horizon_days is not None:
             resolved["horizon_days"] = horizon_days
+        if primary_task is not None:
+            resolved["primary_task"] = primary_task
+        if label_window_days is not None:
+            resolved["label_window_days"] = label_window_days
 
         try:
             mode = ExposureMode(resolved["exposure_mode"])
@@ -226,6 +252,8 @@ class Recipe:
             n_contacts=resolved["n_contacts"],
             n_leads=resolved["n_leads"],
             horizon_days=resolved["horizon_days"],
+            primary_task=resolved["primary_task"],
+            label_window_days=resolved["label_window_days"],
             output_path=resolved["output_path"],
         )
 

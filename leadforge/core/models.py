@@ -45,6 +45,8 @@ class GenerationConfig:
     n_contacts: int = 4200
     n_leads: int = 5000
     horizon_days: int = 90
+    primary_task: str = "converted_within_90_days"
+    label_window_days: int = 90
     output_path: str = "./out"
     package_version: str = field(default_factory=lambda: __version__)
 
@@ -57,6 +59,11 @@ class GenerationConfig:
         _require_positive_int(self.n_contacts, "n_contacts")
         _require_positive_int(self.n_leads, "n_leads")
         _require_positive_int(self.horizon_days, "horizon_days")
+        _require_positive_int(self.label_window_days, "label_window_days")
+        if not isinstance(self.primary_task, str) or not self.primary_task:
+            raise InvalidConfigError(
+                f"primary_task must be a non-empty string, got {self.primary_task!r}"
+            )
         # Coerce string enums supplied as plain strings
         if not isinstance(self.exposure_mode, ExposureMode):
             try:
