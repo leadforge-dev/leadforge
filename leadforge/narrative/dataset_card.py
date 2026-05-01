@@ -97,10 +97,10 @@ def render_dataset_card(world_spec: WorldSpec) -> str:
     lines += [
         "## Primary task",
         "",
-        "**Task:** `converted_within_90_days`",
+        f"**Task:** `{cfg.primary_task}`",
         "",
-        "**Label definition:** A lead is considered converted if a `closed_won` event "
-        "is recorded within 90 days of the lead's snapshot anchor date. "
+        f"**Label definition:** A lead is considered converted if a `closed_won` event "
+        f"is recorded within {cfg.label_window_days} days of the lead's snapshot anchor date. "
         "The label is derived from simulated events — it is never sampled directly.",
         "",
     ]

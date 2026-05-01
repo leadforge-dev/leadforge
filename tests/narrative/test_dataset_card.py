@@ -46,6 +46,27 @@ def test_card_contains_label_definition() -> None:
     assert "90 days" in card
 
 
+def test_card_renders_custom_primary_task() -> None:
+    spec = _make_world_spec(primary_task="churned_within_60_days")
+    card = render_dataset_card(spec)
+    assert "`churned_within_60_days`" in card
+    assert "converted_within_90_days" not in card
+
+
+def test_card_renders_custom_label_window_days() -> None:
+    spec = _make_world_spec(label_window_days=60)
+    card = render_dataset_card(spec)
+    assert "within 60 days" in card
+    assert "within 90 days" not in card
+
+
+def test_card_renders_custom_task_and_window() -> None:
+    spec = _make_world_spec(primary_task="upgraded_within_30_days", label_window_days=30)
+    card = render_dataset_card(spec)
+    assert "`upgraded_within_30_days`" in card
+    assert "30 days" in card
+
+
 def test_card_contains_use_cases() -> None:
     card = render_dataset_card(_make_world_spec())
     assert "use cases" in card.lower()
