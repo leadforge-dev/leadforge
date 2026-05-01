@@ -87,7 +87,6 @@ def test_task_manifest_to_dict_keys() -> None:
         "primary_table",
         "split",
         "description",
-        "label_description",
     }
     assert set(d.keys()) == expected
 

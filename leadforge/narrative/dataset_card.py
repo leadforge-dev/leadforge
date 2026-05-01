@@ -19,6 +19,12 @@ def render_dataset_card(
 ) -> str:
     """Return a Markdown dataset card string for *world_spec*.
 
+    Args:
+        world_spec: The world specification containing config and narrative.
+        task_manifest: Optional task manifest whose ``description`` is used
+            as the label definition prose.  When ``None`` or when
+            ``description`` is empty, a generic fallback is rendered.
+
     Sections present at all milestones:
     - Header (recipe id, version, seed, exposure mode)
     - Narrative summary (company, product, market, GTM)
@@ -98,14 +104,13 @@ def render_dataset_card(
     # ------------------------------------------------------------------
     # Primary task
     # ------------------------------------------------------------------
-    if task_manifest is not None and task_manifest.label_description:
-        label_def = task_manifest.label_description
+    if task_manifest is not None and task_manifest.description:
+        label_def = task_manifest.description
     else:
         label_def = (
-            f"A lead is considered converted if a `closed_won` event "
-            f"is recorded within {cfg.label_window_days} days of the lead's "
-            f"snapshot anchor date. The label is derived from simulated events "
-            f"— it is never sampled directly."
+            f"Binary label evaluated over a {cfg.label_window_days}-day window "
+            f"from the snapshot anchor date. The label is event-derived — never "
+            f"sampled directly."
         )
     lines += [
         "## Primary task",
