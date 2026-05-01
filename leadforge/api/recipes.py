@@ -132,6 +132,8 @@ class Recipe:
         n_contacts: int | None = None,
         n_leads: int | None = None,
         horizon_days: int | None = None,
+        primary_task: str | None = None,
+        label_window_days: int | None = None,
         output_path: str = _MISSING,  # type: ignore[assignment]
         override: dict[str, Any] | None = None,
     ) -> GenerationConfig:
@@ -210,6 +212,10 @@ class Recipe:
             resolved["n_leads"] = n_leads
         if horizon_days is not None:
             resolved["horizon_days"] = horizon_days
+        if primary_task is not None:
+            resolved["primary_task"] = primary_task
+        if label_window_days is not None:
+            resolved["label_window_days"] = label_window_days
 
         try:
             mode = ExposureMode(resolved["exposure_mode"])

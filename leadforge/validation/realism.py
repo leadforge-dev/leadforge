@@ -30,26 +30,43 @@ def check_realism(bundle_root: Path, manifest: dict[str, Any]) -> list[str]:
     Returns a list of warning/error strings (empty = all checks pass).
     """
     errors: list[str] = []
-    errors.extend(_check_conversion_rate(bundle_root))
+    errors.extend(_check_conversion_rate(bundle_root, manifest))
     errors.extend(_check_table_nonempty(bundle_root, manifest))
-    errors.extend(_check_feature_ranges(bundle_root))
+    errors.extend(_check_feature_ranges(bundle_root, manifest))
     errors.extend(_check_stage_distribution(bundle_root))
     return errors
 
 
-def _check_conversion_rate(root: Path) -> list[str]:
+def _first_task_train_path(root: Path, manifest: dict[str, Any]) -> Path | None:
+    """Return the train.parquet path of the primary task in the manifest."""
+    tasks = manifest.get("tasks", {})
+    if not isinstance(tasks, dict) or not tasks:
+        return None
+    primary = manifest.get("primary_task")
+    task_id = primary if isinstance(primary, str) and primary in tasks else next(iter(tasks))
+    path = root / f"tasks/{task_id}/train.parquet"
+    return path if path.exists() else None
+
+
+# The label column in the snapshot is always ``converted_within_90_days``
+# (mirroring :class:`~leadforge.schema.entities.LeadRow`).  The task *directory*
+# may vary via ``config.primary_task``, but the column inside does not.
+_LABEL_COLUMN = "converted_within_90_days"
+
+
+def _check_conversion_rate(root: Path, manifest: dict[str, Any]) -> list[str]:
     """Check that conversion rate is within plausible bounds."""
     errors: list[str] = []
-    train_path = root / "tasks/converted_within_90_days/train.parquet"
-    if not train_path.exists():
+    train_path = _first_task_train_path(root, manifest)
+    if train_path is None:
         return errors
 
-    df = pd.read_parquet(train_path, columns=["converted_within_90_days"])
+    df = pd.read_parquet(train_path, columns=[_LABEL_COLUMN])
     if len(df) == 0:
         errors.append("Train split is empty")
         return errors
 
-    rate = df["converted_within_90_days"].mean()
+    rate = df[_LABEL_COLUMN].mean()
 
     # Absolute bounds — any reasonable simulation should land here.
     # The v1 engine typically produces rates in the 30–90% range depending
@@ -79,11 +96,11 @@ def _check_table_nonempty(root: Path, manifest: dict[str, Any]) -> list[str]:
     return errors
 
 
-def _check_feature_ranges(root: Path) -> list[str]:
+def _check_feature_ranges(root: Path, manifest: dict[str, Any]) -> list[str]:
     """Spot-check that key features have valid values."""
     errors: list[str] = []
-    train_path = root / "tasks/converted_within_90_days/train.parquet"
-    if not train_path.exists():
+    train_path = _first_task_train_path(root, manifest)
+    if train_path is None:
         return errors
 
     # Only read the columns we actually check.

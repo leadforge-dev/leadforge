@@ -211,9 +211,26 @@ def rename_and_select(
     df: pd.DataFrame,
     *,
     instructor: bool = False,
+    label_column: str = "converted_within_90_days",
 ) -> pd.DataFrame:
-    """Rename snapshot columns to v6 names and select final column set."""
-    df = df.rename(columns=RENAME_MAP)
+    """Rename snapshot columns to v6 names and select final column set.
+
+    Args:
+        df: Snapshot DataFrame.
+        instructor: If True, include the instructor leakage trap column.
+        label_column: Source column for the binary label. Defaults to
+            ``"converted_within_90_days"`` for backward compatibility.
+    """
+    if label_column not in df.columns:
+        raise ValueError(
+            f"Label column {label_column!r} not found. Available: {sorted(df.columns)}"
+        )
+    if label_column == "converted_within_90_days":
+        rename_map = RENAME_MAP
+    else:
+        rename_map = {k: v for k, v in RENAME_MAP.items() if v != "converted"}
+        rename_map[label_column] = "converted"
+    df = df.rename(columns=rename_map)
     df["converted"] = df["converted"].astype(int)
     columns = FINAL_COLUMNS_INSTRUCTOR if instructor else FINAL_COLUMNS_STUDENT
     missing = [c for c in columns if c not in df.columns]

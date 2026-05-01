@@ -7,7 +7,7 @@ and the table it lives in.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 
 @dataclass(frozen=True)
@@ -104,3 +104,31 @@ CONVERTED_WITHIN_90_DAYS: TaskManifest = TaskManifest(
         "directly. All features are pre-anchor (leakage-free by construction)."
     ),
 )
+
+
+def task_manifest_for_config(
+    primary_task: str = CONVERTED_WITHIN_90_DAYS.task_id,
+    label_window_days: int = CONVERTED_WITHIN_90_DAYS.label_window_days,
+) -> TaskManifest:
+    """Build a :class:`TaskManifest` from generation config fields.
+
+    Derives from :data:`CONVERTED_WITHIN_90_DAYS` via ``dataclasses.replace``,
+    overriding only the fields that vary.  When *primary_task* and
+    *label_window_days* match the defaults, this returns an equivalent manifest.
+
+    Args:
+        primary_task: Task identifier — used as the task directory name and
+            manifest key.
+        label_window_days: Label observation window in days.
+    """
+    return replace(
+        CONVERTED_WITHIN_90_DAYS,
+        task_id=primary_task,
+        label_window_days=label_window_days,
+        description=(
+            f"Predict whether a lead converts (closed_won event) within "
+            f"{label_window_days} days of the snapshot anchor date. Label is "
+            f"event-derived — never sampled directly. All features are "
+            f"pre-anchor (leakage-free by construction)."
+        ),
+    )
