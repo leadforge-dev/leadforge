@@ -112,6 +112,10 @@ def rename_and_select(
         label_column: Source column for the binary label. Defaults to
             ``"converted_within_90_days"`` for backward compatibility.
     """
+    if label_column not in df.columns:
+        raise ValueError(
+            f"Label column {label_column!r} not found. Available: {sorted(df.columns)}"
+        )
     if label_column == "converted_within_90_days":
         rename_map = RENAME_MAP
     else:

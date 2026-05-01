@@ -38,11 +38,12 @@ def check_realism(bundle_root: Path, manifest: dict[str, Any]) -> list[str]:
 
 
 def _first_task_train_path(root: Path, manifest: dict[str, Any]) -> Path | None:
-    """Return the train.parquet path of the first task in the manifest."""
+    """Return the train.parquet path of the primary task in the manifest."""
     tasks = manifest.get("tasks", {})
     if not isinstance(tasks, dict) or not tasks:
         return None
-    task_id = next(iter(tasks))
+    primary = manifest.get("primary_task")
+    task_id = primary if isinstance(primary, str) and primary in tasks else next(iter(tasks))
     path = root / f"tasks/{task_id}/train.parquet"
     return path if path.exists() else None
 

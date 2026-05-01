@@ -71,6 +71,11 @@ class Generator:
             n_contacts: Override recipe default contact count.
             n_leads: Override recipe default lead count.
             horizon_days: Override recipe default simulation horizon.
+            primary_task: Override recipe default task identifier (e.g.
+                ``"converted_within_60_days"``).  Controls the task
+                directory name and manifest key.
+            label_window_days: Override recipe default label observation
+                window in days.
             output_path: Directory where the bundle will be saved.
             override: Optional dict of overrides (mirrors a ``--override`` file).
                 Applied after recipe defaults but before explicit kwargs.

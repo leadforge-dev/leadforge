@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from leadforge.structure.graph import WorldGraph
 
 # Bump this whenever the bundle layout or manifest schema changes.
-BUNDLE_SCHEMA_VERSION = "1"
+BUNDLE_SCHEMA_VERSION = "2"
 
 
 def build_manifest(

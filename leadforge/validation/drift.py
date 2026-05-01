@@ -18,7 +18,7 @@ _LABEL_COLUMN = "converted_within_90_days"
 
 
 def _find_task_train(bundle_path: Path) -> tuple[Path | None, str]:
-    """Locate the train.parquet for the first task listed in the manifest.
+    """Locate the primary task's train.parquet from the bundle manifest.
 
     Returns ``(train_path_or_None, task_id)`` where *task_id* is included
     so callers can produce useful error messages.
@@ -28,7 +28,10 @@ def _find_task_train(bundle_path: Path) -> tuple[Path | None, str]:
         manifest: dict[str, Any] = load_json(manifest_path)
         tasks = manifest.get("tasks", {})
         if isinstance(tasks, dict) and tasks:
-            task_id = next(iter(tasks))
+            primary = manifest.get("primary_task")
+            task_id = (
+                primary if isinstance(primary, str) and primary in tasks else next(iter(tasks))
+            )
             train = bundle_path / f"tasks/{task_id}/train.parquet"
             return (train if train.exists() else None), task_id
     # Fallback: default task id

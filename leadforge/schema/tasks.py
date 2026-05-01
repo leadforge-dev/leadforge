@@ -107,8 +107,8 @@ CONVERTED_WITHIN_90_DAYS: TaskManifest = TaskManifest(
 
 
 def task_manifest_for_config(
-    primary_task: str = "converted_within_90_days",
-    label_window_days: int = 90,
+    primary_task: str = CONVERTED_WITHIN_90_DAYS.task_id,
+    label_window_days: int = CONVERTED_WITHIN_90_DAYS.label_window_days,
 ) -> TaskManifest:
     """Build a :class:`TaskManifest` from generation config fields.
 
