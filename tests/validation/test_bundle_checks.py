@@ -38,20 +38,30 @@ class TestValidBundle:
 
 
 class TestMetadataRowCounts:
-    """Verify that Parquet metadata row counts match actual data."""
+    """Verify that task split checks use Parquet metadata, not full reads."""
 
-    def test_task_split_metadata_matches_data(self, valid_bundle: Path) -> None:
-        import pandas as pd
-        import pyarrow.parquet as pq
+    def test_task_splits_does_not_call_read_parquet(
+        self, valid_bundle: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import pandas as _pd
+
+        from leadforge.validation import bundle_checks
+
+        def _boom(*args: object, **kwargs: object) -> None:
+            raise AssertionError("pd.read_parquet should not be called")
 
         manifest = json.loads((valid_bundle / "manifest.json").read_text())
-        for task_id in manifest.get("tasks", {}):
-            for split in ("train", "valid", "test"):
-                path = valid_bundle / f"tasks/{task_id}/{split}.parquet"
-                assert path.exists()
-                meta_rows = pq.read_metadata(path).num_rows
-                actual_rows = len(pd.read_parquet(path))
-                assert meta_rows == actual_rows
+        fake_pd = type(
+            "_FakePd",
+            (),
+            {
+                "read_parquet": staticmethod(_boom),
+                "DataFrame": _pd.DataFrame,
+            },
+        )
+        monkeypatch.setattr(bundle_checks, "pd", fake_pd)
+        errors = bundle_checks._check_task_splits(valid_bundle, manifest)
+        assert errors == []
 
 
 class TestCorruptBundle:

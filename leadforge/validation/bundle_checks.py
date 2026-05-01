@@ -113,12 +113,14 @@ def _check_task_splits(root: Path, manifest: dict[str, Any]) -> list[str]:
                 errors.append(f"Missing task file: {rel_path}")
                 continue
 
-            meta = pq.read_metadata(abs_path)
             expected_rows = task_info.get(f"{split}_rows")
-            if expected_rows is not None and meta.num_rows != expected_rows:
-                errors.append(
-                    f"Task {task_id}/{split}: expected {expected_rows} rows, got {meta.num_rows}"
-                )
+            if expected_rows is not None:
+                meta = pq.read_metadata(abs_path)
+                if meta.num_rows != expected_rows:
+                    errors.append(
+                        f"Task {task_id}/{split}: expected"
+                        f" {expected_rows} rows, got {meta.num_rows}"
+                    )
 
             expected_sha = task_info.get(f"{split}_sha256")
             if expected_sha is not None:
