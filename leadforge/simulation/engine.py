@@ -53,6 +53,7 @@ from leadforge.core.ids import ID_PREFIXES, make_id
 from leadforge.core.models import GenerationConfig
 from leadforge.core.rng import RNGRoot
 from leadforge.mechanisms.base import MechanismContext
+from leadforge.mechanisms.hazards import ConversionHazard
 from leadforge.mechanisms.policies import assign_mechanisms
 from leadforge.mechanisms.transitions import StageSequence
 from leadforge.schema.entities import (
@@ -198,6 +199,11 @@ def simulate_world(
     mechanisms = assign_mechanisms(
         world_graph.motif_family, mech_rng, latent_touch_intensity=latent_touch_intensity
     )
+    # Narrow type for direct conversion path (daily_probability is on
+    # ConversionHazard, not the Mechanism ABC).
+    if not isinstance(mechanisms.conversion_hazard, ConversionHazard):
+        raise TypeError("conversion_hazard must be a ConversionHazard instance")
+    conversion_hazard: ConversionHazard = mechanisms.conversion_hazard
     stage_seq = StageSequence()
 
     # Build lookup indexes.
@@ -265,7 +271,7 @@ def simulate_world(
             # -- 2. Stage advance or conversion check (transition stream) -
             if state.current_stage == "negotiation":
                 # Final close: ConversionHazard decides closed_won.
-                if mechanisms.conversion_hazard.sample(ctx, transition_rng):
+                if conversion_hazard.sample(ctx, transition_rng):
                     state.mark_converted(t)
                     # Fall through to emit events on conversion day.
             else:
@@ -281,8 +287,7 @@ def simulate_world(
             # daily probability of converting without reaching negotiation.
             if not state.is_terminal and state.current_stage in _DIRECT_CONVERSION_STAGES:
                 direct_p = (
-                    mechanisms.conversion_hazard.daily_probability(ctx.latents)
-                    * _DIRECT_CONVERSION_DISCOUNT
+                    conversion_hazard.daily_probability(ctx.latents) * _DIRECT_CONVERSION_DISCOUNT
                 )
                 if transition_rng.random() < direct_p:
                     state.mark_converted(t)
