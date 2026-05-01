@@ -83,6 +83,8 @@ def build_manifest(
         "n_contacts": config.n_contacts,
         "n_leads": config.n_leads,
         "horizon_days": config.horizon_days,
+        "primary_task": config.primary_task,
+        "label_window_days": config.label_window_days,
         "motif_family": world_graph.motif_family,
         "tables": tables,
         "tasks": tasks,

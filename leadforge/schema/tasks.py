@@ -104,3 +104,33 @@ CONVERTED_WITHIN_90_DAYS: TaskManifest = TaskManifest(
         "directly. All features are pre-anchor (leakage-free by construction)."
     ),
 )
+
+
+def task_manifest_for_config(
+    primary_task: str = "converted_within_90_days",
+    label_window_days: int = 90,
+) -> TaskManifest:
+    """Build a :class:`TaskManifest` from generation config fields.
+
+    When *primary_task* and *label_window_days* match the defaults, this
+    returns a manifest equivalent to :data:`CONVERTED_WITHIN_90_DAYS`.
+
+    Args:
+        primary_task: Task identifier — used as the task directory name and
+            manifest key.
+        label_window_days: Label observation window in days.
+    """
+    return TaskManifest(
+        task_id=primary_task,
+        label_column=CONVERTED_WITHIN_90_DAYS.label_column,
+        label_window_days=label_window_days,
+        primary_table=CONVERTED_WITHIN_90_DAYS.primary_table,
+        split=CONVERTED_WITHIN_90_DAYS.split,
+        task_type=CONVERTED_WITHIN_90_DAYS.task_type,
+        description=(
+            f"Predict whether a lead converts (closed_won event) within "
+            f"{label_window_days} days of the snapshot anchor date. Label is "
+            f"event-derived — never sampled directly. All features are "
+            f"pre-anchor (leakage-free by construction)."
+        ),
+    )

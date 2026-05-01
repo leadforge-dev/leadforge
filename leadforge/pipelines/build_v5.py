@@ -102,9 +102,19 @@ def cap_expected_acv(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def rename_and_select(df: pd.DataFrame) -> pd.DataFrame:
-    """Rename snapshot columns to v5 names and select final column set."""
-    df = df.rename(columns=RENAME_MAP)
+def rename_and_select(
+    df: pd.DataFrame, *, label_column: str = "converted_within_90_days"
+) -> pd.DataFrame:
+    """Rename snapshot columns to v5 names and select final column set.
+
+    Args:
+        df: Snapshot DataFrame.
+        label_column: Source column for the binary label. Defaults to
+            ``"converted_within_90_days"`` for backward compatibility.
+    """
+    rename_map = {k: v for k, v in RENAME_MAP.items() if v != "converted"}
+    rename_map[label_column] = "converted"
+    df = df.rename(columns=rename_map)
     df["converted"] = df["converted"].astype(int)
     missing = [c for c in FINAL_COLUMNS if c not in df.columns]
     if missing:

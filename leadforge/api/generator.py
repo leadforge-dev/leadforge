@@ -52,6 +52,8 @@ class Generator:
         n_contacts: int | None = None,
         n_leads: int | None = None,
         horizon_days: int | None = None,
+        primary_task: str | None = None,
+        label_window_days: int | None = None,
         output_path: str = _MISSING,  # type: ignore[assignment]
         override: dict[str, Any] | None = None,
     ) -> Generator:
@@ -96,6 +98,8 @@ class Generator:
             n_contacts=n_contacts,
             n_leads=n_leads,
             horizon_days=horizon_days,
+            primary_task=primary_task,
+            label_window_days=label_window_days,
             output_path=output_path,
             override=override,
         )

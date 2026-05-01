@@ -8,8 +8,30 @@ output but another collapses.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
+
+from leadforge.core.serialization import load_json
+
+
+def _find_task_train(bundle_path: Path) -> tuple[Path | None, str]:
+    """Locate the train.parquet and label column for the first task in the manifest.
+
+    Returns (train_path_or_None, label_column).
+    """
+    manifest_path = bundle_path / "manifest.json"
+    label_col = "converted_within_90_days"
+    if manifest_path.exists():
+        manifest: dict[str, Any] = load_json(manifest_path)
+        tasks = manifest.get("tasks", {})
+        if isinstance(tasks, dict) and tasks:
+            task_id = next(iter(tasks))
+            train = bundle_path / f"tasks/{task_id}/train.parquet"
+            return (train if train.exists() else None), label_col
+    # Fallback: default path
+    default = bundle_path / "tasks/converted_within_90_days/train.parquet"
+    return (default if default.exists() else None), label_col
 
 
 def check_cross_seed_stability(bundles: dict[int, Path]) -> list[str]:
@@ -30,13 +52,13 @@ def check_cross_seed_stability(bundles: dict[int, Path]) -> list[str]:
     stage_counts: dict[int, int] = {}
 
     for seed, bundle_path in bundles.items():
-        train_path = bundle_path / "tasks/converted_within_90_days/train.parquet"
-        if not train_path.exists():
-            errors.append(f"Seed {seed}: missing tasks/converted_within_90_days/train.parquet")
+        train_path, label_col = _find_task_train(bundle_path)
+        if train_path is None:
+            errors.append(f"Seed {seed}: missing task train.parquet")
             continue
-        df = pd.read_parquet(train_path, columns=["converted_within_90_days"])
+        df = pd.read_parquet(train_path, columns=[label_col])
         if len(df) > 0:
-            rates[seed] = float(df["converted_within_90_days"].mean())
+            rates[seed] = float(df[label_col].mean())
 
         leads_path = bundle_path / "tables/leads.parquet"
         if leads_path.exists():

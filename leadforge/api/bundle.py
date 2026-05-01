@@ -24,7 +24,7 @@ from leadforge.render.snapshots import build_snapshot
 from leadforge.render.tasks import write_task_splits
 from leadforge.schema.dictionaries import write_feature_dictionary
 from leadforge.schema.tables import write_parquet
-from leadforge.schema.tasks import CONVERTED_WITHIN_90_DAYS
+from leadforge.schema.tasks import task_manifest_for_config
 
 if TYPE_CHECKING:
     from leadforge.core.models import WorldBundle
@@ -74,7 +74,8 @@ def write_bundle(
     # 2. Snapshot + task splits → tasks/
     # ------------------------------------------------------------------
     snapshot = build_snapshot(result, population, horizon_days=config.horizon_days)
-    task_row_counts = write_task_splits(snapshot, root / "tasks", seed=config.seed)
+    task = task_manifest_for_config(config.primary_task, config.label_window_days)
+    task_row_counts = write_task_splits(snapshot, root / "tasks", seed=config.seed, task=task)
 
     # ------------------------------------------------------------------
     # 3. Dataset card and feature dictionary
@@ -94,7 +95,7 @@ def write_bundle(
         config=config,
         world_graph=world_graph,
         table_row_counts=table_row_counts,
-        task_row_counts={CONVERTED_WITHIN_90_DAYS.task_id: task_row_counts},
+        task_row_counts={task.task_id: task_row_counts},
         bundle_root=root,
         generation_timestamp=generation_timestamp,
     )
