@@ -69,6 +69,7 @@ class TaskManifest:
     split: SplitSpec
     task_type: str = "binary_classification"
     description: str = ""
+    label_description: str = ""
 
     def to_dict(self) -> dict[str, object]:
         """Return a JSON-serializable representation."""
@@ -84,6 +85,7 @@ class TaskManifest:
                 "test": self.split.test,
             },
             "description": self.description,
+            "label_description": self.label_description,
         }
 
 
@@ -102,6 +104,11 @@ CONVERTED_WITHIN_90_DAYS: TaskManifest = TaskManifest(
         "Predict whether a lead converts (closed_won event) within 90 days "
         "of the snapshot anchor date. Label is event-derived — never sampled "
         "directly. All features are pre-anchor (leakage-free by construction)."
+    ),
+    label_description=(
+        "A lead is considered converted if a `closed_won` event is recorded "
+        "within 90 days of the lead's snapshot anchor date. The label is "
+        "derived from simulated events — it is never sampled directly."
     ),
 )
 
@@ -130,5 +137,11 @@ def task_manifest_for_config(
             f"{label_window_days} days of the snapshot anchor date. Label is "
             f"event-derived — never sampled directly. All features are "
             f"pre-anchor (leakage-free by construction)."
+        ),
+        label_description=(
+            f"A lead is considered converted if a `closed_won` event is recorded "
+            f"within {label_window_days} days of the lead's snapshot anchor date. "
+            f"The label is derived from simulated events — it is never sampled "
+            f"directly."
         ),
     )

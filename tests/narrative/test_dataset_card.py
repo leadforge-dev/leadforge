@@ -3,6 +3,7 @@
 from leadforge.api.generator import Generator
 from leadforge.core.models import GenerationConfig, WorldSpec
 from leadforge.narrative.dataset_card import render_dataset_card
+from leadforge.schema.tasks import SplitSpec, TaskManifest, task_manifest_for_config
 
 
 def _make_world_spec(**kwargs: object) -> WorldSpec:
@@ -131,3 +132,60 @@ def test_generator_world_spec_is_world_spec() -> None:
 
     gen = Generator.from_recipe("b2b_saas_procurement_v1")
     assert isinstance(gen.world_spec, WorldSpec)
+
+
+# ---------------------------------------------------------------------------
+# Task manifest threading (issue #38)
+# ---------------------------------------------------------------------------
+
+
+def test_card_uses_task_manifest_label_description() -> None:
+    """When a TaskManifest is provided, its label_description replaces hardcoded prose."""
+    spec = _make_world_spec(primary_task="churned_within_60_days", label_window_days=60)
+    task = TaskManifest(
+        task_id="churned_within_60_days",
+        label_column="churned_within_60_days",
+        label_window_days=60,
+        primary_table="leads",
+        split=SplitSpec(train=0.7, valid=0.15, test=0.15),
+        label_description=(
+            "A lead is considered churned if a `churn` event is recorded "
+            "within 60 days of the snapshot anchor date."
+        ),
+    )
+    card = render_dataset_card(spec, task_manifest=task)
+    assert "churned" in card
+    assert "churn" in card
+    assert "closed_won" not in card
+
+
+def test_card_default_task_manifest_matches_hardcoded() -> None:
+    """Default task manifest produces equivalent prose to the old hardcoded text."""
+    spec = _make_world_spec()
+    task = task_manifest_for_config()
+    card = render_dataset_card(spec, task_manifest=task)
+    assert "closed_won" in card
+    assert "90 days" in card
+
+
+def test_card_without_task_manifest_falls_back() -> None:
+    """Without a TaskManifest, the card falls back to the conversion prose."""
+    spec = _make_world_spec()
+    card = render_dataset_card(spec)
+    assert "closed_won" in card
+    assert "90 days" in card
+
+
+def test_card_task_manifest_empty_label_description_falls_back() -> None:
+    """A TaskManifest with empty label_description falls back to default prose."""
+    spec = _make_world_spec()
+    task = TaskManifest(
+        task_id="converted_within_90_days",
+        label_column="converted_within_90_days",
+        label_window_days=90,
+        primary_table="leads",
+        split=SplitSpec(train=0.7, valid=0.15, test=0.15),
+        label_description="",
+    )
+    card = render_dataset_card(spec, task_manifest=task)
+    assert "closed_won" in card

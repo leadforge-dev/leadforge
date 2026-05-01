@@ -10,9 +10,13 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from leadforge.core.models import WorldSpec
+    from leadforge.schema.tasks import TaskManifest
 
 
-def render_dataset_card(world_spec: WorldSpec) -> str:
+def render_dataset_card(
+    world_spec: WorldSpec,
+    task_manifest: TaskManifest | None = None,
+) -> str:
     """Return a Markdown dataset card string for *world_spec*.
 
     Sections present at all milestones:
@@ -94,14 +98,21 @@ def render_dataset_card(world_spec: WorldSpec) -> str:
     # ------------------------------------------------------------------
     # Primary task
     # ------------------------------------------------------------------
+    if task_manifest is not None and task_manifest.label_description:
+        label_def = task_manifest.label_description
+    else:
+        label_def = (
+            f"A lead is considered converted if a `closed_won` event "
+            f"is recorded within {cfg.label_window_days} days of the lead's "
+            f"snapshot anchor date. The label is derived from simulated events "
+            f"— it is never sampled directly."
+        )
     lines += [
         "## Primary task",
         "",
         f"**Task:** `{cfg.primary_task}`",
         "",
-        f"**Label definition:** A lead is considered converted if a `closed_won` event "
-        f"is recorded within {cfg.label_window_days} days of the lead's snapshot anchor date. "
-        "The label is derived from simulated events — it is never sampled directly.",
+        f"**Label definition:** {label_def}",
         "",
     ]
 
