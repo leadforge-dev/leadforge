@@ -25,6 +25,7 @@ from sklearn.preprocessing import LabelEncoder
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from leadforge.api.generator import Generator
+from leadforge.core.rng import RNGRoot
 from leadforge.render.snapshots import build_snapshot
 from leadforge.simulation.engine import simulate_world
 from leadforge.simulation.population import PopulationResult, build_population
@@ -162,7 +163,7 @@ def run_pipeline(label: str, gen: Generator, scale: float | None = None) -> None
     if narrative is None:
         raise RuntimeError("No narrative loaded")
 
-    world_graph = sample_hidden_graph(config.seed)
+    world_graph = sample_hidden_graph(RNGRoot(config.seed))
     print(f"  Motif family: {world_graph.motif_family}")
 
     pop = build_population(config, narrative, world_graph)

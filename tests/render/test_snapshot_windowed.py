@@ -10,6 +10,7 @@ import pandas as pd
 import pytest
 
 from leadforge.core.models import GenerationConfig
+from leadforge.core.rng import RNGRoot
 from leadforge.render.snapshots import build_snapshot
 from leadforge.simulation.engine import simulate_world
 from leadforge.simulation.population import build_population
@@ -29,7 +30,7 @@ def sim_data():
     """Run a small simulation once; share across all tests in this module."""
     config = GenerationConfig(seed=42, n_accounts=30, n_contacts=90, n_leads=80)
     narrative = _make_narrative(config.seed)
-    graph = sample_hidden_graph(42)
+    graph = sample_hidden_graph(RNGRoot(42))
     population = build_population(config, narrative, graph)
     result = simulate_world(config, population, graph)
     return config, population, result
@@ -180,7 +181,7 @@ class TestWindowedDeterminism:
         def _snap(seed):
             cfg = GenerationConfig(seed=seed, n_accounts=15, n_contacts=45, n_leads=40)
             narr = _make_narrative(seed)
-            g = sample_hidden_graph(seed)
+            g = sample_hidden_graph(RNGRoot(seed))
             pop = build_population(cfg, narr, g)
             res = simulate_world(cfg, pop, g)
             return build_snapshot(res, pop, snapshot_day=14)
