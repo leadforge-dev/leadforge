@@ -24,19 +24,19 @@ _MAX_ATTEMPTS = 20
 
 
 def sample_hidden_graph(
-    seed: int,
+    rng_root: RNGRoot,
     motif_family_name: str | None = None,
 ) -> WorldGraph:
     """Draw a validated hidden world graph.
 
-    The function is fully deterministic given ``(seed, motif_family_name)``.
+    The function is fully deterministic given ``(rng_root, motif_family_name)``.
 
     Args:
-        seed: Integer seed passed to :class:`~leadforge.core.rng.RNGRoot`.
-            All stochastic choices (motif selection if *motif_family_name*
-            is ``None``, rewiring decisions, weight jitter) derive from a
-            named child stream of this root so the sampler integrates with
-            the repo's RNG convention.
+        rng_root: An :class:`~leadforge.core.rng.RNGRoot` instance.  All
+            stochastic choices (motif selection if *motif_family_name* is
+            ``None``, rewiring decisions, weight jitter) derive from a named
+            child stream of this root so the sampler integrates with the
+            repo's RNG convention.
         motif_family_name: If provided, pin the motif family by name
             (must be one of :data:`~leadforge.structure.motifs.MOTIF_FAMILY_NAMES`).
             If ``None``, a family is chosen uniformly at random from the
@@ -46,15 +46,19 @@ def sample_hidden_graph(
         A validated :class:`~leadforge.structure.graph.WorldGraph`.
 
     Raises:
-        ValueError: If *seed* is a ``bool`` or a negative integer.
+        TypeError: If *rng_root* is not an :class:`RNGRoot` instance.
         KeyError: If *motif_family_name* is not a known motif family name.
         RuntimeError: If :data:`_MAX_ATTEMPTS` rewiring attempts all
             produce graphs that fail structural validation (should not
             happen in practice with well-formed motifs).
     """
-    if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
-        raise ValueError(f"seed must be a non-negative int, got {seed!r}")
-    np_seed = RNGRoot(seed).child("hidden_graph").getrandbits(64)
+    if not isinstance(rng_root, RNGRoot):
+        raise TypeError(
+            f"sample_hidden_graph() requires an RNGRoot instance as the first "
+            f"argument, got {type(rng_root).__name__!r}"
+        )
+
+    np_seed = rng_root.child("hidden_graph").getrandbits(64)
     rng = np.random.default_rng(np_seed)
 
     motif = _select_motif(motif_family_name, rng)

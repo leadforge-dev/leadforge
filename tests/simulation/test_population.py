@@ -8,6 +8,7 @@ from leadforge.api.generator import Generator
 from leadforge.core.exceptions import InvalidConfigError
 from leadforge.core.ids import ID_PREFIXES, make_id
 from leadforge.core.models import GenerationConfig
+from leadforge.core.rng import RNGRoot
 from leadforge.narrative.spec import NarrativeSpec
 from leadforge.simulation.population import (
     _N_REPS,
@@ -37,7 +38,7 @@ def _make_result(seed: int = _SEED, motif: str | None = None) -> PopulationResul
     gen = Generator.from_recipe("b2b_saas_procurement_v1", seed=seed)
     narrative = gen.world_spec.narrative
     assert narrative is not None
-    graph = sample_hidden_graph(seed=seed, motif_family_name=motif)
+    graph = sample_hidden_graph(RNGRoot(seed), motif_family_name=motif)
     return build_population(config, narrative, graph)
 
 
@@ -281,14 +282,14 @@ def test_fit_dominant_raises_account_fit_mean() -> None:
         narrative = gen.world_spec.narrative
         assert narrative is not None
 
-        g_fit = sample_hidden_graph(seed=seed, motif_family_name="fit_dominant")
+        g_fit = sample_hidden_graph(RNGRoot(seed), motif_family_name="fit_dominant")
         r_fit = build_population(config, narrative, g_fit)
         fit_means.append(
             sum(t["latent_account_fit"] for t in r_fit.latent_state.account_latents.values())
             / config.n_accounts
         )
 
-        g_fric = sample_hidden_graph(seed=seed, motif_family_name="buying_committee_friction")
+        g_fric = sample_hidden_graph(RNGRoot(seed), motif_family_name="buying_committee_friction")
         r_fric = build_population(config, narrative, g_fric)
         friction_means.append(
             sum(t["latent_account_fit"] for t in r_fric.latent_state.account_latents.values())
@@ -312,14 +313,14 @@ def test_buying_committee_friction_lowers_contact_authority() -> None:
         narrative = gen.world_spec.narrative
         assert narrative is not None
 
-        g_bc = sample_hidden_graph(seed=seed, motif_family_name="buying_committee_friction")
+        g_bc = sample_hidden_graph(RNGRoot(seed), motif_family_name="buying_committee_friction")
         r_bc = build_population(config, narrative, g_bc)
         bc_means.append(
             sum(t["latent_contact_authority"] for t in r_bc.latent_state.contact_latents.values())
             / config.n_contacts
         )
 
-        g_fd = sample_hidden_graph(seed=seed, motif_family_name="fit_dominant")
+        g_fd = sample_hidden_graph(RNGRoot(seed), motif_family_name="fit_dominant")
         r_fd = build_population(config, narrative, g_fd)
         fd_means.append(
             sum(t["latent_contact_authority"] for t in r_fd.latent_state.contact_latents.values())
@@ -371,7 +372,7 @@ def _base_narrative() -> NarrativeSpec:
 
 def _build_with_narrative(narrative: NarrativeSpec) -> PopulationResult:
     config = GenerationConfig(seed=0, n_accounts=10, n_contacts=20, n_leads=30)
-    graph = sample_hidden_graph(seed=0)
+    graph = sample_hidden_graph(RNGRoot(0))
     return build_population(config, narrative, graph)
 
 
@@ -425,7 +426,7 @@ def test_category_latent_correlations_shift_latents() -> None:
     gen = Generator.from_recipe("b2b_saas_procurement_v1", seed=42)
     narrative = gen.world_spec.narrative
     assert narrative is not None
-    graph = sample_hidden_graph(seed=42)
+    graph = sample_hidden_graph(RNGRoot(42))
 
     # Build without correlations.
     baseline = build_population(config, narrative, graph)
@@ -463,7 +464,7 @@ def test_category_latent_correlations_clamped() -> None:
     gen = Generator.from_recipe("b2b_saas_procurement_v1", seed=42)
     narrative = gen.world_spec.narrative
     assert narrative is not None
-    graph = sample_hidden_graph(seed=42)
+    graph = sample_hidden_graph(RNGRoot(42))
 
     correlations = {
         "seniority": {
@@ -488,7 +489,7 @@ def test_category_latent_correlations_deterministic() -> None:
     gen = Generator.from_recipe("b2b_saas_procurement_v1", seed=77)
     narrative = gen.world_spec.narrative
     assert narrative is not None
-    graph = sample_hidden_graph(seed=77)
+    graph = sample_hidden_graph(RNGRoot(77))
 
     correlations = {
         "estimated_revenue_band": {
@@ -516,7 +517,7 @@ def test_lead_source_boost_not_stacked_per_contact() -> None:
     gen = Generator.from_recipe("b2b_saas_procurement_v1", seed=42)
     narrative = gen.world_spec.narrative
     assert narrative is not None
-    graph = sample_hidden_graph(seed=42)
+    graph = sample_hidden_graph(RNGRoot(42))
     pop = build_population(config, narrative, graph)
 
     # Find a contact with multiple leads of the same source.

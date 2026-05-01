@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from leadforge.core.models import GenerationConfig
+from leadforge.core.rng import RNGRoot
 from leadforge.schema.entities import (
     CustomerRow,
     LeadRow,
@@ -41,7 +42,7 @@ def _make_narrative():
 def _run_sim(seed: int = 42, n_leads: int = 50, motif: str | None = None) -> SimulationResult:
     config = _make_config(seed=seed, n_leads=n_leads)
     narrative = _make_narrative()
-    graph = sample_hidden_graph(seed, motif_family_name=motif)
+    graph = sample_hidden_graph(RNGRoot(seed), motif_family_name=motif)
     pop = build_population(config, narrative, graph)
     return simulate_world(config, pop, graph)
 
@@ -272,7 +273,7 @@ class TestCustomersAndSubscriptions:
     def test_customer_account_fk(self) -> None:
         config = _make_config(n_leads=50)
         narrative = _make_narrative()
-        graph = sample_hidden_graph(42)
+        graph = sample_hidden_graph(RNGRoot(42))
         pop = build_population(config, narrative, graph)
         result = simulate_world(config, pop, graph)
         acct_ids = {a.account_id for a in pop.accounts}
@@ -298,7 +299,7 @@ class TestEventIntegrity:
     def test_touch_lead_fk(self) -> None:
         config = _make_config(n_leads=50)
         narrative = _make_narrative()
-        graph = sample_hidden_graph(42)
+        graph = sample_hidden_graph(RNGRoot(42))
         pop = build_population(config, narrative, graph)
         result = simulate_world(config, pop, graph)
         lead_ids = {row.lead_id for row in result.leads}
@@ -308,7 +309,7 @@ class TestEventIntegrity:
     def test_session_lead_fk(self) -> None:
         config = _make_config(n_leads=50)
         narrative = _make_narrative()
-        graph = sample_hidden_graph(42)
+        graph = sample_hidden_graph(RNGRoot(42))
         pop = build_population(config, narrative, graph)
         result = simulate_world(config, pop, graph)
         lead_ids = {row.lead_id for row in result.leads}
