@@ -11,7 +11,10 @@ Simulation contract
 - All randomness is derived from named substreams of ``RNGRoot(config.seed)``,
   making every run fully deterministic given ``(config, population, world_graph)``.
 - ``converted_within_90_days`` is **event-derived** — it becomes ``True`` only
-  when a lead's simulated trajectory reaches the ``closed_won`` terminal stage.
+  when a lead's simulated trajectory reaches the ``closed_won`` terminal stage
+  **within** ``config.label_window_days`` of the lead's creation.  The
+  simulation still runs for ``config.horizon_days`` to produce rich event
+  histories; only label derivation is gated by the label window.
 - Stage advancement is driven by :class:`~leadforge.mechanisms.transitions.HazardTransition`
   (mql → … → negotiation); final conversion is driven by
   :class:`~leadforge.mechanisms.hazards.ConversionHazard` (negotiation → closed_won).
@@ -336,6 +339,16 @@ def simulate_world(
         if state.converted and state.conversion_day is not None:
             conv_ts = (lead_date + timedelta(days=state.conversion_day)).isoformat()
 
+        # Label derivation: conversion must occur within the label window
+        # (label_window_days), not the full simulation horizon.  This allows
+        # the engine to produce rich event histories over horizon_days while
+        # only counting conversions in the configured observation window.
+        label = (
+            state.converted
+            and state.conversion_day is not None
+            and state.conversion_day < config.label_window_days
+        )
+
         updated_leads.append(
             LeadRow(
                 lead_id=lead.lead_id,
@@ -348,7 +361,7 @@ def simulate_world(
                 owner_rep_id=lead.owner_rep_id,
                 is_mql=True,  # all leads start at mql
                 is_sql=is_sql,
-                converted_within_90_days=state.converted,
+                converted_within_90_days=label,
                 conversion_timestamp=conv_ts,
             )
         )
