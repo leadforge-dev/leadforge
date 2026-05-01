@@ -10,10 +10,20 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from leadforge.core.models import WorldSpec
+    from leadforge.schema.tasks import TaskManifest
 
 
-def render_dataset_card(world_spec: WorldSpec) -> str:
+def render_dataset_card(
+    world_spec: WorldSpec,
+    task_manifest: TaskManifest | None = None,
+) -> str:
     """Return a Markdown dataset card string for *world_spec*.
+
+    Args:
+        world_spec: The world specification containing config and narrative.
+        task_manifest: Optional task manifest whose ``description`` is used
+            as the label definition prose.  When ``None`` or when
+            ``description`` is empty, a generic fallback is rendered.
 
     Sections present at all milestones:
     - Header (recipe id, version, seed, exposure mode)
@@ -94,14 +104,20 @@ def render_dataset_card(world_spec: WorldSpec) -> str:
     # ------------------------------------------------------------------
     # Primary task
     # ------------------------------------------------------------------
+    if task_manifest is not None and task_manifest.description:
+        label_def = task_manifest.description
+    else:
+        label_def = (
+            f"Binary label evaluated over a {cfg.label_window_days}-day window "
+            f"from the snapshot anchor date. The label is event-derived — never "
+            f"sampled directly."
+        )
     lines += [
         "## Primary task",
         "",
         f"**Task:** `{cfg.primary_task}`",
         "",
-        f"**Label definition:** A lead is considered converted if a `closed_won` event "
-        f"is recorded within {cfg.label_window_days} days of the lead's snapshot anchor date. "
-        "The label is derived from simulated events — it is never sampled directly.",
+        f"**Label definition:** {label_def}",
         "",
     ]
 

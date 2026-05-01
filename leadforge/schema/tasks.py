@@ -54,12 +54,13 @@ class TaskManifest:
         label_column: Column name in the task Parquet files that holds the
             binary label.
         label_window_days: Number of days after the snapshot anchor date
-            within which a conversion event counts as positive.
+            within which the target event counts as positive.
         primary_table: The relational table the snapshot rows are derived
             from (usually ``"leads"``).
         split: Train/valid/test proportions.
         task_type: ML task type string (``"binary_classification"`` for v1).
-        description: Human-readable description of the task.
+        description: Human-readable description of the task, suitable for
+            display in dataset cards and documentation.
     """
 
     task_id: str
@@ -99,9 +100,10 @@ CONVERTED_WITHIN_90_DAYS: TaskManifest = TaskManifest(
     split=SplitSpec(train=0.7, valid=0.15, test=0.15),
     task_type="binary_classification",
     description=(
-        "Predict whether a lead converts (closed_won event) within 90 days "
-        "of the snapshot anchor date. Label is event-derived — never sampled "
-        "directly. All features are pre-anchor (leakage-free by construction)."
+        "A lead is considered converted if a `closed_won` event is recorded "
+        "within 90 days of the lead's snapshot anchor date. The label is "
+        "event-derived — never sampled directly. All features are pre-anchor "
+        "(leakage-free by construction)."
     ),
 )
 
@@ -121,14 +123,23 @@ def task_manifest_for_config(
             manifest key.
         label_window_days: Label observation window in days.
     """
+    if primary_task == CONVERTED_WITHIN_90_DAYS.task_id:
+        description = (
+            f"A lead is considered converted if a `closed_won` event is recorded "
+            f"within {label_window_days} days of the lead's snapshot anchor date. "
+            f"The label is event-derived — never sampled directly. All features "
+            f"are pre-anchor (leakage-free by construction)."
+        )
+    else:
+        description = (
+            f"Binary label `{primary_task}` evaluated over a "
+            f"{label_window_days}-day window from the snapshot anchor date. "
+            f"The label is event-derived — never sampled directly. All features "
+            f"are pre-anchor (leakage-free by construction)."
+        )
     return replace(
         CONVERTED_WITHIN_90_DAYS,
         task_id=primary_task,
         label_window_days=label_window_days,
-        description=(
-            f"Predict whether a lead converts (closed_won event) within "
-            f"{label_window_days} days of the snapshot anchor date. Label is "
-            f"event-derived — never sampled directly. All features are "
-            f"pre-anchor (leakage-free by construction)."
-        ),
+        description=description,
     )
