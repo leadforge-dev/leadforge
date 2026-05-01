@@ -221,8 +221,11 @@ def rename_and_select(
         label_column: Source column for the binary label. Defaults to
             ``"converted_within_90_days"`` for backward compatibility.
     """
-    rename_map = {k: v for k, v in RENAME_MAP.items() if v != "converted"}
-    rename_map[label_column] = "converted"
+    if label_column == "converted_within_90_days":
+        rename_map = RENAME_MAP
+    else:
+        rename_map = {k: v for k, v in RENAME_MAP.items() if v != "converted"}
+        rename_map[label_column] = "converted"
     df = df.rename(columns=rename_map)
     df["converted"] = df["converted"].astype(int)
     columns = FINAL_COLUMNS_INSTRUCTOR if instructor else FINAL_COLUMNS_STUDENT

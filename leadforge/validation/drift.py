@@ -14,24 +14,27 @@ import pandas as pd
 
 from leadforge.core.serialization import load_json
 
+_LABEL_COLUMN = "converted_within_90_days"
+
 
 def _find_task_train(bundle_path: Path) -> tuple[Path | None, str]:
-    """Locate the train.parquet and label column for the first task in the manifest.
+    """Locate the train.parquet for the first task listed in the manifest.
 
-    Returns (train_path_or_None, label_column).
+    Returns ``(train_path_or_None, task_id)`` where *task_id* is included
+    so callers can produce useful error messages.
     """
     manifest_path = bundle_path / "manifest.json"
-    label_col = "converted_within_90_days"
     if manifest_path.exists():
         manifest: dict[str, Any] = load_json(manifest_path)
         tasks = manifest.get("tasks", {})
         if isinstance(tasks, dict) and tasks:
             task_id = next(iter(tasks))
             train = bundle_path / f"tasks/{task_id}/train.parquet"
-            return (train if train.exists() else None), label_col
-    # Fallback: default path
-    default = bundle_path / "tasks/converted_within_90_days/train.parquet"
-    return (default if default.exists() else None), label_col
+            return (train if train.exists() else None), task_id
+    # Fallback: default task id
+    task_id = "converted_within_90_days"
+    default = bundle_path / f"tasks/{task_id}/train.parquet"
+    return (default if default.exists() else None), task_id
 
 
 def check_cross_seed_stability(bundles: dict[int, Path]) -> list[str]:
@@ -52,13 +55,13 @@ def check_cross_seed_stability(bundles: dict[int, Path]) -> list[str]:
     stage_counts: dict[int, int] = {}
 
     for seed, bundle_path in bundles.items():
-        train_path, label_col = _find_task_train(bundle_path)
+        train_path, task_id = _find_task_train(bundle_path)
         if train_path is None:
-            errors.append(f"Seed {seed}: missing task train.parquet")
+            errors.append(f"Seed {seed}: missing tasks/{task_id}/train.parquet")
             continue
-        df = pd.read_parquet(train_path, columns=[label_col])
+        df = pd.read_parquet(train_path, columns=[_LABEL_COLUMN])
         if len(df) > 0:
-            rates[seed] = float(df[label_col].mean())
+            rates[seed] = float(df[_LABEL_COLUMN].mean())
 
         leads_path = bundle_path / "tables/leads.parquet"
         if leads_path.exists():

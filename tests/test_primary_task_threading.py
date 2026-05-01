@@ -151,6 +151,30 @@ class TestValidation:
         # Should not produce "missing task train.parquet" errors.
         assert not any("missing" in e for e in errors)
 
+    def test_realism_empty_tasks_in_manifest(self, default_bundle: Path) -> None:
+        """Realism checks gracefully skip when manifest has no tasks."""
+        manifest: dict = {"tables": {}, "tasks": {}}
+        errors = check_realism(default_bundle, manifest)
+        # No crash; table-nonempty checks may fail but no task-related crash.
+        assert not any("traceback" in e.lower() for e in errors)
+
+    def test_realism_missing_tasks_key(self, default_bundle: Path) -> None:
+        """Realism checks gracefully skip when manifest has no 'tasks' key."""
+        manifest: dict = {"tables": {}}
+        errors = check_realism(default_bundle, manifest)
+        assert not any("traceback" in e.lower() for e in errors)
+
+    def test_drift_missing_manifest(self, tmp_path: Path) -> None:
+        """Drift check falls back gracefully when manifest.json is absent."""
+        # Create two minimal bundles with no manifest.json.
+        for name in ("a", "b"):
+            d = tmp_path / name
+            d.mkdir()
+        bundles = {1: tmp_path / "a", 2: tmp_path / "b"}
+        errors = check_cross_seed_stability(bundles)
+        # Should report missing files, not crash.
+        assert all("missing" in e for e in errors)
+
 
 # ---------------------------------------------------------------------------
 # Pipeline rename functions

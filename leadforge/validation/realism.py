@@ -47,13 +47,10 @@ def _first_task_train_path(root: Path, manifest: dict[str, Any]) -> Path | None:
     return path if path.exists() else None
 
 
-def _label_column() -> str:
-    """Return the label column name.
-
-    The underlying snapshot always uses ``converted_within_90_days`` as the
-    column name (it mirrors :class:`~leadforge.schema.entities.LeadRow`).
-    """
-    return "converted_within_90_days"
+# The label column in the snapshot is always ``converted_within_90_days``
+# (mirroring :class:`~leadforge.schema.entities.LeadRow`).  The task *directory*
+# may vary via ``config.primary_task``, but the column inside does not.
+_LABEL_COLUMN = "converted_within_90_days"
 
 
 def _check_conversion_rate(root: Path, manifest: dict[str, Any]) -> list[str]:
@@ -63,16 +60,12 @@ def _check_conversion_rate(root: Path, manifest: dict[str, Any]) -> list[str]:
     if train_path is None:
         return errors
 
-    label_col = _label_column()
-    # Read only the label column; fall back to full read if column missing.
-    schema = pq.read_schema(train_path)
-    read_col = label_col if label_col in schema.names else "converted_within_90_days"
-    df = pd.read_parquet(train_path, columns=[read_col])
+    df = pd.read_parquet(train_path, columns=[_LABEL_COLUMN])
     if len(df) == 0:
         errors.append("Train split is empty")
         return errors
 
-    rate = df.iloc[:, 0].mean()
+    rate = df[_LABEL_COLUMN].mean()
 
     # Absolute bounds — any reasonable simulation should land here.
     # The v1 engine typically produces rates in the 30–90% range depending
