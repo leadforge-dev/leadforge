@@ -64,6 +64,11 @@ class GenerationConfig:
             raise InvalidConfigError(
                 f"primary_task must be a non-empty string, got {self.primary_task!r}"
             )
+        if self.label_window_days > self.horizon_days:
+            raise InvalidConfigError(
+                f"label_window_days ({self.label_window_days}) must not exceed "
+                f"horizon_days ({self.horizon_days})"
+            )
         # Coerce string enums supplied as plain strings
         if not isinstance(self.exposure_mode, ExposureMode):
             try:

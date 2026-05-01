@@ -4,7 +4,7 @@ import pytest
 
 from leadforge.api.recipes import Recipe
 from leadforge.core.enums import DifficultyProfile, ExposureMode
-from leadforge.core.exceptions import InvalidRecipeError
+from leadforge.core.exceptions import InvalidConfigError, InvalidRecipeError
 from leadforge.core.models import GenerationConfig
 
 # ---------------------------------------------------------------------------
@@ -128,9 +128,9 @@ def test_resolve_config_recipe_defaults_used() -> None:
 def test_resolve_config_explicit_kwargs_override_recipe() -> None:
     """Layer 1: explicit kwargs win over recipe defaults."""
     recipe = Recipe.from_dict(VALID_DICT)
-    config = recipe.resolve_config(n_leads=9999, horizon_days=30)
+    config = recipe.resolve_config(n_leads=9999, horizon_days=120)
     assert config.n_leads == 9999
-    assert config.horizon_days == 30
+    assert config.horizon_days == 120
     # Non-overridden values still come from recipe
     assert config.n_accounts == 100
 
@@ -214,12 +214,6 @@ def test_resolve_config_primary_task_defaults_from_recipe() -> None:
     assert cfg.primary_task == "converted_within_90_days"
 
 
-def test_resolve_config_primary_task_explicit_kwarg() -> None:
-    recipe = Recipe.from_dict(VALID_DICT)
-    cfg = recipe.resolve_config(primary_task="churned_within_60_days")
-    assert cfg.primary_task == "churned_within_60_days"
-
-
 def test_resolve_config_label_window_days_defaults() -> None:
     recipe = Recipe.from_dict(VALID_DICT)
     cfg = recipe.resolve_config()
@@ -233,30 +227,57 @@ def test_resolve_config_label_window_days_from_recipe() -> None:
     assert cfg.label_window_days == 60
 
 
-def test_resolve_config_label_window_days_explicit_kwarg() -> None:
-    recipe = Recipe.from_dict(VALID_DICT)
-    cfg = recipe.resolve_config(label_window_days=30)
-    assert cfg.label_window_days == 30
-
-
 def test_resolve_config_override_dict_applies_task_fields() -> None:
     recipe = Recipe.from_dict(VALID_DICT)
     cfg = recipe.resolve_config(
-        override={"primary_task": "upsold_within_180_days", "label_window_days": 180}
+        override={"primary_task": "upsold_within_90_days", "label_window_days": 60}
     )
-    assert cfg.primary_task == "upsold_within_180_days"
-    assert cfg.label_window_days == 180
+    assert cfg.primary_task == "upsold_within_90_days"
+    assert cfg.label_window_days == 60
 
 
-def test_resolve_config_explicit_task_fields_beat_override() -> None:
-    recipe = Recipe.from_dict(VALID_DICT)
-    cfg = recipe.resolve_config(
-        primary_task="my_task",
-        label_window_days=45,
-        override={"primary_task": "other_task", "label_window_days": 120},
-    )
-    assert cfg.primary_task == "my_task"
-    assert cfg.label_window_days == 45
+def test_from_dict_bool_label_window_days_raises() -> None:
+    """bool label_window_days must be rejected (True → 1 would pass silently)."""
+    bad = {**VALID_DICT, "label_window_days": True}
+    with pytest.raises(InvalidRecipeError, match="label_window_days"):
+        Recipe.from_dict(bad)
+
+
+def test_from_dict_nonpositive_label_window_days_raises() -> None:
+    bad = {**VALID_DICT, "label_window_days": 0}
+    with pytest.raises(InvalidRecipeError, match="label_window_days"):
+        Recipe.from_dict(bad)
+
+
+def test_from_dict_float_label_window_days_raises() -> None:
+    bad = {**VALID_DICT, "label_window_days": 30.5}
+    with pytest.raises(InvalidRecipeError, match="label_window_days"):
+        Recipe.from_dict(bad)
+
+
+# ---------------------------------------------------------------------------
+# GenerationConfig validation
+# ---------------------------------------------------------------------------
+
+
+def test_config_empty_primary_task_raises() -> None:
+    with pytest.raises(InvalidConfigError, match="primary_task"):
+        GenerationConfig(primary_task="")
+
+
+def test_config_non_string_primary_task_raises() -> None:
+    with pytest.raises(InvalidConfigError, match="primary_task"):
+        GenerationConfig(primary_task=42)  # type: ignore[arg-type]
+
+
+def test_config_label_window_exceeds_horizon_raises() -> None:
+    with pytest.raises(InvalidConfigError, match="label_window_days.*must not exceed"):
+        GenerationConfig(horizon_days=30, label_window_days=90)
+
+
+def test_config_label_window_equals_horizon_ok() -> None:
+    cfg = GenerationConfig(horizon_days=90, label_window_days=90)
+    assert cfg.label_window_days == 90
 
 
 # ---------------------------------------------------------------------------
