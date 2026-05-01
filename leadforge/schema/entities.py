@@ -134,6 +134,10 @@ class LeadRow:
        lead is marked ``True`` only if its conversion event occurred before
        ``label_window_days`` from lead creation — **not** necessarily within
        the full ``horizon_days`` simulation window.
+
+       Consequently, ``conversion_timestamp`` may be set (non-``None``)
+       while ``converted_within_90_days`` is ``False``, indicating the lead
+       converted after the label observation window closed.
     """
 
     TABLE_NAME: ClassVar[str] = "leads"
