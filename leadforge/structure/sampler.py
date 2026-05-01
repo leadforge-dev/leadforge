@@ -8,8 +8,6 @@ validated :class:`~leadforge.structure.graph.WorldGraph`.
 
 from __future__ import annotations
 
-import warnings
-
 import numpy as np
 
 from leadforge.core.rng import RNGRoot
@@ -26,10 +24,8 @@ _MAX_ATTEMPTS = 20
 
 
 def sample_hidden_graph(
-    rng_root: RNGRoot | int | None = None,
+    rng_root: RNGRoot,
     motif_family_name: str | None = None,
-    *,
-    seed: int | None = None,
 ) -> WorldGraph:
     """Draw a validated hidden world graph.
 
@@ -45,38 +41,22 @@ def sample_hidden_graph(
             (must be one of :data:`~leadforge.structure.motifs.MOTIF_FAMILY_NAMES`).
             If ``None``, a family is chosen uniformly at random from the
             five v1 families.
-        seed: **Deprecated.** Pass an ``RNGRoot`` as the first argument
-            instead.  When *seed* is given and *rng_root* is not, an
-            ``RNGRoot(seed)`` is constructed automatically.
 
     Returns:
         A validated :class:`~leadforge.structure.graph.WorldGraph`.
 
     Raises:
+        TypeError: If *rng_root* is not an :class:`RNGRoot` instance.
         KeyError: If *motif_family_name* is not a known motif family name.
         RuntimeError: If :data:`_MAX_ATTEMPTS` rewiring attempts all
             produce graphs that fail structural validation (should not
             happen in practice with well-formed motifs).
     """
-    # ---- backward-compat: accept bare int seed ----
-    if isinstance(rng_root, int):
-        warnings.warn(
-            "Passing an int seed as the first argument to sample_hidden_graph() "
-            "is deprecated. Pass an RNGRoot instance instead.",
-            DeprecationWarning,
-            stacklevel=2,
+    if not isinstance(rng_root, RNGRoot):
+        raise TypeError(
+            f"sample_hidden_graph() requires an RNGRoot instance as the first "
+            f"argument, got {type(rng_root).__name__!r}"
         )
-        rng_root = RNGRoot(rng_root)
-    elif seed is not None:
-        warnings.warn(
-            "The 'seed' keyword argument to sample_hidden_graph() is deprecated. "
-            "Pass an RNGRoot instance as the first argument instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        rng_root = RNGRoot(seed)
-    elif rng_root is None:
-        raise TypeError("sample_hidden_graph() requires an RNGRoot instance as the first argument")
 
     np_seed = rng_root.child("hidden_graph").getrandbits(64)
     rng = np.random.default_rng(np_seed)

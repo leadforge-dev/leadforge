@@ -165,7 +165,8 @@ class Generator:
                 "Generator.from_recipe() to resolve the narrative."
             )
 
-        world_graph = sample_hidden_graph(RNGRoot(config.seed))
+        rng_root = RNGRoot(config.seed)
+        world_graph = sample_hidden_graph(rng_root)
 
         # Load category-latent correlations from difficulty profile if available.
         from leadforge.api.recipes import Recipe

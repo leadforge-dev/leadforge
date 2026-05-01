@@ -163,7 +163,8 @@ def run_pipeline(label: str, gen: Generator, scale: float | None = None) -> None
     if narrative is None:
         raise RuntimeError("No narrative loaded")
 
-    world_graph = sample_hidden_graph(RNGRoot(config.seed))
+    rng_root = RNGRoot(config.seed)
+    world_graph = sample_hidden_graph(rng_root)
     print(f"  Motif family: {world_graph.motif_family}")
 
     pop = build_population(config, narrative, world_graph)

@@ -71,16 +71,19 @@ def test_unknown_motif_family_raises() -> None:
         sample_hidden_graph(RNGRoot(0), motif_family_name="bad_family")
 
 
-def test_deprecated_int_seed_warns() -> None:
-    with pytest.warns(DeprecationWarning, match="RNGRoot"):
-        g = sample_hidden_graph(0)  # type: ignore[arg-type]
-    assert isinstance(g, WorldGraph)
+# ---------------------------------------------------------------------------
+# Input validation
+# ---------------------------------------------------------------------------
 
 
-def test_deprecated_seed_kwarg_warns() -> None:
-    with pytest.warns(DeprecationWarning, match="RNGRoot"):
-        g = sample_hidden_graph(seed=0)  # type: ignore[arg-type]
-    assert isinstance(g, WorldGraph)
+def test_int_seed_raises_type_error() -> None:
+    with pytest.raises(TypeError, match="RNGRoot"):
+        sample_hidden_graph(42)  # type: ignore[arg-type]
+
+
+def test_none_raises_type_error() -> None:
+    with pytest.raises(TypeError, match="RNGRoot"):
+        sample_hidden_graph(None)  # type: ignore[arg-type]
 
 
 # ---------------------------------------------------------------------------
