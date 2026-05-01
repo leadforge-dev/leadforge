@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import pyarrow.parquet as pq
 
 from leadforge.core.hashing import file_sha256
 from leadforge.core.serialization import load_json
@@ -112,12 +113,14 @@ def _check_task_splits(root: Path, manifest: dict[str, Any]) -> list[str]:
                 errors.append(f"Missing task file: {rel_path}")
                 continue
 
-            df = pd.read_parquet(abs_path)
             expected_rows = task_info.get(f"{split}_rows")
-            if expected_rows is not None and len(df) != expected_rows:
-                errors.append(
-                    f"Task {task_id}/{split}: expected {expected_rows} rows, got {len(df)}"
-                )
+            if expected_rows is not None:
+                meta = pq.read_metadata(abs_path)
+                if meta.num_rows != expected_rows:
+                    errors.append(
+                        f"Task {task_id}/{split}: expected"
+                        f" {expected_rows} rows, got {meta.num_rows}"
+                    )
 
             expected_sha = task_info.get(f"{split}_sha256")
             if expected_sha is not None:
@@ -171,7 +174,7 @@ def _check_leakage(root: Path, manifest: dict[str, Any]) -> list[str]:
         for split in ("train", "valid", "test"):
             split_path = root / f"tasks/{task_id}/{split}.parquet"
             if split_path.exists():
-                actual_columns = set(pd.read_parquet(split_path, columns=[]).columns)
+                actual_columns = set(pq.read_schema(split_path).names)
                 extra = actual_columns - expected_columns
                 if extra:
                     errors.append(
