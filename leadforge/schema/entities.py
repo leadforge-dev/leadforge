@@ -126,7 +126,19 @@ class ContactRow:
 
 @dataclass
 class LeadRow:
-    """One row in the ``leads`` table."""
+    """One row in the ``leads`` table.
+
+    .. note:: The ``converted_within_90_days`` field name is retained for
+       schema stability, but its value is derived using
+       ``GenerationConfig.label_window_days`` (which defaults to 90).  A
+       lead is marked ``True`` only if its conversion event occurred before
+       ``label_window_days`` from lead creation — **not** necessarily within
+       the full ``horizon_days`` simulation window.
+
+       Consequently, ``conversion_timestamp`` may be set (non-``None``)
+       while ``converted_within_90_days`` is ``False``, indicating the lead
+       converted after the label observation window closed.
+    """
 
     TABLE_NAME: ClassVar[str] = "leads"
     DTYPE_MAP: ClassVar[dict[str, str]] = {

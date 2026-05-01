@@ -25,9 +25,17 @@ from leadforge.structure.sampler import sample_hidden_graph
 # ---------------------------------------------------------------------------
 
 
-def _make_config(seed: int = 42, n_leads: int = 50) -> GenerationConfig:
+def _make_config(
+    seed: int = 42, n_leads: int = 50, label_window_days: int = 90
+) -> GenerationConfig:
     """Return a small GenerationConfig suitable for unit tests."""
-    return GenerationConfig(seed=seed, n_accounts=20, n_contacts=60, n_leads=n_leads)
+    return GenerationConfig(
+        seed=seed,
+        n_accounts=20,
+        n_contacts=60,
+        n_leads=n_leads,
+        label_window_days=label_window_days,
+    )
 
 
 def _make_narrative():
@@ -383,3 +391,122 @@ class TestPlanFromAcv:
     def test_enterprise(self) -> None:
         assert _plan_from_acv(80_000) == "enterprise"
         assert _plan_from_acv(200_000) == "enterprise"
+
+
+# ---------------------------------------------------------------------------
+# label_window_days affects label derivation
+# ---------------------------------------------------------------------------
+
+
+class TestLabelWindowDays:
+    """Verify that label_window_days gates converted_within_90_days."""
+
+    def _run_with_window(
+        self, label_window_days: int, seed: int = 42, n_leads: int = 200
+    ) -> SimulationResult:
+        config = _make_config(seed=seed, n_leads=n_leads, label_window_days=label_window_days)
+        narrative = _make_narrative()
+        graph = sample_hidden_graph(RNGRoot(seed))
+        pop = build_population(config, narrative, graph)
+        return simulate_world(config, pop, graph)
+
+    def test_default_90_unchanged(self) -> None:
+        """label_window_days=90 (default) matches the old behavior exactly."""
+        r_default = _run_sim(seed=42, n_leads=200)
+        r_explicit = self._run_with_window(label_window_days=90, seed=42, n_leads=200)
+        labels_default = [row.converted_within_90_days for row in r_default.leads]
+        labels_explicit = [row.converted_within_90_days for row in r_explicit.leads]
+        assert labels_default == labels_explicit
+
+    def test_shorter_window_fewer_conversions(self) -> None:
+        """A 30-day window should produce fewer (or equal) conversions than 90."""
+        r90 = self._run_with_window(label_window_days=90, seed=42, n_leads=300)
+        r30 = self._run_with_window(label_window_days=30, seed=42, n_leads=300)
+        conv90 = sum(row.converted_within_90_days for row in r90.leads)
+        conv30 = sum(row.converted_within_90_days for row in r30.leads)
+        assert conv30 <= conv90
+        # With 300 leads over 90 days, there should be *strictly* fewer at 30.
+        assert conv30 < conv90
+
+    def test_window_1_almost_no_conversions(self) -> None:
+        """With a 1-day window, nearly no leads can convert (need negotiation first)."""
+        r = self._run_with_window(label_window_days=1, seed=42, n_leads=200)
+        conv = sum(row.converted_within_90_days for row in r.leads)
+        # All leads start at mql; reaching negotiation + closed_won in <1 day
+        # is essentially impossible.
+        assert conv == 0
+
+    def test_late_conversions_excluded(self) -> None:
+        """Leads that convert after the label window should not be labeled positive."""
+        from datetime import date
+
+        r30 = self._run_with_window(label_window_days=30, seed=42, n_leads=300)
+        for lead in r30.leads:
+            if lead.converted_within_90_days:
+                # If labeled positive, conversion day must be < label_window_days.
+                assert lead.conversion_timestamp is not None
+                created = date.fromisoformat(lead.lead_created_at)
+                converted = date.fromisoformat(lead.conversion_timestamp)
+                day_offset = (converted - created).days
+                assert day_offset < 30, (
+                    f"Lead {lead.lead_id} labeled positive but converted on day {day_offset}"
+                )
+
+    def test_conversion_timestamp_still_set_outside_window(self) -> None:
+        """conversion_timestamp is set for all actual conversions, even outside window."""
+        r30 = self._run_with_window(label_window_days=30, seed=42, n_leads=300)
+        # Some leads should have conversion_timestamp but label=False
+        # (they converted after day 30 but before day 90).
+        late_conversions = [
+            lead
+            for lead in r30.leads
+            if lead.conversion_timestamp is not None and not lead.converted_within_90_days
+        ]
+        # With 300 leads, there should be at least some late conversions.
+        assert len(late_conversions) > 0
+
+    def test_event_count_unchanged_by_window(self) -> None:
+        """label_window_days does not affect event generation (only the label)."""
+        r90 = self._run_with_window(label_window_days=90, seed=42, n_leads=100)
+        r30 = self._run_with_window(label_window_days=30, seed=42, n_leads=100)
+        # Simulation runs identically; only label derivation differs.
+        assert len(r90.touches) == len(r30.touches)
+        assert len(r90.sessions) == len(r30.sessions)
+        assert len(r90.sales_activities) == len(r30.sales_activities)
+        assert len(r90.opportunities) == len(r30.opportunities)
+
+    def test_bundle_round_trip_respects_window(self, tmp_path) -> None:
+        """Full pipeline: generate → save → read task split reflects label_window_days."""
+        import pandas as pd
+
+        from leadforge.api.generator import Generator
+
+        # primary_task name stays the default; only label_window_days changes.
+        gen = Generator.from_recipe(
+            "b2b_saas_procurement_v1",
+            seed=42,
+            label_window_days=30,
+        )
+        bundle = gen.generate(n_accounts=20, n_contacts=60, n_leads=200)
+        out = str(tmp_path / "bundle")
+        bundle.save(out, generation_timestamp="2025-01-01T00:00:00Z")
+
+        task_dir = f"{out}/tasks/converted_within_90_days"
+        train = pd.read_parquet(f"{task_dir}/train.parquet")
+        conv_30 = int(train["converted_within_90_days"].sum())
+
+        # Compare with default 90-day window.
+        gen90 = Generator.from_recipe(
+            "b2b_saas_procurement_v1",
+            seed=42,
+            label_window_days=90,
+        )
+        bundle90 = gen90.generate(n_accounts=20, n_contacts=60, n_leads=200)
+        out90 = str(tmp_path / "bundle90")
+        bundle90.save(out90, generation_timestamp="2025-01-01T00:00:00Z")
+
+        task_dir90 = f"{out90}/tasks/converted_within_90_days"
+        train90 = pd.read_parquet(f"{task_dir90}/train.parquet")
+        conv_90 = int(train90["converted_within_90_days"].sum())
+
+        assert conv_30 <= conv_90

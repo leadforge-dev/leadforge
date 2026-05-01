@@ -86,6 +86,12 @@ def build_snapshot(
         :data:`~leadforge.schema.features.LEAD_SNAPSHOT_FEATURES` and dtypes
         matching the feature spec.  Row order matches ``result.leads``.
     """
+    # Note: when label_window_days < horizon_days, the label
+    # (converted_within_90_days on LeadRow) is derived using the shorter
+    # window, but features here are aggregated over the full horizon.  This
+    # is intentional — the simulation produces rich event histories over the
+    # full horizon, and feature aggregation follows suit.  Callers that need
+    # windowed features should use the snapshot_day parameter.
     effective_window = snapshot_day if snapshot_day is not None else horizon_days
 
     # -------------------------------------------------------------------
