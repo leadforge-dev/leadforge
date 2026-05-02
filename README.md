@@ -11,10 +11,8 @@
 Requires **Python 3.11+**.
 
 ```bash
-pip install git+https://github.com/leadforge-dev/leadforge.git
+pip install leadforge
 ```
-
-> PyPI package coming with the v1.0 release.
 
 For development:
 
