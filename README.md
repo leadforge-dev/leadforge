@@ -8,9 +8,13 @@
 
 ## Installation
 
+Requires **Python 3.11+**.
+
 ```bash
-pip install leadforge
+pip install git+https://github.com/leadforge-dev/leadforge.git
 ```
+
+> PyPI package coming with the v1.0 release.
 
 For development:
 
@@ -98,7 +102,12 @@ bundle_root/
   dataset_card.md          # human-readable dataset documentation
   feature_dictionary.csv   # feature names, types, descriptions
   tables/                  # 9 relational Parquet tables
-  tasks/                   # task splits (train/valid/test Parquet + task_manifest.json)
+  tasks/
+    converted_within_90_days/
+      train.parquet
+      valid.parquet
+      test.parquet
+      task_manifest.json
   metadata/                # (research_instructor only) hidden graph, world spec, latents
 ```
 
