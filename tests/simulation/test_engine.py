@@ -218,11 +218,14 @@ class TestLeadOutcomes:
             }:
                 assert lead.is_sql
 
-    def test_converted_leads_also_sql(self) -> None:
-        result = _run_sim(n_leads=100)
-        for lead in result.leads:
-            if lead.converted_within_90_days:
-                assert lead.is_sql
+    def test_most_converted_leads_are_sql(self) -> None:
+        """Most converted leads should have reached SQL, but direct conversion
+        allows some non-SQL leads to convert too."""
+        result = _run_sim(n_leads=500, seed=42)
+        converted = [lead for lead in result.leads if lead.converted_within_90_days]
+        sql_converted = [lead for lead in converted if lead.is_sql]
+        # The vast majority of conversions should still go through SQL.
+        assert len(sql_converted) / len(converted) > 0.8
 
 
 # ---------------------------------------------------------------------------
@@ -238,11 +241,13 @@ class TestOpportunities:
             if lead.is_sql:
                 assert lead.lead_id in opp_lead_ids
 
-    def test_non_sql_leads_no_opportunity(self) -> None:
+    def test_non_sql_non_converted_leads_no_opportunity(self) -> None:
+        """Non-SQL leads that did NOT convert should have no opportunity.
+        Direct-converted non-SQL leads get an opportunity at conversion time."""
         result = _run_sim(n_leads=100)
         opp_lead_ids = {o.lead_id for o in result.opportunities}
         for lead in result.leads:
-            if not lead.is_sql:
+            if not lead.is_sql and not lead.converted_within_90_days:
                 assert lead.lead_id not in opp_lead_ids
 
     def test_opportunity_acv_positive(self) -> None:
@@ -391,6 +396,77 @@ class TestPlanFromAcv:
     def test_enterprise(self) -> None:
         assert _plan_from_acv(80_000) == "enterprise"
         assert _plan_from_acv(200_000) == "enterprise"
+
+
+# ---------------------------------------------------------------------------
+# Direct conversion (pre-SQL bypass)
+# ---------------------------------------------------------------------------
+
+
+class TestDirectConversion:
+    """Verify the rare direct-conversion path for pre-SQL leads."""
+
+    def test_some_non_sql_leads_convert(self) -> None:
+        """With enough leads, at least one non-SQL lead should convert."""
+        result = _run_sim(seed=42, n_leads=2000)
+        non_sql_converted = [
+            lead for lead in result.leads if lead.converted_within_90_days and not lead.is_sql
+        ]
+        assert len(non_sql_converted) > 0, (
+            "Expected at least one non-SQL conversion in 2000-lead sim"
+        )
+
+    def test_non_sql_conversion_rate_much_lower(self) -> None:
+        """Non-SQL conversion rate should be significantly lower than SQL."""
+        result = _run_sim(seed=42, n_leads=2000)
+        sql_leads = [lead for lead in result.leads if lead.is_sql]
+        non_sql_leads = [lead for lead in result.leads if not lead.is_sql]
+        assert len(sql_leads) > 0
+        assert len(non_sql_leads) > 0
+
+        sql_rate = sum(lead.converted_within_90_days for lead in sql_leads) / len(sql_leads)
+        non_sql_rate = sum(lead.converted_within_90_days for lead in non_sql_leads) / len(
+            non_sql_leads
+        )
+        # Non-SQL rate should be at least 5x lower than SQL rate.
+        assert non_sql_rate < sql_rate / 5, (
+            f"Non-SQL rate {non_sql_rate:.4f} not much lower than SQL rate {sql_rate:.4f}"
+        )
+
+    def test_direct_conversion_deterministic(self) -> None:
+        """Direct conversion path preserves full determinism."""
+        r1 = _run_sim(seed=77, n_leads=500)
+        r2 = _run_sim(seed=77, n_leads=500)
+        labels1 = [row.converted_within_90_days for row in r1.leads]
+        labels2 = [row.converted_within_90_days for row in r2.leads]
+        assert labels1 == labels2
+
+    def test_direct_converted_lead_has_opportunity(self) -> None:
+        """A direct-converted non-SQL lead should still get an opportunity row."""
+        result = _run_sim(seed=42, n_leads=2000)
+        opp_lead_ids = {o.lead_id for o in result.opportunities}
+        non_sql_converted = [
+            lead for lead in result.leads if lead.converted_within_90_days and not lead.is_sql
+        ]
+        for lead in non_sql_converted:
+            assert lead.lead_id in opp_lead_ids
+
+    def test_direct_converted_lead_has_customer_and_subscription(self) -> None:
+        """A direct-converted non-SQL lead should get customer + subscription rows."""
+        result = _run_sim(seed=42, n_leads=2000)
+        cust_opp_ids = {c.opportunity_id for c in result.customers}
+        sub_cust_ids = {s.customer_id for s in result.subscriptions}
+        opp_by_lead = {o.lead_id: o for o in result.opportunities}
+        cust_by_opp = {c.opportunity_id: c for c in result.customers}
+        non_sql_converted = [
+            lead for lead in result.leads if lead.converted_within_90_days and not lead.is_sql
+        ]
+        for lead in non_sql_converted:
+            opp = opp_by_lead.get(lead.lead_id)
+            assert opp is not None, f"No opportunity for direct-converted lead {lead.lead_id}"
+            assert opp.opportunity_id in cust_opp_ids
+            cust = cust_by_opp[opp.opportunity_id]
+            assert cust.customer_id in sub_cust_ids
 
 
 # ---------------------------------------------------------------------------

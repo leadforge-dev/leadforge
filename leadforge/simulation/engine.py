@@ -18,6 +18,10 @@ Simulation contract
 - Stage advancement is driven by :class:`~leadforge.mechanisms.transitions.HazardTransition`
   (mql → … → negotiation); final conversion is driven by
   :class:`~leadforge.mechanisms.hazards.ConversionHazard` (negotiation → closed_won).
+- A rare **direct conversion** path allows pre-SQL leads (``mql``, ``sal``) to
+  convert with a heavily discounted daily probability
+  (``_DIRECT_CONVERSION_DISCOUNT`` × normal hazard rate), breaking the
+  deterministic ``is_sql=False → never converts`` invariant.
 - A small daily churn probability independently moves any non-terminal lead to
   ``closed_lost``.
 
@@ -49,6 +53,7 @@ from leadforge.core.ids import ID_PREFIXES, make_id
 from leadforge.core.models import GenerationConfig
 from leadforge.core.rng import RNGRoot
 from leadforge.mechanisms.base import MechanismContext
+from leadforge.mechanisms.hazards import ConversionHazard
 from leadforge.mechanisms.policies import assign_mechanisms
 from leadforge.mechanisms.transitions import StageSequence
 from leadforge.schema.entities import (
@@ -70,6 +75,16 @@ from leadforge.structure.graph import WorldGraph
 
 # Daily churn probability from any active stage.
 _DAILY_CHURN_RATE = 0.004
+
+# Pre-SQL stages eligible for a rare direct conversion (bypassing the full
+# funnel).  The daily probability is the standard ConversionHazard rate
+# multiplied by ``_DIRECT_CONVERSION_DISCOUNT``.
+_DIRECT_CONVERSION_STAGES = frozenset({"mql", "sal"})
+
+# Discount factor applied to the ConversionHazard daily probability for
+# leads at pre-SQL stages.  Keeps the full funnel relevant while breaking
+# the deterministic ``is_sql=False → never converts`` invariant.
+_DIRECT_CONVERSION_DISCOUNT = 0.01
 
 # Funnel stages that imply meaningful sales engagement → opportunity creation.
 _SQL_OR_DEEPER = frozenset(
@@ -184,6 +199,11 @@ def simulate_world(
     mechanisms = assign_mechanisms(
         world_graph.motif_family, mech_rng, latent_touch_intensity=latent_touch_intensity
     )
+    # Narrow type for direct conversion path (daily_probability is on
+    # ConversionHazard, not the Mechanism ABC).
+    if not isinstance(mechanisms.conversion_hazard, ConversionHazard):
+        raise TypeError("conversion_hazard must be a ConversionHazard instance")
+    conversion_hazard: ConversionHazard = mechanisms.conversion_hazard
     stage_seq = StageSequence()
 
     # Build lookup indexes.
@@ -251,7 +271,7 @@ def simulate_world(
             # -- 2. Stage advance or conversion check (transition stream) -
             if state.current_stage == "negotiation":
                 # Final close: ConversionHazard decides closed_won.
-                if mechanisms.conversion_hazard.sample(ctx, transition_rng):
+                if conversion_hazard.sample(ctx, transition_rng):
                     state.mark_converted(t)
                     # Fall through to emit events on conversion day.
             else:
@@ -260,6 +280,17 @@ def simulate_world(
                     next_s = stage_seq.next_stage(state.current_stage)
                     if next_s is not None:
                         state.advance_stage(next_s, t)
+
+            # -- 2b. Direct conversion for pre-SQL leads (rare bypass) -----
+            # Breaks the ``is_sql=False → never converts`` deterministic
+            # invariant by giving pre-SQL leads a small, latent-modulated
+            # daily probability of converting without reaching negotiation.
+            if not state.is_terminal and state.current_stage in _DIRECT_CONVERSION_STAGES:
+                direct_p = (
+                    conversion_hazard.daily_probability(ctx.latents) * _DIRECT_CONVERSION_DISCOUNT
+                )
+                if transition_rng.random() < direct_p:
+                    state.mark_converted(t)
 
             # -- 3. Touches (event stream) --------------------------------
             event_date = (lead_dates[lead.lead_id] + timedelta(days=t)).isoformat()
@@ -334,7 +365,13 @@ def simulate_world(
         state = states[lead.lead_id]
         lead_date = lead_dates[lead.lead_id]
 
-        is_sql = state.sql_day is not None or state.current_stage in _SQL_OR_DEEPER
+        # A lead "is SQL" if it reached the SQL qualification gate through
+        # normal funnel progression.  Direct-converted leads (mql/sal →
+        # closed_won) skip SQL and should NOT be flagged as SQL.
+        # Note: sql_day is set by advance_stage() when the lead enters any
+        # stage in _SQL_OR_DEEPER, and also at initialisation for leads that
+        # start at sql+ stages.  It is NOT set by mark_converted().
+        is_sql = state.sql_day is not None
         conv_ts: str | None = None
         if state.converted and state.conversion_day is not None:
             conv_ts = (lead_date + timedelta(days=state.conversion_day)).isoformat()
@@ -366,11 +403,14 @@ def simulate_world(
             )
         )
 
-        # Opportunity: created when lead first reached sql or deeper.
-        if is_sql:
+        # Opportunity: created when lead first reached sql or deeper,
+        # or when a lead converted directly from a pre-SQL stage.
+        if is_sql or state.converted:
             opp_ctr += 1
             opp_id = make_id(ID_PREFIXES["opportunity"], opp_ctr)
-            opp_day = state.sql_day if state.sql_day is not None else 0
+            # For direct-converted leads (no SQL stage), anchor the
+            # opportunity at the conversion day instead.
+            opp_day = state.sql_day if state.sql_day is not None else (state.conversion_day or 0)
             opp_created_at = (lead_date + timedelta(days=opp_day)).isoformat()
 
             close_outcome: str | None = None
