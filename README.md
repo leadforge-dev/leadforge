@@ -14,6 +14,12 @@ Requires **Python 3.11+**.
 pip install leadforge
 ```
 
+Or install directly from GitHub:
+
+```bash
+pip install git+https://github.com/leadforge-dev/leadforge.git
+```
+
 For development:
 
 ```bash

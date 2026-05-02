@@ -5,7 +5,11 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/).
 
 ---
 
-## v1.0.0 — (2026-05-02)
+## Unreleased
+
+---
+
+## v1.0.0 — 2026-05-02
 
 First stable release. All milestones (M0–M13) complete.
 

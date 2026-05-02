@@ -1,1 +1,5 @@
-__version__ = "1.0.0"
+"""Single-source package version, read from installed metadata."""
+
+from importlib.metadata import version
+
+__version__: str = version("leadforge")
