@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "leadforge"
-version = "0.1.0"
+version = "1.0.0"
 description = "Opinionated framework for generating synthetic CRM and GTM datasets from simulated commercial worlds"
 readme = "README.md"
 license = { text = "MIT" }
@@ -12,7 +12,7 @@ requires-python = ">=3.11"
 authors = [{ name = "leadforge contributors" }]
 keywords = ["synthetic data", "CRM", "lead scoring", "machine learning", "simulation"]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Intended Audience :: Education",
     "Intended Audience :: Science/Research",
