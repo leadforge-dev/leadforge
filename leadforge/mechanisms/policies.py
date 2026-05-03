@@ -203,6 +203,25 @@ _DEFAULT_CONVERSION_WEIGHTS: dict[str, float] = {
 _DEFAULT_HAZARD_PARAMS: dict[str, float] = {"base_rate": 0.006, "scale": 0.05}
 _DEFAULT_TOUCH_BASE_RATE: float = 0.40
 
+# Per-motif calibration constants for difficulty modulation.
+# Each tuple is (reach_fraction, effective_days_at_negotiation):
+#   - reach_fraction: approximate share of leads that reach negotiation stage
+#     under baseline (no difficulty) parameters.
+#   - effective_days_at_negotiation: approximate days a lead spends at
+#     negotiation before converting or churning.
+#
+# Calibrated against v1.0.0 (2026-05-04) with 1000 leads × 20 seeds.
+# Re-calibrate if stage transition rates, churn rate, or population
+# initialisation logic changes.
+_MOTIF_REACH_CALIBRATION: dict[str, tuple[float, float]] = {
+    "fit_dominant": (0.85, 22.0),
+    "intent_dominant": (0.85, 22.0),
+    "sales_execution_sensitive": (0.40, 18.0),
+    "demo_trial_mediated": (0.70, 20.0),
+    "buying_committee_friction": (0.32, 16.0),
+}
+_DEFAULT_REACH_CALIBRATION: tuple[float, float] = (0.55, 20.0)
+
 
 # ---------------------------------------------------------------------------
 # Public entry point
@@ -250,25 +269,17 @@ def assign_mechanisms(
         #
         # The baseline conversion rate varies significantly by motif family due
         # to differences in how many leads reach negotiation and how latent
-        # scores distribute.  We use per-motif calibration constants (empirically
-        # determined) to compute the daily hazard probability that produces the
-        # target overall rate for each motif.
+        # scores distribute.  We use per-motif calibration constants to compute
+        # the daily hazard probability that produces the target overall rate.
         #
         # Model: P(convert) ≈ reach_frac × [1 - (1-daily_p)^N_days]
         target_mid = (
             difficulty_params.conversion_rate_lo + difficulty_params.conversion_rate_hi
         ) / 2
 
-        # Per-motif calibration: reach_fraction and effective_days at negotiation.
-        # These were measured from the baseline simulation (no difficulty_params).
-        motif_calibration: dict[str, tuple[float, float]] = {
-            "fit_dominant": (0.85, 22.0),
-            "intent_dominant": (0.85, 22.0),
-            "sales_execution_sensitive": (0.40, 18.0),
-            "demo_trial_mediated": (0.70, 20.0),
-            "buying_committee_friction": (0.32, 16.0),
-        }
-        reach_frac, days_at_negotiation = motif_calibration.get(motif_family, (0.55, 20.0))
+        reach_frac, days_at_negotiation = _MOTIF_REACH_CALIBRATION.get(
+            motif_family, _DEFAULT_REACH_CALIBRATION
+        )
 
         # Target P(convert | reached negotiation).
         p_convert_given_neg = min(0.92, target_mid / reach_frac)
@@ -286,9 +297,20 @@ def assign_mechanisms(
             "scale": target_daily_p * (1.0 - base_frac),
         }
 
-    # Apply signal_strength to LatentScore weights (higher = latents matter more).
-    scaled_conv_weights = {k: v * signal for k, v in conv_weights.items()}
-    scaled_trans_weights = {k: v * signal for k, v in trans_weights.items()}
+    # Apply signal_strength to LatentScore weights.
+    # To reduce signal (lower signal_strength), we attenuate secondary weights
+    # more than the primary one.  This reduces discriminability rather than just
+    # shifting the sigmoid.  The strongest weight is scaled by `signal`, the
+    # rest by `signal^1.5`, so intro (0.90) barely changes while advanced (0.50)
+    # meaningfully weakens secondary signals.
+    def _scale_weights(weights: dict[str, float], s: float) -> dict[str, float]:
+        if not weights or s >= 1.0:
+            return dict(weights)
+        max_abs = max(abs(v) for v in weights.values())
+        return {k: v * s if abs(v) >= max_abs - 1e-9 else v * (s**1.5) for k, v in weights.items()}
+
+    scaled_conv_weights = _scale_weights(conv_weights, signal)
+    scaled_trans_weights = _scale_weights(trans_weights, signal)
 
     conversion_hazard = ConversionHazard(
         score_mech=LatentScore(weights=scaled_conv_weights, bias=-1.5),

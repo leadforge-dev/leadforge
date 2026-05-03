@@ -190,15 +190,33 @@ class Generator:
             category_latent_correlations = profile.get("category_latent_correlations")
 
             # Construct DifficultyParams from profile and attach to config.
-            cr_range = profile.get("conversion_rate_range", [0.18, 0.28])
+            # All keys are required — a missing key indicates a malformed profile
+            # YAML and should fail loudly rather than silently defaulting.
+            required_keys = (
+                "signal_strength",
+                "noise_scale",
+                "missing_rate",
+                "outlier_rate",
+                "conversion_rate_range",
+                "committee_friction",
+            )
+            missing = [k for k in required_keys if k not in profile]
+            if missing:
+                from leadforge.core.exceptions import InvalidRecipeError
+
+                raise InvalidRecipeError(
+                    f"Difficulty profile '{config.difficulty.value}' is missing "
+                    f"required keys: {missing}"
+                )
+            cr_range = profile["conversion_rate_range"]
             difficulty_params = DifficultyParams(
-                signal_strength=profile.get("signal_strength", 0.70),
-                noise_scale=profile.get("noise_scale", 0.30),
-                missing_rate=profile.get("missing_rate", 0.08),
-                outlier_rate=profile.get("outlier_rate", 0.04),
+                signal_strength=profile["signal_strength"],
+                noise_scale=profile["noise_scale"],
+                missing_rate=profile["missing_rate"],
+                outlier_rate=profile["outlier_rate"],
                 conversion_rate_lo=cr_range[0],
                 conversion_rate_hi=cr_range[1],
-                committee_friction=profile.get("committee_friction", 0.30),
+                committee_friction=profile["committee_friction"],
             )
             config = dataclasses.replace(config, difficulty_params=difficulty_params)
         except (FileNotFoundError, KeyError):

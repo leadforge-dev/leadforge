@@ -329,8 +329,17 @@ def build_snapshot(
 # Difficulty distortion helpers
 # ---------------------------------------------------------------------------
 
-# Columns that must never be distorted (labels, IDs, categoricals).
-_DISTORTION_EXCLUDE = frozenset({"converted_within_90_days", "lead_id", "account_id", "contact_id"})
+# Derive eligible columns from the feature spec rather than runtime dtype
+# sniffing.  This guarantees categoricals, booleans, IDs, and labels are
+# never distorted even if their runtime dtype happens to be numeric.
+_FLOAT_DISTORTION_COLS: list[str] = [
+    f.name for f in LEAD_SNAPSHOT_FEATURES if f.dtype in ("Float64", "float64") and not f.is_target
+]
+_NUMERIC_DISTORTION_COLS: list[str] = [
+    f.name
+    for f in LEAD_SNAPSHOT_FEATURES
+    if f.dtype in ("Float64", "float64", "Int64", "int64") and not f.is_target
+]
 
 
 def _apply_difficulty_distortions(
@@ -338,22 +347,17 @@ def _apply_difficulty_distortions(
     params: DifficultyParams,
     seed: int,
 ) -> pd.DataFrame:
-    """Apply noise, missingness, and outliers to numeric snapshot features."""
+    """Apply noise, missingness, and outliers to numeric snapshot features.
+
+    Returns a new DataFrame — the input is not mutated.
+    """
+    df = df.copy()
     rng_root = RNGRoot(seed)
     np_rng = rng_root.numpy_child("snapshot_distortions")
 
-    # Identify float columns eligible for noise/outlier distortion.
-    float_cols = [
-        c
-        for c in df.columns
-        if c not in _DISTORTION_EXCLUDE and df[c].dtype in ("float64", "Float64")
-    ]
-    # All numeric columns (int + float) eligible for missingness.
-    all_numeric_cols = [
-        c
-        for c in df.columns
-        if c not in _DISTORTION_EXCLUDE and df[c].dtype in ("float64", "Float64", "int64", "Int64")
-    ]
+    # Filter to columns actually present (guards against feature spec drift).
+    float_cols = [c for c in _FLOAT_DISTORTION_COLS if c in df.columns]
+    all_numeric_cols = [c for c in _NUMERIC_DISTORTION_COLS if c in df.columns]
 
     # 1. Gaussian noise on float features only (avoids int casting issues).
     if params.noise_scale > 0:
@@ -381,7 +385,8 @@ def _apply_difficulty_distortions(
                     df[col] = df[col].astype("Float64")
                 df.loc[col_mask, col] = np.nan
 
-    # 3. Outlier injection (float columns only).
+    # 3. Outlier injection (float columns only).  Uses 5σ to produce values
+    #    clearly distinguishable from natural variation.
     if params.outlier_rate > 0:
         for col in float_cols:
             valid_mask = df[col].notna()
@@ -391,7 +396,7 @@ def _apply_difficulty_distortions(
             col_median = float(df[col].median())
             outlier_mask = np_rng.random(size=len(df)) < params.outlier_rate
             signs = np_rng.choice([-1, 1], size=len(df)).astype(float)
-            outlier_values = col_median + signs * 3 * col_std
+            outlier_values = col_median + signs * 5 * col_std
             combined = outlier_mask & valid_mask.values
             if combined.any():
                 df.loc[combined, col] = outlier_values[combined]

@@ -167,46 +167,77 @@ class TestDeterminism:
 class TestSnapshotDistortions:
     """Tests for noise and missingness injection in snapshot."""
 
-    def test_intro_has_minimal_noise(self) -> None:
+    def test_distortions_change_values(self) -> None:
+        """Noise injection actually modifies feature values."""
+        import pandas as pd
+
+        from leadforge.core.models import DifficultyParams
+        from leadforge.render.snapshots import (
+            _FLOAT_DISTORTION_COLS,
+            _apply_difficulty_distortions,
+        )
+
+        # Use actual feature spec column names so the function recognises them.
+        col = _FLOAT_DISTORTION_COLS[0]  # e.g. "days_since_first_touch"
+        df = pd.DataFrame(
+            {
+                col: [1.0, 2.0, 3.0, 4.0, 5.0] * 20,
+                "converted_within_90_days": [True, False] * 50,
+            }
+        )
+        original_values = df[col].copy()
+        dp = DifficultyParams(
+            signal_strength=0.50,
+            noise_scale=0.50,
+            missing_rate=0.0,
+            outlier_rate=0.0,
+            conversion_rate_lo=0.08,
+            conversion_rate_hi=0.15,
+            committee_friction=0.55,
+        )
+        result = _apply_difficulty_distortions(df, dp, seed=42)
+        # Original should be unmodified (pure function).
+        assert df[col].equals(original_values)
+        # Result should differ due to noise.
+        assert not result[col].equals(original_values)
+        # Label column must not be touched.
+        assert result["converted_within_90_days"].equals(df["converted_within_90_days"])
+
+    def test_intro_has_minimal_missingness(self, tmp_path: pytest.TempPathFactory) -> None:
         """Intro tier has low noise and minimal missingness."""
+        out = tmp_path / "intro_bundle"
         gen = Generator.from_recipe(
             "b2b_saas_procurement_v1",
             seed=42,
             difficulty="intro",
         )
         bundle = gen.generate(n_leads=200, n_accounts=80, n_contacts=240)
-        bundle.save("/tmp/test_intro_distortion")
+        bundle.save(str(out))
 
         import pandas as pd
 
-        df = pd.read_parquet(
-            "/tmp/test_intro_distortion/tasks/converted_within_90_days/train.parquet"
-        )
+        df = pd.read_parquet(out / "tasks/converted_within_90_days/train.parquet")
         # Intro has 2% missing rate, so very few NaN values expected.
         total_cells = df.select_dtypes(include="number").size
         missing_frac = df.select_dtypes(include="number").isna().sum().sum() / total_cells
         assert missing_frac < 0.10  # well below 10%
 
-    def test_advanced_has_more_missingness(self) -> None:
+    def test_advanced_has_more_missingness(self, tmp_path: pytest.TempPathFactory) -> None:
         """Advanced tier has substantially more missing values than intro."""
         import pandas as pd
 
-        for diff, out_path in [
-            ("intro", "/tmp/test_miss_intro"),
-            ("advanced", "/tmp/test_miss_adv"),
-        ]:
+        dfs = {}
+        for diff in ("intro", "advanced"):
+            out = tmp_path / f"{diff}_bundle"
             gen = Generator.from_recipe(
                 "b2b_saas_procurement_v1",
                 seed=42,
                 difficulty=diff,
             )
             bundle = gen.generate(n_leads=200, n_accounts=80, n_contacts=240)
-            bundle.save(out_path)
+            bundle.save(str(out))
+            dfs[diff] = pd.read_parquet(out / "tasks/converted_within_90_days/train.parquet")
 
-        df_intro = pd.read_parquet(
-            "/tmp/test_miss_intro/tasks/converted_within_90_days/train.parquet"
-        )
-        df_adv = pd.read_parquet("/tmp/test_miss_adv/tasks/converted_within_90_days/train.parquet")
-        miss_intro = df_intro.select_dtypes(include="number").isna().sum().sum()
-        miss_adv = df_adv.select_dtypes(include="number").isna().sum().sum()
+        miss_intro = dfs["intro"].select_dtypes(include="number").isna().sum().sum()
+        miss_adv = dfs["advanced"].select_dtypes(include="number").isna().sum().sum()
         assert miss_adv > miss_intro
