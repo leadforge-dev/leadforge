@@ -141,9 +141,15 @@ class LatentDecayIntensity(Mechanism):
 
     Expected count per day::
 
-        lambda = max(floor, base_rate * decay^t * (1 + boost * latent_multiplier))
+        lambda = max(floor, base_rate * decay^t * (1 + effective_boost * latent_multiplier))
 
     where ``latent_multiplier = sum(weight_i * latents[key_i])``.
+
+    After ``followup_boost_after_day``, the effective boost ramps linearly from
+    ``boost`` to ``boost * followup_boost_factor`` over ``followup_ramp_days``.
+    This models sales teams increasing follow-up intensity for leads that show
+    strong latent signals (engagement, fit, intent) — a causally legitimate
+    amplification of the latent → touch pathway.
 
     Args:
         base_rate: Expected daily count at ``t=0`` for a lead with zero
@@ -153,6 +159,18 @@ class LatentDecayIntensity(Mechanism):
         latent_weights: Mapping of latent-key → weight for the multiplier.
         boost: Scaling factor for the latent multiplier (controls how much
             latent traits amplify touch intensity).
+        followup_boost_after_day: Day after which latent modulation ramps up.
+            Set to ``None`` (default) to disable the ramp.
+        followup_boost_factor: Multiplier applied to ``boost`` at the end of
+            the ramp period.  E.g. ``3.0`` means the effective boost is
+            ``boost * 3.0`` once the ramp completes.
+        followup_ramp_days: Number of days over which the ramp transitions
+            linearly from ``boost`` to ``boost * followup_boost_factor``.
+        followup_latent_weights: Optional separate latent weights used after
+            the followup day.  Models sales teams responding to *different*
+            latent signals during the follow-up period (e.g. prioritizing
+            authority and budget over raw engagement).  Blended with the
+            base weights during the ramp period.
     """
 
     def __init__(
@@ -162,6 +180,10 @@ class LatentDecayIntensity(Mechanism):
         floor_rate: float = 0.01,
         latent_weights: dict[str, float] | None = None,
         boost: float = 0.8,
+        followup_boost_after_day: int | None = None,
+        followup_boost_factor: float = 1.0,
+        followup_ramp_days: int = 10,
+        followup_latent_weights: dict[str, float] | None = None,
     ) -> None:
         if base_rate <= 0:
             raise ValueError(f"base_rate must be positive, got {base_rate}")
@@ -174,19 +196,59 @@ class LatentDecayIntensity(Mechanism):
         self._floor = floor_rate
         self._latent_weights: dict[str, float] = dict(latent_weights) if latent_weights else {}
         self._boost = boost
+        self._followup_after: int | None = followup_boost_after_day
+        self._followup_factor = followup_boost_factor
+        self._followup_ramp = followup_ramp_days
+        self._followup_latent_weights: dict[str, float] | None = (
+            dict(followup_latent_weights) if followup_latent_weights else None
+        )
 
     @property
     def name(self) -> str:
         return "latent_decay_intensity"
 
-    def expected_count(self, t: int, latents: dict[str, float] | None = None) -> float:
-        """Return the expected daily count at day *t* given *latents*."""
-        latent_mult = 0.0
-        if latents and self._latent_weights:
-            latent_mult = sum(
+    def _effective_boost(self, t: int) -> float:
+        """Return the effective boost at day *t*, accounting for follow-up ramp."""
+        if self._followup_after is None or t <= self._followup_after:
+            return self._boost
+        elapsed = t - self._followup_after
+        progress = min(1.0, elapsed / max(1, self._followup_ramp))
+        return self._boost * (1.0 + progress * (self._followup_factor - 1.0))
+
+    def _latent_multiplier(self, t: int, latents: dict[str, float] | None) -> float:
+        """Compute the weighted latent multiplier, blending follow-up weights if active."""
+        if not latents:
+            return 0.0
+
+        # Base weights
+        base_mult = 0.0
+        if self._latent_weights:
+            base_mult = sum(
                 self._latent_weights.get(k, 0.0) * latents.get(k, 0.0) for k in self._latent_weights
             )
-        rate = self._base_rate * (self._decay**t) * (1.0 + self._boost * latent_mult)
+
+        # If no followup weights or before followup day, use base only
+        if (
+            self._followup_latent_weights is None
+            or self._followup_after is None
+            or t <= self._followup_after
+        ):
+            return base_mult
+
+        # Blend base and followup weights during ramp
+        followup_mult = sum(
+            self._followup_latent_weights.get(k, 0.0) * latents.get(k, 0.0)
+            for k in self._followup_latent_weights
+        )
+        elapsed = t - self._followup_after
+        progress = min(1.0, elapsed / max(1, self._followup_ramp))
+        return base_mult * (1.0 - progress) + followup_mult * progress
+
+    def expected_count(self, t: int, latents: dict[str, float] | None = None) -> float:
+        """Return the expected daily count at day *t* given *latents*."""
+        latent_mult = self._latent_multiplier(t, latents)
+        effective_boost = self._effective_boost(t)
+        rate = self._base_rate * (self._decay**t) * (1.0 + effective_boost * latent_mult)
         return max(self._floor, rate)
 
     def sample(self, context: MechanismContext, rng: random.Random) -> int:
@@ -211,4 +273,8 @@ class LatentDecayIntensity(Mechanism):
             "floor_rate": self._floor,
             "latent_weights": self._latent_weights,
             "boost": self._boost,
+            "followup_boost_after_day": self._followup_after,
+            "followup_boost_factor": self._followup_factor,
+            "followup_ramp_days": self._followup_ramp,
+            "followup_latent_weights": self._followup_latent_weights,
         }
