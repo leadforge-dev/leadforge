@@ -213,29 +213,21 @@ class TestSubsample:
         assert result["converted"].sum() <= 10
 
     def test_insufficient_negatives(self):
-        """When fewer negatives available than needed, warns and adjusts."""
+        """When fewer negatives than needed, raises ValueError."""
         df = _make_v5_df(n=200, conversion_rate=0.95)  # only ~10 negatives
-        n_neg_available = (df["converted"] == 0).sum()
-        with pytest.warns(UserWarning, match="negatives available"):
-            result = subsample(df, seed=42, n=100, target_rate=0.10)  # need 90 negatives
-        # Verify actual composition: negatives capped at available count
-        n_neg_result = (result["converted"] == 0).sum()
-        assert n_neg_result <= n_neg_available
-        # Output should still contain rows (not empty)
-        assert len(result) > 0
+        with pytest.raises(ValueError, match="negatives available"):
+            subsample(df, seed=42, n=100, target_rate=0.10)  # need 90 negatives
 
     def test_index_is_reset(self):
         df = _make_v5_df(n=500)
         result = subsample(df, seed=42, n=100, target_rate=0.30)
         assert list(result.index) == list(range(len(result)))
 
-    def test_n_larger_than_input_caps_gracefully(self):
-        """Requesting more rows than available caps at available count."""
+    def test_n_larger_than_input_raises(self):
+        """Requesting more negatives than available raises ValueError."""
         df = _make_v5_df(n=50)
-        with pytest.warns(UserWarning, match="available"):
-            result = subsample(df, seed=42, n=200, target_rate=0.30)
-        # Output should contain all available rows (capped)
-        assert len(result) <= len(df)
+        with pytest.raises(ValueError, match="negatives available"):
+            subsample(df, seed=42, n=200, target_rate=0.30)
 
 
 # ---------------------------------------------------------------------------

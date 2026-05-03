@@ -13,24 +13,31 @@ import sys
 
 import numpy as np
 import pandas as pd
-from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import GradientBoostingClassifier
-from sklearn.impute import SimpleImputer
-from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
-    average_precision_score,
     roc_auc_score,
 )
 from sklearn.model_selection import train_test_split
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
+
+from leadforge.pipelines.common import (
+    BINARY_FEATURES,
+    CAT_FEATURES,
+    TARGET,
+)
+from leadforge.pipelines.ml import (
+    LEAKAGE_PREFIX,
+    build_baseline_pipeline,
+)
+from leadforge.pipelines.ml import (
+    fit_evaluate as _fit_evaluate,
+)
+from leadforge.pipelines.ml import (
+    get_feature_cols as _get_feature_cols,
+)
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-
-TARGET = "converted"
-LEAKAGE_PREFIX = "__leakage__"
 
 BANNED_COLUMNS = {
     "current_stage",
@@ -40,22 +47,6 @@ BANNED_COLUMNS = {
     "is_mql",
     "lead_created_at",
 }
-
-CAT_FEATURES = [
-    "industry",
-    "region",
-    "company_size",
-    "company_revenue",
-    "contact_role",
-    "seniority",
-    "lead_source",
-    "acquisition_wave",
-]
-
-BINARY_FEATURES = [
-    "opportunity_created",
-    "demo_completed",
-]
 
 # Validation thresholds
 AUC_LOWER = 0.62
@@ -72,82 +63,10 @@ RATE_UPPER = 0.98
 
 
 # ---------------------------------------------------------------------------
-# ML pipeline builder (canonical)
+# ML pipeline (imported from shared utility)
 # ---------------------------------------------------------------------------
 
-
-def _build_pipeline(
-    num_cols: list[str],
-    cat_cols: list[str],
-) -> Pipeline:
-    """Build the canonical sklearn baseline pipeline."""
-    numeric_transformer = Pipeline(
-        [
-            ("imputer", SimpleImputer(strategy="median")),
-            ("scaler", StandardScaler()),
-        ]
-    )
-    categorical_transformer = Pipeline(
-        [
-            ("imputer", SimpleImputer(strategy="most_frequent")),
-            ("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
-        ]
-    )
-    preprocessor = ColumnTransformer(
-        transformers=[
-            ("num", numeric_transformer, num_cols),
-            ("cat", categorical_transformer, cat_cols),
-        ],
-        remainder="drop",
-    )
-    return Pipeline(
-        [
-            ("preprocessor", preprocessor),
-            ("classifier", LogisticRegression(max_iter=1000, solver="lbfgs", random_state=42)),
-        ]
-    )
-
-
-def _get_feature_cols(
-    df: pd.DataFrame,
-    exclude: set[str] | None = None,
-) -> tuple[list[str], list[str]]:
-    """Partition feature columns into (cat_cols, num_cols)."""
-    exclude = (exclude or set()) | {TARGET}
-    cat_cols = []
-    num_cols = []
-    for col in df.columns:
-        if col in exclude:
-            continue
-        if pd.api.types.is_numeric_dtype(df[col]):
-            num_cols.append(col)
-        else:
-            cat_cols.append(col)
-    return cat_cols, num_cols
-
-
-def _fit_evaluate(
-    df: pd.DataFrame,
-    exclude_cols: set[str] | None = None,
-    seed: int = 42,
-    test_size: float = 0.30,
-) -> tuple[float, float, np.ndarray, pd.Series]:
-    """Fit LR on hold-out split, return (AUC, PR-AUC, probs, y_test)."""
-    y = df[TARGET].astype(int)
-    cat_cols, num_cols = _get_feature_cols(df, exclude=exclude_cols)
-    x = df[cat_cols + num_cols]
-
-    x_train, x_test, y_train, y_test = train_test_split(
-        x, y, test_size=test_size, random_state=seed, stratify=y
-    )
-
-    pipe = _build_pipeline(num_cols, cat_cols)
-    pipe.fit(x_train, y_train)
-    probs = pipe.predict_proba(x_test)[:, 1]
-
-    auc = float(roc_auc_score(y_test, probs))
-    pr_auc = float(average_precision_score(y_test, probs))
-    return auc, pr_auc, probs, y_test
+_build_pipeline = build_baseline_pipeline
 
 
 # ---------------------------------------------------------------------------
@@ -272,25 +191,13 @@ def check_tree_improvement(df: pd.DataFrame, label: str) -> tuple[list[str], dic
         lr_aucs.append(lr_auc)
 
         # GBM with one-hot encoded features
-        numeric_transformer = Pipeline(
-            [("imputer", SimpleImputer(strategy="median")), ("scaler", StandardScaler())]
-        )
-        categorical_transformer = Pipeline(
+        from sklearn.pipeline import Pipeline as _Pipeline
+
+        from leadforge.pipelines.ml import build_preprocessor as _build_pre
+
+        gb = _Pipeline(
             [
-                ("imputer", SimpleImputer(strategy="most_frequent")),
-                ("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
-            ]
-        )
-        preprocessor = ColumnTransformer(
-            transformers=[
-                ("num", numeric_transformer, num_cols),
-                ("cat", categorical_transformer, cat_cols),
-            ],
-            remainder="drop",
-        )
-        gb = Pipeline(
-            [
-                ("preprocessor", preprocessor),
+                ("preprocessor", _build_pre(num_cols, cat_cols)),
                 ("classifier", GradientBoostingClassifier(n_estimators=100, random_state=42)),
             ]
         )

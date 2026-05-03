@@ -30,7 +30,11 @@ from leadforge.mechanisms.base import MechanismAssignment
 
 if TYPE_CHECKING:
     from leadforge.core.models import DifficultyParams
-from leadforge.mechanisms.counts import LatentDecayIntensity, RecencyDecayIntensity
+from leadforge.mechanisms.counts import (
+    FollowupRampConfig,
+    LatentDecayIntensity,
+    RecencyDecayIntensity,
+)
 from leadforge.mechanisms.hazards import ConversionHazard
 from leadforge.mechanisms.measurement import NoisyProxy
 from leadforge.mechanisms.scores import LatentScore
@@ -342,10 +346,12 @@ def assign_mechanisms(
             floor_rate=0.02,
             latent_weights=touch_latent_w,
             boost=1.2,
-            followup_boost_after_day=20,
-            followup_boost_factor=10.0,
-            followup_ramp_days=10,
-            followup_latent_weights=followup_latent_w,
+            followup=FollowupRampConfig(
+                boost_after_day=20,
+                boost_factor=10.0,
+                ramp_days=10,
+                latent_weights=followup_latent_w,
+            ),
         )
     else:
         touch_intensity = RecencyDecayIntensity(

@@ -15,75 +15,17 @@ import sys
 import numpy as np
 import pandas as pd
 from sklearn.base import clone
-from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
-from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import average_precision_score, roc_auc_score
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-TARGET = "converted"
-LEAKAGE_PREFIX = "__leakage__"
+from leadforge.pipelines.common import BINARY_FEATURES, CAT_FEATURES, NUM_FEATURES, TARGET
+from leadforge.pipelines.ml import LEAKAGE_PREFIX, build_preprocessor, sanitize_categoricals
 
-CAT_FEATURES = [
-    "industry",
-    "region",
-    "company_size",
-    "company_revenue",
-    "contact_role",
-    "seniority",
-    "lead_source",
-    "acquisition_wave",
-]
-
-NUM_FEATURES = [
-    "expected_acv",
-    "inbound_touches",
-    "outbound_touches",
-    "touches_week_1",
-    "touches_last_7_days",
-    "days_since_first_touch",
-    "web_sessions",
-    "sales_activities",
-    "days_since_last_touch",
-    "opportunity_created",
-    "demo_completed",
-]
-
-
-def _sanitize(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    for c in CAT_FEATURES:
-        if c in df.columns:
-            df[c] = df[c].astype(object).where(df[c].notna(), None)
-    return df
-
-
-def _build_preprocessor(num_cols: list[str], cat_cols: list[str]) -> ColumnTransformer:
-    return ColumnTransformer(
-        transformers=[
-            (
-                "num",
-                Pipeline(
-                    [("imputer", SimpleImputer(strategy="median")), ("scaler", StandardScaler())]
-                ),
-                num_cols,
-            ),
-            (
-                "cat",
-                Pipeline(
-                    [
-                        ("imputer", SimpleImputer(strategy="most_frequent")),
-                        ("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
-                    ]
-                ),
-                cat_cols,
-            ),
-        ],
-        remainder="drop",
-    )
+# NUM_FEATURES for eval includes binary features as numeric inputs
+_EVAL_NUM_FEATURES = NUM_FEATURES + BINARY_FEATURES
 
 
 def main() -> None:
@@ -94,10 +36,10 @@ def main() -> None:
     student_path = sys.argv[1]
     instructor_path = sys.argv[2] if len(sys.argv) > 2 else None
 
-    df = _sanitize(pd.read_csv(student_path))
+    df = sanitize_categoricals(pd.read_csv(student_path), CAT_FEATURES)
     leakage = {c for c in df.columns if c.startswith(LEAKAGE_PREFIX)}
     cat_cols = [c for c in CAT_FEATURES if c in df.columns and c not in leakage]
-    num_cols = [c for c in NUM_FEATURES if c in df.columns and c not in leakage]
+    num_cols = [c for c in _EVAL_NUM_FEATURES if c in df.columns and c not in leakage]
 
     y = df[TARGET].astype(int)
     x = df[cat_cols + num_cols]
@@ -123,7 +65,7 @@ def main() -> None:
             x_tr, x_te, y_tr, y_te = train_test_split(
                 x, y, test_size=0.30, random_state=seed, stratify=y
             )
-            pipe = Pipeline([("pre", _build_preprocessor(num_cols, cat_cols)), ("clf", clone(clf))])
+            pipe = Pipeline([("pre", build_preprocessor(num_cols, cat_cols)), ("clf", clone(clf))])
             pipe.fit(x_tr, y_tr)
             aucs.append(roc_auc_score(y_te, pipe.predict_proba(x_te)[:, 1]))
         print(f"  {name:4s}: AUC = {np.mean(aucs):.4f} (std={np.std(aucs):.4f})")
@@ -136,7 +78,7 @@ def main() -> None:
     x_tr, x_te, y_tr, y_te = train_test_split(x, y, test_size=0.30, random_state=42, stratify=y)
     pipe = Pipeline(
         [
-            ("pre", _build_preprocessor(num_cols, cat_cols)),
+            ("pre", build_preprocessor(num_cols, cat_cols)),
             ("clf", LogisticRegression(max_iter=1000, solver="lbfgs", random_state=42)),
         ]
     )
@@ -171,7 +113,7 @@ def main() -> None:
     print("\nFeature importance (GBM):")
     gbm_pipe = Pipeline(
         [
-            ("pre", _build_preprocessor(num_cols, cat_cols)),
+            ("pre", build_preprocessor(num_cols, cat_cols)),
             ("clf", GradientBoostingClassifier(n_estimators=100, random_state=42)),
         ]
     )
@@ -193,7 +135,7 @@ def main() -> None:
         print("\n" + "=" * 60)
         print("TRAP DETECTION (instructor)")
         print("=" * 60)
-        inst = _sanitize(pd.read_csv(instructor_path))
+        inst = sanitize_categoricals(pd.read_csv(instructor_path), CAT_FEATURES)
         trap_cols = [c for c in inst.columns if c.startswith(LEAKAGE_PREFIX)]
         if trap_cols:
             trap_col = trap_cols[0]

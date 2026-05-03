@@ -15,9 +15,7 @@ import sys
 
 import numpy as np
 import pandas as pd
-from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
-from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     average_precision_score,
@@ -25,37 +23,15 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-TARGET = "converted"
-LEAKAGE_PREFIX = "__leakage__"
+from leadforge.pipelines.common import TARGET
+from leadforge.pipelines.ml import LEAKAGE_PREFIX, build_preprocessor, get_feature_cols
+
 SEED = 42
 
 
-def _get_feature_cols(df, exclude=None):
-    exclude = (exclude or set()) | {TARGET}
-    cat, num = [], []
-    for col in df.columns:
-        if col in exclude:
-            continue
-        if pd.api.types.is_numeric_dtype(df[col]):
-            num.append(col)
-        else:
-            cat.append(col)
-    return cat, num
-
-
 def _build_pipeline(num_cols, cat_cols, model="lr"):
-    num_tr = Pipeline([("imp", SimpleImputer(strategy="median")), ("sc", StandardScaler())])
-    cat_tr = Pipeline(
-        [
-            ("imp", SimpleImputer(strategy="most_frequent")),
-            ("enc", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
-        ]
-    )
-    pre = ColumnTransformer(
-        [("num", num_tr, num_cols), ("cat", cat_tr, cat_cols)], remainder="drop"
-    )
+    pre = build_preprocessor(num_cols, cat_cols)
     if model == "lr":
         clf = LogisticRegression(max_iter=1000, solver="lbfgs", random_state=SEED)
     elif model == "rf":
@@ -118,7 +94,7 @@ def main():
     print(f"Missing values: {df.isna().sum().sum()} total")
 
     leakage = {c for c in df.columns if c.startswith(LEAKAGE_PREFIX)}
-    cat_cols, num_cols = _get_feature_cols(df, exclude=leakage)
+    cat_cols, num_cols = get_feature_cols(df, exclude=leakage)
     y = df[TARGET].astype(int)
     x = df[cat_cols + num_cols]
 
@@ -176,8 +152,8 @@ def main():
             trap_col = trap_cols[0]
             all_leakage = set(trap_cols)
 
-            cat_i, num_i = _get_feature_cols(df_i, exclude=all_leakage)
-            cat_with, num_with = _get_feature_cols(df_i, exclude=all_leakage - {trap_col})
+            cat_i, num_i = get_feature_cols(df_i, exclude=all_leakage)
+            cat_with, num_with = get_feature_cols(df_i, exclude=all_leakage - {trap_col})
             y_i = df_i[TARGET].astype(int)
 
             deltas = []
