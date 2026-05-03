@@ -2,11 +2,11 @@
 
 v6 produces TWO exports:
 - **Student-safe**: no leakage columns.
-- **Instructor**: identical rows + one ``__leakage__touches_post_snapshot_15_90``
+- **Instructor**: identical rows + one ``__leakage__touches_post_snapshot_21_90``
   column computed from the simulator's actual event timeline (days 15..90).
 
 Key v6 changes over v5:
-- Snapshot day 14.
+- Snapshot day 20 (shifted from 14 after engine changes weakened day-14 signal).
 - Causally-grounded leakage trap (post-snapshot touches from sim events).
 - Poisson(1) boost on trap column for converted leads (restores signal post-engine-changes).
 - ``touches_last_7_days`` momentum feature.
@@ -51,7 +51,7 @@ __all__ = [
 # ---------------------------------------------------------------------------
 SEED = 42
 N_LEADS = 5000
-SNAPSHOT_DAY = 14
+SNAPSHOT_DAY = 20
 SUBSAMPLE_N = 1000
 TARGET_RATE = 0.30
 
@@ -59,7 +59,7 @@ TARGET_RATE = 0.30
 ACV_FLOOR = 18_000.0
 ACV_CAP = 120_000.0
 
-INSTRUCTOR_TRAP_COL = "__leakage__touches_post_snapshot_15_90"
+INSTRUCTOR_TRAP_COL = "__leakage__touches_post_snapshot_21_90"
 
 # v6 student column set: 19 features + 1 target = 20 columns.
 FINAL_COLUMNS_STUDENT = [
@@ -218,7 +218,7 @@ def boost_leakage_trap(df: pd.DataFrame, seed: int) -> pd.DataFrame:
     df = df.copy()
     n = len(df)
     converted = df["converted"].values
-    boost = converted * rng.poisson(1, size=n)
+    boost = converted * rng.poisson(3, size=n)
     df[INSTRUCTOR_TRAP_COL] = df[INSTRUCTOR_TRAP_COL] + boost
     return df
 

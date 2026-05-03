@@ -9,7 +9,7 @@ Produces two CSV files in OUTPUT_DIR:
 - lead_scoring_intro_v6_instructor.csv (same rows + __leakage__ trap column)
 
 Both are 1000-row files at ~30% conversion rate with:
-- Day-14 windowed features
+- Day-20 windowed features
 - Structured missingness (MAR + structural + MCAR)
 - Causally-grounded leakage trap (post-snapshot touches from sim events)
 - Expected ACV with soft winsorization
