@@ -8,8 +8,8 @@ v6 is the sixth iteration of the lead scoring intro dataset, designed for **3–
 
 | Change | v5 | v6 |
 |---|---|---|
-| Snapshot day | 10 | **14** |
-| Leakage trap | Label-noise boost (`total_touches_90d`) | **Causal** post-snapshot touches (days 15–90) |
+| Snapshot day | 10 | **20** |
+| Leakage trap | Label-noise boost (`total_touches_90d`) | **Causal** post-snapshot touches (days 21–90) + Poisson(3) boost |
 | Student/instructor split | Single file | **Two files**: student-safe + instructor |
 | Momentum features | `touches_week_1`, `days_since_first_touch` | + **`touches_last_7_days`** |
 | Cohort feature | — | **`acquisition_wave`** (A/B/C) |
@@ -21,7 +21,7 @@ v6 is the sixth iteration of the lead scoring intro dataset, designed for **3–
 
 ## Snapshot definition
 
-- **Snapshot day**: 14 (features computed from events on days 0–14 after lead creation)
+- **Snapshot day**: 20 (features computed from events on days 0–20 after lead creation)
 - **Horizon**: 90 days (label derived from events through day 90)
 - **Target**: `converted` — 1 if a `closed_won` event occurred within 90 days, 0 otherwise
 - **Rows**: 1,000 (stratified subsample at 30% conversion rate)
@@ -55,10 +55,10 @@ v6 is the sixth iteration of the lead scoring intro dataset, designed for **3–
 | Column | Type | Description | Missingness |
 |---|---|---|---|
 | `expected_acv` | float | Expected ACV in USD ($18k–$120k) | 2% MCAR |
-| `inbound_touches` | int | Inbound marketing touches (days 0–14) | — |
-| `outbound_touches` | int | Outbound sales touches (days 0–14) | — |
+| `inbound_touches` | int | Inbound marketing touches (days 0–20) | — |
+| `outbound_touches` | int | Outbound sales touches (days 0–20) | — |
 | `touches_week_1` | int | Touches in first 7 days | — |
-| `touches_last_7_days` | int | Touches in last 7 days of snapshot window (days 8–14) | — |
+| `touches_last_7_days` | int | Touches in last 7 days of snapshot window (days 14–20) | — |
 | `days_since_first_touch` | float | Days from first touch to snapshot cutoff | Structural (no touches) + 2% MCAR |
 | `web_sessions` | int | Web sessions within snapshot window | MAR by lead_source |
 | `sales_activities` | int | Sales rep activities within snapshot window | — |
@@ -74,7 +74,7 @@ v6 is the sixth iteration of the lead scoring intro dataset, designed for **3–
 
 | Column | Type | Description |
 |---|---|---|
-| `__leakage__touches_post_snapshot_15_90` | int | Touch count in days 15–90 (post-snapshot) |
+| `__leakage__touches_post_snapshot_21_90` | int | Touch count in days 21–90 (post-snapshot) + Poisson(3) boost for converted leads |
 
 ---
 
@@ -102,18 +102,18 @@ Evaluated on a 70/30 stratified hold-out split (seed 42).
 
 | Metric | Value |
 |---|---|
-| ROC-AUC | 0.667 |
-| PR-AUC | 0.429 |
+| ROC-AUC | 0.676 |
+| PR-AUC | 0.439 |
 | Base rate | 30.0% |
-| Precision@25 | 0.520 (Lift: 1.73x) |
-| Precision@50 | 0.480 (Lift: 1.60x) |
+| Precision@25 | 0.480 (Lift: 1.60x) |
+| Precision@50 | 0.420 (Lift: 1.40x) |
 
 ### Tree model comparison (5-seed average)
 
 | Model | Mean AUC | vs LR |
 |---|---|---|
-| Logistic Regression | 0.627 | — |
-| GBM (100 trees) | 0.643 | +0.016 |
+| Logistic Regression | 0.651 | — |
+| GBM (100 trees) | 0.721 | +0.070 |
 
 GBM reliably outperforms LR due to nonlinear interactions in the DGP (latent trait interactions with engagement patterns).
 
@@ -121,20 +121,20 @@ GBM reliably outperforms LR due to nonlinear interactions in the DGP (latent tra
 
 | K | By P(convert) | By expected value | Uplift |
 |---|---|---|---|
-| 25 | $1,203,430 | $1,380,990 | +14.8% |
-| 50 | $1,809,281 | $2,014,459 | +11.3% |
+| 25 | $907,099 | $1,017,505 | +12.2% |
+| 50 | $1,588,789 | $1,839,009 | +15.7% |
 
 ### Leakage trap evaluation (instructor dataset)
 
 | Metric | Value |
 |---|---|
-| Column | `__leakage__touches_post_snapshot_15_90` |
+| Column | `__leakage__touches_post_snapshot_21_90` |
 | Seeds | 10 (42–51) |
-| Mean AUC delta | 0.0453 |
-| Min AUC delta | 0.0214 |
-| Max AUC delta | 0.0696 |
+| Mean AUC delta | 0.061 |
+| Min AUC delta | 0.027 |
+| Max AUC delta | 0.080 |
 
-The trap is **causally grounded**: post-snapshot touches are higher for leads with higher latent intent/fit (the same traits that drive conversion). No label-noise injection is used.
+The trap combines **causal** post-snapshot touches (days 21–90) with a Poisson(3) boost for converted leads, ensuring robust detectability across seeds.
 
 ---
 
@@ -156,7 +156,7 @@ The trap is **causally grounded**: post-snapshot touches are higher for leads wi
 
 - Precision@K and Lift@K: "If sales can contact 50 leads, how many convert?"
 - Expected value ranking: `P(convert) * expected_acv`
-- Demonstrate that EV ranking captures 17–41% more ACV than probability ranking
+- Demonstrate that EV ranking captures 12–16% more ACV than probability ranking
 - Discuss when value-aware scoring matters (heterogeneous deal sizes)
 
 ### Lecture 3: Feature Engineering + Error Slicing
@@ -172,17 +172,17 @@ The trap is **causally grounded**: post-snapshot touches are higher for leads wi
 
 **Goal**: Students see why tree models outperform linear models.
 
-- Train GBM, compare AUC vs LR (+0.02 on average)
+- Train GBM, compare AUC vs LR (+0.07 on average)
 - Feature importance from RF/GBM
 - Discuss nonlinear interactions captured by trees
 - **Optional**: use `acquisition_wave` for cohort split (train A/B, test C)
   - Demonstrates distribution shift and evaluation realism
-  - Random split AUC: 0.633, Cohort split AUC: 0.637 (small difference here, but teaches the concept)
+  - Random split AUC: 0.687, Cohort split AUC: 0.594 (AUC drop: +0.093 — demonstrates real distribution shift)
 
 ### Instructor note: Leakage detection exercise
 
 Use `lead_scoring_intro_v6_instructor.csv` for a leakage detection exercise:
-- Students train with all columns including `__leakage__touches_post_snapshot_15_90`
-- AUC jumps by ~0.046 on average
+- Students train with all columns including `__leakage__touches_post_snapshot_21_90`
+- AUC jumps by ~0.061 on average
 - Challenge: identify which column is leaking and explain why
 - The trap is causally grounded (future engagement correlates with conversion via shared latent traits), making it a realistic example of temporal leakage
