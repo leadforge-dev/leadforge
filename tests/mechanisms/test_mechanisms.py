@@ -621,3 +621,119 @@ class TestLatentDecayIntensity:
         """Default (False) still uses RecencyDecayIntensity."""
         assignment = assign_mechanisms("fit_dominant", _rng())
         assert assignment.touch_intensity.name == "recency_decay_intensity"
+
+    def test_followup_boost_before_day(self) -> None:
+        """Before followup day, effective boost should equal base boost."""
+        ldi = LatentDecayIntensity(
+            base_rate=0.5,
+            latent_weights={"a": 1.0},
+            boost=1.0,
+            followup_boost_after_day=20,
+            followup_boost_factor=5.0,
+            followup_ramp_days=10,
+        )
+        assert ldi._effective_boost(10) == 1.0
+        assert ldi._effective_boost(20) == 1.0
+
+    def test_followup_boost_after_ramp(self) -> None:
+        """After full ramp, effective boost should be boost * factor."""
+        ldi = LatentDecayIntensity(
+            base_rate=0.5,
+            latent_weights={"a": 1.0},
+            boost=1.0,
+            followup_boost_after_day=20,
+            followup_boost_factor=5.0,
+            followup_ramp_days=10,
+        )
+        # At day 30 (fully ramped)
+        assert ldi._effective_boost(30) == pytest.approx(5.0)
+        # At day 50 (well past ramp)
+        assert ldi._effective_boost(50) == pytest.approx(5.0)
+
+    def test_followup_boost_during_ramp(self) -> None:
+        """During ramp, effective boost should interpolate linearly."""
+        ldi = LatentDecayIntensity(
+            base_rate=0.5,
+            latent_weights={"a": 1.0},
+            boost=1.0,
+            followup_boost_after_day=20,
+            followup_boost_factor=5.0,
+            followup_ramp_days=10,
+        )
+        # At day 25: 50% through ramp -> boost = 1.0 * (1 + 0.5 * (5-1)) = 3.0
+        assert ldi._effective_boost(25) == pytest.approx(3.0)
+
+    def test_followup_latent_weights_blend(self) -> None:
+        """Follow-up latent weights should blend with base weights during ramp."""
+        ldi = LatentDecayIntensity(
+            base_rate=0.5,
+            latent_weights={"a": 1.0, "b": 0.0},
+            boost=1.0,
+            followup_boost_after_day=20,
+            followup_boost_factor=1.0,
+            followup_ramp_days=10,
+            followup_latent_weights={"a": 0.0, "b": 1.0},
+        )
+        latents = {"a": 1.0, "b": 1.0}
+        # Before followup: only weight "a" matters -> mult = 1.0
+        m_before = ldi._latent_multiplier(10, latents)
+        assert m_before == pytest.approx(1.0)
+        # After full ramp: only weight "b" matters -> mult = 1.0
+        m_after = ldi._latent_multiplier(30, latents)
+        assert m_after == pytest.approx(1.0)
+        # At midpoint: 50% base + 50% followup -> 0.5 * 1.0 + 0.5 * 1.0 = 1.0
+        m_mid = ldi._latent_multiplier(25, latents)
+        assert m_mid == pytest.approx(1.0)
+
+    def test_followup_latent_weights_shift_emphasis(self) -> None:
+        """Follow-up should shift emphasis from one trait to another."""
+        ldi = LatentDecayIntensity(
+            base_rate=0.5,
+            latent_weights={"engagement": 2.0},
+            boost=1.0,
+            followup_boost_after_day=20,
+            followup_boost_factor=1.0,
+            followup_ramp_days=10,
+            followup_latent_weights={"budget": 2.0},
+        )
+        # Lead with high engagement, low budget
+        latents_eng = {"engagement": 1.0, "budget": 0.0}
+        # Before followup: high engagement -> high rate
+        r_before = ldi.expected_count(10, latents_eng)
+        # After followup: engagement ignored, budget low -> low rate
+        r_after = ldi.expected_count(40, latents_eng)
+        # Before should be higher (engagement-driven) vs after (budget-driven)
+        assert r_before > r_after
+
+    def test_no_followup_preserves_original_behavior(self) -> None:
+        """Without followup params, behavior matches the original."""
+        ldi_new = LatentDecayIntensity(
+            base_rate=0.5,
+            latent_weights={"a": 1.0},
+            boost=1.0,
+        )
+        ldi_fu = LatentDecayIntensity(
+            base_rate=0.5,
+            latent_weights={"a": 1.0},
+            boost=1.0,
+            followup_boost_after_day=None,
+        )
+        latents = {"a": 0.5}
+        for t in [0, 10, 30, 60]:
+            assert ldi_new.expected_count(t, latents) == pytest.approx(
+                ldi_fu.expected_count(t, latents)
+            )
+
+    def test_to_dict_includes_followup_params(self) -> None:
+        ldi = LatentDecayIntensity(
+            base_rate=0.5,
+            followup_boost_after_day=20,
+            followup_boost_factor=5.0,
+            followup_ramp_days=10,
+            followup_latent_weights={"budget": 2.0},
+        )
+        d = ldi.to_dict()
+        assert d["followup_boost_after_day"] == 20
+        assert d["followup_boost_factor"] == 5.0
+        assert d["followup_ramp_days"] == 10
+        assert d["followup_latent_weights"] == {"budget": 2.0}
