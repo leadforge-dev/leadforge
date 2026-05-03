@@ -154,6 +154,43 @@ _DEFAULT_TOUCH_LATENT_WEIGHTS: dict[str, float] = {
     "latent_account_fit": 0.5,
 }
 
+# Follow-up latent weights: used AFTER the followup day (post-snapshot).
+# These emphasise conversion-predictive latent dimensions that are WEAKLY
+# represented in pre-snapshot features (budget_readiness, authority, process
+# maturity).  This models sales teams learning which deals are real during
+# qualification and adjusting follow-up intensity accordingly.
+_FOLLOWUP_LATENT_WEIGHTS: dict[str, dict[str, float]] = {
+    "fit_dominant": {
+        "latent_budget_readiness": 2.5,
+        "latent_account_fit": 1.5,
+        "latent_process_maturity": 1.0,
+    },
+    "intent_dominant": {
+        "latent_problem_awareness": 2.0,
+        "latent_budget_readiness": 1.5,
+        "latent_engagement_propensity": 1.0,
+    },
+    "sales_execution_sensitive": {
+        "latent_responsiveness": 2.0,
+        "latent_budget_readiness": 1.5,
+        "latent_account_fit": 1.0,
+    },
+    "demo_trial_mediated": {
+        "latent_problem_awareness": 2.0,
+        "latent_budget_readiness": 1.5,
+        "latent_account_fit": 1.0,
+    },
+    "buying_committee_friction": {
+        "latent_contact_authority": 2.0,
+        "latent_budget_readiness": 1.5,
+        "latent_account_fit": 1.0,
+    },
+}
+_DEFAULT_FOLLOWUP_LATENT_WEIGHTS: dict[str, float] = {
+    "latent_budget_readiness": 2.0,
+    "latent_account_fit": 1.0,
+}
+
 # Fallback weights/params for unknown motif families.
 _DEFAULT_CONVERSION_WEIGHTS: dict[str, float] = {
     "latent_account_fit": 1.0,
@@ -216,12 +253,24 @@ def assign_mechanisms(
     touch_intensity: RecencyDecayIntensity | LatentDecayIntensity
     if latent_touch_intensity:
         touch_latent_w = _TOUCH_LATENT_WEIGHTS.get(motif_family, _DEFAULT_TOUCH_LATENT_WEIGHTS)
+        followup_latent_w = _FOLLOWUP_LATENT_WEIGHTS.get(
+            motif_family, _DEFAULT_FOLLOWUP_LATENT_WEIGHTS
+        )
+        # Ramp dynamics are uniform across motif families: the follow-up
+        # timing reflects a sales-process constant (assessment period = 20 days,
+        # ramp-up over 10 days).  Per-motif differentiation comes entirely from
+        # _FOLLOWUP_LATENT_WEIGHTS, which controls *what* latent signals drive
+        # the post-assessment follow-up intensity for each motif family.
         touch_intensity = LatentDecayIntensity(
             base_rate=touch_rate,
             decay_factor=0.97,
             floor_rate=0.02,
             latent_weights=touch_latent_w,
             boost=1.2,
+            followup_boost_after_day=20,
+            followup_boost_factor=10.0,
+            followup_ramp_days=10,
+            followup_latent_weights=followup_latent_w,
         )
     else:
         touch_intensity = RecencyDecayIntensity(

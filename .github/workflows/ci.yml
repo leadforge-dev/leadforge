@@ -110,3 +110,31 @@ jobs:
       - name: Skip v6 (no dataset)
         if: steps.check-v6.outputs.found != 'true'
         run: echo "No v6 datasets found — skipping v6 validation"
+
+  validate-dataset-v7:
+    name: Validate v7 lead scoring dataset
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev,scripts]"
+      - name: Check for v7 datasets
+        id: check-v7
+        run: |
+          STUDENT="lead_scoring_intro/lead_scoring_intro_v7.csv"
+          INSTRUCTOR="lead_scoring_intro/lead_scoring_intro_v7_instructor.csv"
+          if [ -f "$STUDENT" ] && [ -f "$INSTRUCTOR" ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "student=$STUDENT" >> "$GITHUB_OUTPUT"
+            echo "instructor=$INSTRUCTOR" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Run v7 validator
+        if: steps.check-v7.outputs.found == 'true'
+        run: python scripts/validate_v7_dataset.py "${{ steps.check-v7.outputs.student }}" "${{ steps.check-v7.outputs.instructor }}"
+      - name: Skip v7 (no dataset)
+        if: steps.check-v7.outputs.found != 'true'
+        run: echo "No v7 datasets found — skipping v7 validation"
