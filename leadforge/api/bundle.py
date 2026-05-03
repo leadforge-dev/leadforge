@@ -80,7 +80,9 @@ def write_bundle(
     # ------------------------------------------------------------------
     # 3. Dataset card and feature dictionary
     # ------------------------------------------------------------------
-    (root / "dataset_card.md").write_text(render_dataset_card(bundle.spec, task_manifest=task))
+    (root / "dataset_card.md").write_text(
+        render_dataset_card(bundle.spec, task_manifest=task, table_counts=table_row_counts)
+    )
     write_feature_dictionary(root / "feature_dictionary.csv")
 
     # ------------------------------------------------------------------

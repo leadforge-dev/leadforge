@@ -203,3 +203,44 @@ def test_card_non_default_task_via_factory_has_generic_prose() -> None:
     assert "`churned_within_60_days`" in card
     assert "60-day" in card
     assert "closed_won" not in card
+
+
+# ---------------------------------------------------------------------------
+# Table inventory
+# ---------------------------------------------------------------------------
+
+
+def test_card_table_inventory_with_counts() -> None:
+    """When table_counts is provided, the card renders a row-count table."""
+    counts = {"accounts": 1500, "contacts": 4200, "leads": 5000}
+    card = render_dataset_card(_make_world_spec(), table_counts=counts)
+    assert "| accounts | 1,500 |" in card
+    assert "| leads | 5,000 |" in card
+
+
+def test_card_table_inventory_without_counts() -> None:
+    """Without table_counts, the card shows a placeholder."""
+    card = render_dataset_card(_make_world_spec())
+    assert "not available" in card.lower()
+
+
+# ---------------------------------------------------------------------------
+# Feature categories
+# ---------------------------------------------------------------------------
+
+
+def test_card_feature_categories_rendered() -> None:
+    """Feature categories are always rendered from LEAD_SNAPSHOT_FEATURES."""
+    card = render_dataset_card(_make_world_spec())
+    assert "| Category | Count | Examples |" in card
+    assert "account" in card
+    assert "engagement" in card
+    assert "sales" in card
+    assert "target" in card
+
+
+def test_card_leakage_flagged_columns() -> None:
+    """Leakage-flagged columns are listed in the feature categories section."""
+    card = render_dataset_card(_make_world_spec())
+    assert "`total_touches_all`" in card
+    assert "Leakage-flagged" in card

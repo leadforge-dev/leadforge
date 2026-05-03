@@ -6,6 +6,7 @@ The card follows the structure required by the architecture spec (§14.3).
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -16,6 +17,7 @@ if TYPE_CHECKING:
 def render_dataset_card(
     world_spec: WorldSpec,
     task_manifest: TaskManifest | None = None,
+    table_counts: dict[str, int] | None = None,
 ) -> str:
     """Return a Markdown dataset card string for *world_spec*.
 
@@ -24,17 +26,18 @@ def render_dataset_card(
         task_manifest: Optional task manifest whose ``description`` is used
             as the label definition prose.  When ``None`` or when
             ``description`` is empty, a generic fallback is rendered.
+        table_counts: Optional mapping of table name → row count.  When
+            provided, the table inventory section renders actual counts
+            instead of a placeholder.
 
-    Sections present at all milestones:
+    Sections:
     - Header (recipe id, version, seed, exposure mode)
     - Narrative summary (company, product, market, GTM)
     - Primary task and label definition
-    - Suggested use cases
-    - Caveats
-
-    Sections populated in later milestones (rendered as stubs here):
     - Table inventory
     - Feature categories
+    - Suggested use cases
+    - Caveats
     """
     cfg = world_spec.config
     narrative = world_spec.narrative
@@ -122,24 +125,49 @@ def render_dataset_card(
     ]
 
     # ------------------------------------------------------------------
-    # Table inventory (stub — populated in later milestones)
+    # Table inventory
     # ------------------------------------------------------------------
-    lines += [
-        "## Table inventory",
-        "",
-        "*Table counts will appear here once the simulation layer is implemented (v0.3.0+).*",
-        "",
-    ]
+    lines += ["## Table inventory", ""]
+    if table_counts:
+        lines += [
+            "| Table | Rows |",
+            "|---|---:|",
+        ]
+        for tbl, count in table_counts.items():
+            lines.append(f"| {tbl} | {count:,} |")
+        lines.append("")
+    else:
+        lines += [
+            "*Table counts not available (pass ``table_counts`` to populate).*",
+            "",
+        ]
 
     # ------------------------------------------------------------------
-    # Feature categories (stub)
+    # Feature categories
     # ------------------------------------------------------------------
+    from leadforge.schema.features import LEAD_SNAPSHOT_FEATURES
+
+    lines += ["## Feature categories", ""]
+    category_counts: Counter[str] = Counter()
+    for feat in LEAD_SNAPSHOT_FEATURES:
+        category_counts[feat.category] += 1
     lines += [
-        "## Feature categories",
-        "",
-        "*Feature dictionary will appear here once the schema layer is implemented (v0.3.0+).*",
-        "",
+        "| Category | Count | Examples |",
+        "|---|---:|---|",
     ]
+    for cat, count in category_counts.items():
+        examples = [
+            f.name for f in LEAD_SNAPSHOT_FEATURES if f.category == cat and not f.is_target
+        ][:3]
+        lines.append(f"| {cat} | {count} | {', '.join(examples)} |")
+    leakage_cols = [f.name for f in LEAD_SNAPSHOT_FEATURES if f.leakage_risk]
+    if leakage_cols:
+        lines += [
+            "",
+            f"**Leakage-flagged columns:** {', '.join(f'`{c}`' for c in leakage_cols)}. "
+            "See `feature_dictionary.csv` for details.",
+        ]
+    lines.append("")
 
     # ------------------------------------------------------------------
     # Suggested use cases
