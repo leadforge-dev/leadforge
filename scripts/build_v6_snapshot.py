@@ -11,7 +11,7 @@ Produces two CSV files in OUTPUT_DIR:
 Both are 1000-row files at ~30% conversion rate with:
 - Day-20 windowed features
 - Structured missingness (MAR + structural + MCAR)
-- Causally-grounded leakage trap (post-snapshot touches from sim events)
+- Leakage trap: causal post-snapshot touches + Poisson(3) boost for converted leads
 - Expected ACV with soft winsorization
 - Momentum features (touches_week_1, touches_last_7_days, days_since_first_touch)
 - Acquisition wave cohort feature (A/B/C)
@@ -74,7 +74,7 @@ def build_v6_datasets(seed: int = SEED) -> tuple[pd.DataFrame, pd.DataFrame]:
         file=sys.stderr,
     )
 
-    # Compute post-snapshot touches from event timeline (causal trap)
+    # Compute post-snapshot touches from event timeline (boosted in next step)
     lead_dates = {lead.lead_id: lead.lead_created_at for lead in bundle.population.leads}
     trap_series = compute_post_snapshot_touches(
         snapshot,
