@@ -8,7 +8,7 @@ Most public lead scoring datasets are flat CSVs with opaque provenance. This one
 
 1. **Relational structure.** 9 normalized tables (accounts, contacts, leads, touches, sessions, sales activities, opportunities, customers, subscriptions) plus ML-ready task splits. Practice feature engineering from raw tables, or grab the flat file and start modeling.
 
-2. **Three difficulty tiers.** Same company, same product, same buyer personas -- different difficulty profiles. Each tier declares different signal strength, noise, and missingness parameters in its manifest. (See [Known limitations](#known-limitations) for current status.)
+2. **Three difficulty tiers.** Same company, same product, same buyer personas -- different difficulty profiles that produce meaningfully different conversion rates, noise levels, and missingness. Intro is the easiest (30-45% conversion), intermediate is moderate (18-28%), and advanced is hardest (8-15%).
 
 3. **Reproducible and leakage-safe.** Deterministic generation from a fixed seed. SHA-256 hashes for every file in `manifest.json`. Leakage-prone columns (`total_touches_all`, `current_stage`) are explicitly flagged in the feature dictionary. All features are anchored at the snapshot date -- no post-cutoff data leaks in.
 
@@ -152,9 +152,18 @@ The `intermediate_instructor/` bundle includes the full hidden causal structure:
 
 This enables research on causal inference, model interpretability, and DGP-aware evaluation.
 
-## Known limitations
+## Difficulty tiers
 
-- **Difficulty tiers share the same conversion rate.** The simulation engine does not yet modulate conversion rates by difficulty profile. All three tiers produce similar base rates (~70%). The difficulty profiles are declared in each bundle's manifest and will produce meaningfully different signal-to-noise ratios once the engine is updated. For now, the primary difference between tiers is the declared profile metadata.
+The three student_public bundles share the same underlying world (company, product, personas, seed) but differ in difficulty:
+
+| Parameter | Intro | Intermediate | Advanced |
+|---|---|---|---|
+| Conversion rate | 30-45% | 18-28% | 8-15% |
+| Signal strength | 0.90 | 0.70 | 0.50 |
+| Noise scale | 0.10 | 0.30 | 0.55 |
+| Missing rate | 2% | 8% | 18% |
+
+Higher difficulty means weaker signal, more noise, more missingness, and lower base conversion rate -- all modulated in the simulation engine, not just declared in metadata.
 
 ## Provenance
 
