@@ -8,7 +8,7 @@ Most public lead scoring datasets are flat CSVs with opaque provenance. This one
 
 1. **Relational structure.** 9 normalized tables (accounts, contacts, leads, touches, sessions, sales activities, opportunities, customers, subscriptions) plus ML-ready task splits. Practice feature engineering from raw tables, or grab the flat file and start modeling.
 
-2. **Three difficulty tiers.** Same company, same product, same buyer personas -- different difficulty profiles. Each tier declares different signal strength, noise, and missingness parameters in its manifest. (See [Known limitations](#known-limitations) for current status.)
+2. **Three difficulty tiers.** Same company, same product, same buyer personas -- different difficulty profiles that produce meaningfully different conversion rates, noise levels, and missingness.
 
 3. **Reproducible and leakage-safe.** Deterministic generation from a fixed seed. SHA-256 hashes for every file in `manifest.json`. Leakage-prone columns (`total_touches_all`, `current_stage`) are explicitly flagged in the feature dictionary. All features are anchored at the snapshot date -- no post-cutoff data leaks in.
 
@@ -108,9 +108,13 @@ leadforge generate \
 | Contacts | 4,200 | 4,200 | 4,200 |
 | Columns | 35 (34 features + 1 target) | 35 | 35 |
 | Target | `converted_within_90_days` | `converted_within_90_days` | `converted_within_90_days` |
+| Conversion rate (target) | 30-45% | 18-28% | 8-15% |
+| Conversion rate (observed) | 41.5% | 20.1% | 7.9% |
 | Signal strength | 0.90 | 0.70 | 0.50 |
 | Noise scale | 0.10 | 0.30 | 0.55 |
 | Missing rate | 2% | 8% | 18% |
+
+Higher difficulty means weaker signal, more noise, more missingness, and lower base conversion rate -- all modulated in the simulation engine. Target ranges are defined in `difficulty_profiles.yaml`.
 
 ## The scenario
 
@@ -151,10 +155,6 @@ The `intermediate_instructor/` bundle includes the full hidden causal structure:
 - **Mechanism summary:** How each node in the graph maps to simulation behavior
 
 This enables research on causal inference, model interpretability, and DGP-aware evaluation.
-
-## Known limitations
-
-- **Difficulty tiers share the same conversion rate.** The simulation engine does not yet modulate conversion rates by difficulty profile. All three tiers produce similar base rates (~70%). The difficulty profiles are declared in each bundle's manifest and will produce meaningfully different signal-to-noise ratios once the engine is updated. For now, the primary difference between tiers is the declared profile metadata.
 
 ## Provenance
 
