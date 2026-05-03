@@ -13,6 +13,7 @@ from leadforge.pipelines.build_v6 import (
     FINAL_COLUMNS_STUDENT,
     INSTRUCTOR_TRAP_COL,
     assign_acquisition_wave,
+    boost_leakage_trap,
     derive_features,
     inject_missingness,
     rename_and_select,
@@ -282,3 +283,48 @@ class TestInjectMissingness:
             result.loc[df["lead_source"] == "inbound_marketing", "web_sessions"].isna().mean()
         )
         assert sdr_rate > inbound_rate
+
+
+# ---------------------------------------------------------------------------
+# Tests — boost_leakage_trap
+# ---------------------------------------------------------------------------
+
+
+class TestBoostLeakageTrap:
+    def test_only_converted_leads_boosted(self):
+        df = _make_v6_df(n=500, instructor=True)
+        original_trap = df[INSTRUCTOR_TRAP_COL].copy()
+        result = boost_leakage_trap(df, seed=42)
+        neg_mask = df["converted"] == 0
+        pd.testing.assert_series_equal(
+            result.loc[neg_mask, INSTRUCTOR_TRAP_COL],
+            original_trap[neg_mask],
+            check_names=False,
+        )
+
+    def test_converted_leads_get_higher_or_equal(self):
+        df = _make_v6_df(n=500, instructor=True)
+        original_trap = df[INSTRUCTOR_TRAP_COL].copy()
+        result = boost_leakage_trap(df, seed=42)
+        pos_mask = df["converted"] == 1
+        assert (result.loc[pos_mask, INSTRUCTOR_TRAP_COL] >= original_trap[pos_mask]).all()
+
+    def test_does_not_modify_input(self):
+        df = _make_v6_df(n=500, instructor=True)
+        original = df.copy()
+        boost_leakage_trap(df, seed=42)
+        pd.testing.assert_frame_equal(df, original)
+
+    def test_deterministic_given_seed(self):
+        df = _make_v6_df(n=500, instructor=True)
+        r1 = boost_leakage_trap(df, seed=42)
+        r2 = boost_leakage_trap(df, seed=42)
+        pd.testing.assert_frame_equal(r1, r2)
+
+    def test_boost_increases_mean_for_converted(self):
+        """Mean trap value should be higher for converted leads after boost."""
+        df = _make_v6_df(n=1000, instructor=True)
+        before_mean = df.loc[df["converted"] == 1, INSTRUCTOR_TRAP_COL].mean()
+        result = boost_leakage_trap(df, seed=42)
+        after_mean = result.loc[result["converted"] == 1, INSTRUCTOR_TRAP_COL].mean()
+        assert after_mean > before_mean

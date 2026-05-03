@@ -9,9 +9,9 @@ Produces two CSV files in OUTPUT_DIR:
 - lead_scoring_intro_v6_instructor.csv (same rows + __leakage__ trap column)
 
 Both are 1000-row files at ~30% conversion rate with:
-- Day-14 windowed features
+- Day-20 windowed features
 - Structured missingness (MAR + structural + MCAR)
-- Causally-grounded leakage trap (post-snapshot touches from sim events)
+- Leakage trap: causal post-snapshot touches + Poisson(3) boost for converted leads
 - Expected ACV with soft winsorization
 - Momentum features (touches_week_1, touches_last_7_days, days_since_first_touch)
 - Acquisition wave cohort feature (A/B/C)
@@ -31,6 +31,7 @@ from leadforge.pipelines.build_v6 import (
     SEED,
     SNAPSHOT_DAY,
     assign_acquisition_wave,
+    boost_leakage_trap,
     compute_post_snapshot_touches,
     derive_features,
     inject_missingness,
@@ -73,7 +74,7 @@ def build_v6_datasets(seed: int = SEED) -> tuple[pd.DataFrame, pd.DataFrame]:
         file=sys.stderr,
     )
 
-    # Compute post-snapshot touches from event timeline (causal trap)
+    # Compute post-snapshot touches from event timeline (boosted in next step)
     lead_dates = {lead.lead_id: lead.lead_created_at for lead in bundle.population.leads}
     trap_series = compute_post_snapshot_touches(
         snapshot,
@@ -89,6 +90,9 @@ def build_v6_datasets(seed: int = SEED) -> tuple[pd.DataFrame, pd.DataFrame]:
 
     # Rename and select (instructor first to keep trap column)
     df_instructor = rename_and_select(df, instructor=True)
+
+    # Boost trap signal with target-correlated Poisson noise
+    df_instructor = boost_leakage_trap(df_instructor, seed)
 
     print("Subsampling...", file=sys.stderr)
     df_instructor = subsample(df_instructor, seed)
