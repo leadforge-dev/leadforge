@@ -135,6 +135,8 @@ See `feature_dictionary.csv` in each bundle for full descriptions and dtypes.
 
 **Leakage trap:** `total_touches_all` counts touches over the full 90-day window, including post-snapshot events. It is flagged as `leakage_risk=True` in the feature dictionary. Can you spot it?
 
+**Note on `current_stage`:** The Parquet task splits include `current_stage`, which at the 90-day horizon contains terminal stages (`closed_won`/`closed_lost`) that encode the label. **Exclude it from modeling features.** The flat CSV convenience files (`lead_scoring.csv`) have this column pre-removed.
+
 ## Research companion
 
 The `intermediate_instructor/` bundle includes the full hidden causal structure:

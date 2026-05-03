@@ -57,8 +57,20 @@ def generate_and_save(
     bundle.save(str(out_dir))
 
 
+# Columns to drop from the flat CSV convenience export.
+# current_stage at the 90-day horizon contains terminal stages (closed_won /
+# closed_lost) that perfectly encode the label — it is leakage.  The column
+# remains in the Parquet task splits for completeness but must be excluded
+# from modeling.  The flat CSV drops it to prevent accidental misuse.
+_FLAT_CSV_DROP_COLS = {"current_stage"}
+
+
 def write_flat_csv(bundle_dir: Path) -> Path:
-    """Merge task splits into a single CSV with a ``split`` column."""
+    """Merge task splits into a single CSV with a ``split`` column.
+
+    Drops columns listed in ``_FLAT_CSV_DROP_COLS`` to prevent accidental
+    leakage in the convenience export.
+    """
     task_dir = bundle_dir / "tasks" / "converted_within_90_days"
     frames = []
     for split_name in ("train", "valid", "test"):
@@ -68,6 +80,9 @@ def write_flat_csv(bundle_dir: Path) -> Path:
             df.insert(0, "split", split_name)
             frames.append(df)
     merged = pd.concat(frames, ignore_index=True)
+    drop = [c for c in _FLAT_CSV_DROP_COLS if c in merged.columns]
+    if drop:
+        merged = merged.drop(columns=drop)
     csv_path = bundle_dir / "lead_scoring.csv"
     merged.to_csv(csv_path, index=False)
     return csv_path
