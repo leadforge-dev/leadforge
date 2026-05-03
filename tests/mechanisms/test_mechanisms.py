@@ -737,3 +737,15 @@ class TestLatentDecayIntensity:
         assert d["followup_boost_factor"] == 5.0
         assert d["followup_ramp_days"] == 10
         assert d["followup_latent_weights"] == {"budget": 2.0}
+
+    def test_followup_boost_after_day_negative_raises(self) -> None:
+        with pytest.raises(ValueError, match="followup_boost_after_day must be non-negative"):
+            LatentDecayIntensity(base_rate=0.5, followup_boost_after_day=-1)
+
+    def test_followup_boost_factor_below_one_raises(self) -> None:
+        with pytest.raises(ValueError, match="followup_boost_factor must be >= 1.0"):
+            LatentDecayIntensity(base_rate=0.5, followup_boost_factor=0.5)
+
+    def test_followup_ramp_days_zero_raises(self) -> None:
+        with pytest.raises(ValueError, match="followup_ramp_days must be >= 1"):
+            LatentDecayIntensity(base_rate=0.5, followup_ramp_days=0)

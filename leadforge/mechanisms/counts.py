@@ -191,6 +191,14 @@ class LatentDecayIntensity(Mechanism):
             raise ValueError(f"decay_factor must be in (0, 1], got {decay_factor}")
         if floor_rate < 0:
             raise ValueError(f"floor_rate must be non-negative, got {floor_rate}")
+        if followup_boost_after_day is not None and followup_boost_after_day < 0:
+            raise ValueError(
+                f"followup_boost_after_day must be non-negative, got {followup_boost_after_day}"
+            )
+        if followup_boost_factor < 1.0:
+            raise ValueError(f"followup_boost_factor must be >= 1.0, got {followup_boost_factor}")
+        if followup_ramp_days < 1:
+            raise ValueError(f"followup_ramp_days must be >= 1, got {followup_ramp_days}")
         self._base_rate = base_rate
         self._decay = decay_factor
         self._floor = floor_rate

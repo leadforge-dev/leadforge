@@ -132,18 +132,18 @@ Split: 70/30 stratified hold-out
 
 | Metric | Value |
 |---|---|
-| ROC-AUC | 0.625 |
-| PR-AUC | 0.383 |
+| ROC-AUC | 0.671 |
+| PR-AUC | 0.426 |
 | Base rate | 30.0% |
-| Precision@25 | 0.400 (Lift: 1.33x) |
-| Precision@50 | 0.440 (Lift: 1.47x) |
+| Precision@25 | 0.440 (Lift: 1.47x) |
+| Precision@50 | 0.420 (Lift: 1.40x) |
 
 ### Tree model comparison (5-seed average, seeds 42–46)
 
 | Model | Mean AUC | vs LR |
 |---|---|---|
-| Logistic Regression | 0.614 | — |
-| GBM (100 trees) | 0.673 | +0.059 |
+| Logistic Regression | 0.650 | — |
+| GBM (100 trees) | 0.721 | +0.072 |
 
 GBM reliably outperforms LR due to nonlinear interactions in the DGP (latent trait interactions with engagement patterns, opportunity × momentum, seniority × engagement).
 
@@ -151,8 +151,8 @@ GBM reliably outperforms LR due to nonlinear interactions in the DGP (latent tra
 
 | K | By P(convert) | By expected value | Uplift |
 |---|---|---|---|
-| 25 | $674,418 | $932,505 | +38.3% |
-| 50 | $1,517,099 | $1,552,505 | +2.3% |
+| 25 | $822,099 | $932,505 | +13.4% |
+| 50 | $1,528,789 | $1,839,009 | +20.3% |
 
 ---
 
@@ -172,25 +172,25 @@ v6 applied `Poisson(3) * converted` to the trap — injecting signal that was di
 
 Pipeline: canonical LR (full feature set) with and without trap column.
 
-| Seed | AUC (without) | AUC (with trap) | Delta |
-|---|---|---|---|
-| 42 | 0.6253 | 0.6422 | +0.0169 |
-| 43 | 0.6112 | 0.6273 | +0.0161 |
-| 44 | 0.5946 | 0.6077 | +0.0131 |
-| 45 | 0.6797 | 0.6892 | +0.0094 |
-| 46 | 0.5600 | 0.5696 | +0.0096 |
-| 47 | 0.6104 | 0.6235 | +0.0131 |
-| 48 | 0.6025 | 0.6157 | +0.0131 |
-| 49 | 0.6411 | 0.6535 | +0.0125 |
-| 50 | 0.5701 | 0.5848 | +0.0147 |
-| 51 | 0.6160 | 0.6208 | +0.0048 |
+| Seed | Delta |
+|---|---|
+| 42 | +0.0193 |
+| 43 | +0.0177 |
+| 44 | +0.0151 |
+| 45 | +0.0092 |
+| 46 | +0.0151 |
+| 47 | +0.0144 |
+| 48 | +0.0139 |
+| 49 | +0.0087 |
+| 50 | +0.0112 |
+| 51 | +0.0005 |
 
 | Statistic | Value |
 |---|---|
-| Mean delta | +0.0123 |
-| Median delta | +0.0131 |
-| Min delta | +0.0048 |
-| Max delta | +0.0169 |
+| Mean delta | +0.0125 |
+| Median delta | +0.0141 |
+| Min delta | +0.0005 |
+| Max delta | +0.0193 |
 | Positive seeds | 10/10 |
 
 Computed with:
@@ -211,18 +211,18 @@ The `acquisition_wave` feature enables a distribution-shift lecture:
 
 | Split | AUC | PR-AUC |
 |---|---|---|
-| Random (70/30, seed 42) | 0.639 | 0.403 |
-| Cohort (A+B → C) | 0.573 | 0.340 |
-| **AUC drop** | **+0.066** | |
+| Random (70/30, seed 42) | 0.683 | 0.446 |
+| Cohort (A+B → C) | 0.594 | 0.349 |
+| **AUC gap (random − cohort)** | **0.089** | |
 
-The 0.066 AUC drop demonstrates that model performance degrades on future cohorts — a key lesson in real-world ML deployment.
+The 0.089 AUC gap demonstrates that model performance degrades on future cohorts — a key lesson in real-world ML deployment.
 
 ---
 
 ## Known limitations
 
 1. **Two regions only** (US, UK) — limits geographic diversity. Driven by the v1 narrative vertical.
-2. **Purely causal trap delta is modest** (mean +0.012) compared to v6's label-boosted trap (mean +0.061). This is the honest result of removing label injection. For a more dramatic leakage demo, instructors can note that in practice, leakage features often have much larger effects because they can be near-perfectly correlated with the outcome.
+2. **Purely causal trap delta is modest** (mean +0.013) compared to v6's label-boosted trap (mean +0.061). This is the honest result of removing label injection. For a more dramatic leakage demo, instructors can note that in practice, leakage features often have much larger effects because they can be near-perfectly correlated with the outcome.
 3. **Small dataset** (1,000 rows) creates variance in hold-out metrics across random seeds.
 
 ---
@@ -236,7 +236,7 @@ The 0.066 AUC drop demonstrates that model performance degrades on future cohort
 - Load `lead_scoring_intro_v7.csv`
 - Handle missing values (5 columns have NaN — discuss structural vs MCAR)
 - Build a baseline logistic regression with train/test split
-- Evaluate: AUC, PR-AUC, confusion matrix
+- Evaluate: AUC (~0.67), PR-AUC, confusion matrix
 - Discuss class imbalance (30% positive rate)
 
 ### Lecture 2: Top-K + Expected Value Ranking
@@ -245,7 +245,7 @@ The 0.066 AUC drop demonstrates that model performance degrades on future cohort
 
 - Precision@K and Lift@K: "If sales can contact 50 leads, how many convert?"
 - Expected value ranking: `P(convert) * expected_acv`
-- Demonstrate that EV ranking captures 38% more ACV at K=25 than probability ranking
+- Demonstrate that EV ranking captures 13% more ACV at K=25 than probability ranking
 - Discuss when value-aware scoring matters (heterogeneous deal sizes)
 
 ### Lecture 3: Feature Engineering + Error Slicing
@@ -261,18 +261,18 @@ The 0.066 AUC drop demonstrates that model performance degrades on future cohort
 
 **Goal**: Students see why tree models outperform linear models.
 
-- Train GBM, compare AUC vs LR (+0.059 on average)
+- Train GBM, compare AUC vs LR (+0.072 on average)
 - Feature importance from GBM
 - Discuss nonlinear interactions captured by trees
 - **Optional**: use `acquisition_wave` for cohort split (train A/B, test C)
-  - Random split AUC: 0.639, Cohort split AUC: 0.573 (AUC drop: +0.066)
+  - Random split AUC: 0.683, Cohort split AUC: 0.594 (AUC gap: 0.089)
   - Demonstrates distribution shift and evaluation realism
 
 ### Instructor note: Leakage detection exercise
 
 Use `lead_scoring_intro_v7_instructor.csv` for a leakage detection exercise:
 - Students train with all columns including `__leakage__touches_post_snapshot_21_90`
-- AUC improves by ~0.012 on average (subtler than v6's label-boosted trap)
+- AUC improves by ~0.013 on average (subtler than v6's label-boosted trap)
 - Challenge: identify which column is leaking and explain *why* it's invalid at scoring time
 - The trap is **purely causal** — future engagement correlates with conversion via shared latent drivers, not because the label was injected. This makes it a realistic and pedagogically honest example of temporal leakage.
 - Teaching point: "at scoring time (day 20), you cannot know how many touches the lead will receive in the future. Using this feature would require time-traveling."

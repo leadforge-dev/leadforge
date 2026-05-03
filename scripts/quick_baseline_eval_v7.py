@@ -14,6 +14,7 @@ import sys
 
 import numpy as np
 import pandas as pd
+from sklearn.base import clone
 from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.impute import SimpleImputer
@@ -47,6 +48,8 @@ NUM_FEATURES = [
     "web_sessions",
     "sales_activities",
     "days_since_last_touch",
+    "opportunity_created",
+    "demo_completed",
 ]
 
 
@@ -120,7 +123,7 @@ def main() -> None:
             x_tr, x_te, y_tr, y_te = train_test_split(
                 x, y, test_size=0.30, random_state=seed, stratify=y
             )
-            pipe = Pipeline([("pre", _build_preprocessor(num_cols, cat_cols)), ("clf", clf)])
+            pipe = Pipeline([("pre", _build_preprocessor(num_cols, cat_cols)), ("clf", clone(clf))])
             pipe.fit(x_tr, y_tr)
             aucs.append(roc_auc_score(y_te, pipe.predict_proba(x_te)[:, 1]))
         print(f"  {name:4s}: AUC = {np.mean(aucs):.4f} (std={np.std(aucs):.4f})")

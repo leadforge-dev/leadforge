@@ -256,6 +256,11 @@ def assign_mechanisms(
         followup_latent_w = _FOLLOWUP_LATENT_WEIGHTS.get(
             motif_family, _DEFAULT_FOLLOWUP_LATENT_WEIGHTS
         )
+        # Ramp dynamics are uniform across motif families: the follow-up
+        # timing reflects a sales-process constant (assessment period = 20 days,
+        # ramp-up over 10 days).  Per-motif differentiation comes entirely from
+        # _FOLLOWUP_LATENT_WEIGHTS, which controls *what* latent signals drive
+        # the post-assessment follow-up intensity for each motif family.
         touch_intensity = LatentDecayIntensity(
             base_rate=touch_rate,
             decay_factor=0.97,

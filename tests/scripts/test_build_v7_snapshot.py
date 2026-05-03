@@ -355,12 +355,99 @@ class TestComputePostSnapshotTouches:
         result = compute_post_snapshot_touches(snapshot, [], {}, snapshot_day=20)
         assert (result == 0).all()
 
-    def test_no_label_injection(self):
-        """The trap must NOT use the converted column in any way."""
+    def test_counts_post_snapshot_touches_correctly(self):
+        """Touches after snapshot_day should be counted; on or before should not."""
+        from leadforge.schema.entities import TouchRow
+
+        snapshot = pd.DataFrame({"lead_id": ["lead_000001", "lead_000002"]})
+        lead_dates = {"lead_000001": "2024-01-01", "lead_000002": "2024-01-01"}
+        touches = [
+            # lead_000001: day 10 (before), day 20 (on boundary), day 21, day 50
+            TouchRow("t1", "lead_000001", "2024-01-11", "email", "inbound", "inbound"),
+            TouchRow("t2", "lead_000001", "2024-01-21", "email", "inbound", "inbound"),
+            TouchRow("t3", "lead_000001", "2024-01-22", "email", "inbound", "inbound"),
+            TouchRow("t4", "lead_000001", "2024-02-20", "email", "inbound", "inbound"),
+            # lead_000002: day 25 only
+            TouchRow("t5", "lead_000002", "2024-01-26", "email", "inbound", "inbound"),
+        ]
+        result = compute_post_snapshot_touches(snapshot, touches, lead_dates, snapshot_day=20)
+        # lead_000001: day 21 + day 50 = 2 (day 10 excluded, day 20 on boundary excluded)
+        assert result.iloc[0] == 2
+        # lead_000002: day 25 = 1
+        assert result.iloc[1] == 1
+
+    def test_boundary_day_excluded(self):
+        """Touch on exactly snapshot_day must be excluded."""
+        from leadforge.schema.entities import TouchRow
+
+        snapshot = pd.DataFrame({"lead_id": ["lead_000001"]})
+        lead_dates = {"lead_000001": "2024-01-01"}
+        touches = [
+            TouchRow("t1", "lead_000001", "2024-01-21", "email", "inbound", "inbound"),  # day 20
+        ]
+        result = compute_post_snapshot_touches(snapshot, touches, lead_dates, snapshot_day=20)
+        assert result.iloc[0] == 0
+
+    def test_horizon_boundary_included(self):
+        """Touch on exactly horizon_day should be included."""
+        from leadforge.schema.entities import TouchRow
+
+        snapshot = pd.DataFrame({"lead_id": ["lead_000001"]})
+        lead_dates = {"lead_000001": "2024-01-01"}
+        touches = [
+            TouchRow("t1", "lead_000001", "2024-03-30", "email", "inbound", "inbound"),  # day 89
+            TouchRow("t2", "lead_000001", "2024-03-31", "email", "inbound", "inbound"),  # day 90
+            TouchRow("t3", "lead_000001", "2024-04-01", "email", "inbound", "inbound"),  # day 91
+        ]
+        result = compute_post_snapshot_touches(
+            snapshot, touches, lead_dates, snapshot_day=20, horizon_day=90
+        )
+        # day 89 + day 90 = 2 (day 91 beyond horizon)
+        assert result.iloc[0] == 2
+
+    def test_lead_with_no_touches_gets_zero(self):
+        """Lead absent from touch list should get 0."""
+        from leadforge.schema.entities import TouchRow
+
+        snapshot = pd.DataFrame({"lead_id": ["lead_000001", "lead_000002"]})
+        lead_dates = {"lead_000001": "2024-01-01", "lead_000002": "2024-01-01"}
+        touches = [
+            TouchRow("t1", "lead_000001", "2024-02-01", "email", "inbound", "inbound"),  # day 31
+        ]
+        result = compute_post_snapshot_touches(snapshot, touches, lead_dates, snapshot_day=20)
+        assert result.iloc[0] == 1
+        assert result.iloc[1] == 0
+
+    def test_no_label_injection_behavioral(self):
+        """Two datasets with different labels must produce identical trap values."""
+        from leadforge.schema.entities import TouchRow
+
+        snapshot_a = pd.DataFrame(
+            {
+                "lead_id": ["lead_000001", "lead_000002"],
+                "converted_within_90_days": [1, 0],
+            }
+        )
+        snapshot_b = pd.DataFrame(
+            {
+                "lead_id": ["lead_000001", "lead_000002"],
+                "converted_within_90_days": [0, 1],
+            }
+        )
+        lead_dates = {"lead_000001": "2024-01-01", "lead_000002": "2024-01-01"}
+        touches = [
+            TouchRow("t1", "lead_000001", "2024-02-01", "email", "inbound", "inbound"),
+            TouchRow("t2", "lead_000002", "2024-02-15", "email", "inbound", "inbound"),
+        ]
+        result_a = compute_post_snapshot_touches(snapshot_a, touches, lead_dates, snapshot_day=20)
+        result_b = compute_post_snapshot_touches(snapshot_b, touches, lead_dates, snapshot_day=20)
+        pd.testing.assert_series_equal(result_a, result_b)
+
+    def test_no_label_injection_source(self):
+        """Belt-and-suspenders: source code should not reference the target column."""
         import inspect
 
         source = inspect.getsource(compute_post_snapshot_touches)
-        # The function should not reference the target column
         assert ".converted" not in source
         assert "['converted']" not in source
         assert '["converted"]' not in source

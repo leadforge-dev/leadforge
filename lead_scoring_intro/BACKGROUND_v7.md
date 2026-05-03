@@ -32,7 +32,7 @@ Leads enter the pipeline in three cohorts (`acquisition_wave`): A (earliest), B 
 ## What to expect
 
 - **Base conversion rate**: ~30%
-- **Baseline AUC**: A simple logistic regression achieves ~0.63 AUC
+- **Baseline AUC**: A simple logistic regression achieves ~0.67 AUC
 - **Missingness**: 5 columns have missing values (1–7% each) due to different data collection processes across lead sources
 - **Feature interactions**: The relationship between engagement and conversion is nonlinear — tree-based models capture this better than linear models
 
