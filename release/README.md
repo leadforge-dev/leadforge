@@ -8,46 +8,46 @@ Most public lead scoring datasets are flat CSVs with opaque provenance. This one
 
 1. **Relational structure.** 9 normalized tables (accounts, contacts, leads, touches, sessions, sales activities, opportunities, customers, subscriptions) plus ML-ready task splits. Practice feature engineering from raw tables, or grab the flat file and start modeling.
 
-2. **Three difficulty tiers.** Same company, same product, same buyer personas -- different signal-to-noise ratios. Progress from `intro` (clean signal, ~70% conversion) through `intermediate` and `advanced` as your skills grow.
+2. **Three difficulty tiers.** Same company, same product, same buyer personas -- different difficulty profiles. Each tier declares different signal strength, noise, and missingness parameters in its manifest. (See [Known limitations](#known-limitations) for current status.)
 
-3. **Reproducible and leakage-safe.** Deterministic generation from a fixed seed. SHA-256 hashes for every file in `manifest.json`. An explicit leakage trap column (`total_touches_all`) flagged in the feature dictionary. All features are anchored at the snapshot date -- no post-cutoff data leaks in.
+3. **Reproducible and leakage-safe.** Deterministic generation from a fixed seed. SHA-256 hashes for every file in `manifest.json`. Leakage-prone columns (`total_touches_all`, `current_stage`) are explicitly flagged in the feature dictionary. All features are anchored at the snapshot date -- no post-cutoff data leaks in.
 
 ## What's inside
 
 ```
 release/
-├── README.md                            # This file
-├── LICENSE                              # MIT
-├── intro/                               # Difficulty tier 1 (high signal, low noise)
-│   ��── manifest.json                    # Provenance: seed, recipe, version, file hashes
-│   ├── dataset_card.md                  # Human-readable dataset summary
-│   ├���─ feature_dictionary.csv           # Column descriptions, types, leakage flags
-│   ├── lead_scoring.csv                 # Flat convenience file (all splits + split column)
-│   ├── tables/                          # 9 relational Parquet tables
-│   │   ├── accounts.parquet
-│   │   ���── contacts.parquet
-│   │   ├── leads.parquet
-│   │   ├── touches.parquet
-│   │   ├── sessions.parquet
-│   │   ├── sales_activities.parquet
-│   │   ├─��� opportunities.parquet
-│   │   ├── customers.parquet
-│   │   ���── subscriptions.parquet
-│   └── tasks/converted_within_90_days/  # Pre-split ML task
-│       ├── train.parquet                # 70% of leads
-│       ├── valid.parquet                # 15% of leads
-│       └── test.parquet                 # 15% of leads
-├── intermediate/                        # Difficulty tier 2 (same structure)
-├── advanced/                            # Difficulty tier 3 (same structure)
-├── intermediate_instructor/             # Research companion (adds metadata/)
-│   └── metadata/                        # Hidden causal structure
-│       ├── graph.json                   # World graph (DAG)
-���       ├── graph.graphml                # World graph (GraphML)
-│       ├── world_spec.json              # Full generation config
-│       ├── latent_registry.json         # Per-entity latent trait values
-│       ��── mechanism_summary.json       # Causal mechanism assignments
-└── notebooks/
-    └── 01_baseline_lead_scoring.ipynb   # Baseline modeling walkthrough
+|-- README.md                            # This file
+|-- LICENSE                              # MIT
+|-- intro/                               # Difficulty tier 1
+|   |-- manifest.json                    # Provenance: seed, recipe, version, file hashes
+|   |-- dataset_card.md                  # Human-readable dataset summary
+|   |-- feature_dictionary.csv           # Column descriptions, types, leakage flags
+|   |-- lead_scoring.csv                 # Flat convenience file (all splits + split column)
+|   |-- tables/                          # 9 relational Parquet tables
+|   |   |-- accounts.parquet
+|   |   |-- contacts.parquet
+|   |   |-- leads.parquet
+|   |   |-- touches.parquet
+|   |   |-- sessions.parquet
+|   |   |-- sales_activities.parquet
+|   |   |-- opportunities.parquet
+|   |   |-- customers.parquet
+|   |   |-- subscriptions.parquet
+|   |-- tasks/converted_within_90_days/  # Pre-split ML task
+|       |-- train.parquet                # 70% of leads
+|       |-- valid.parquet                # 15% of leads
+|       |-- test.parquet                 # 15% of leads
+|-- intermediate/                        # Difficulty tier 2 (same structure)
+|-- advanced/                            # Difficulty tier 3 (same structure)
+|-- intermediate_instructor/             # Research companion (adds metadata/)
+|   |-- metadata/                        # Hidden causal structure
+|       |-- graph.json                   # World graph (DAG)
+|       |-- graph.graphml                # World graph (GraphML)
+|       |-- world_spec.json              # Full generation config
+|       |-- latent_registry.json         # Per-entity latent trait values
+|       |-- mechanism_summary.json       # Causal mechanism assignments
+|-- notebooks/
+    |-- 01_baseline_lead_scoring.ipynb   # Baseline modeling walkthrough
 ```
 
 ## Quick start
@@ -70,6 +70,8 @@ import pandas as pd
 train = pd.read_parquet("intermediate/tasks/converted_within_90_days/train.parquet")
 test = pd.read_parquet("intermediate/tasks/converted_within_90_days/test.parquet")
 ```
+
+**Note:** The Parquet files contain `current_stage` and `total_touches_all`, both flagged as `leakage_risk` in `feature_dictionary.csv`. Exclude them from your feature set. The flat CSV (`lead_scoring.csv`) has these columns pre-removed.
 
 ### Option 3: Relational tables (feature engineering)
 
@@ -104,7 +106,7 @@ leadforge generate \
 | Leads | 5,000 | 5,000 | 5,000 |
 | Accounts | 1,500 | 1,500 | 1,500 |
 | Contacts | 4,200 | 4,200 | 4,200 |
-| Features | 35 | 35 | 35 |
+| Columns | 35 (34 features + 1 target) | 35 | 35 |
 | Target | `converted_within_90_days` | `converted_within_90_days` | `converted_within_90_days` |
 | Signal strength | 0.90 | 0.70 | 0.50 |
 | Noise scale | 0.10 | 0.30 | 0.55 |
@@ -120,22 +122,25 @@ The sales funnel runs through inbound marketing (45%), SDR outbound (35%), and p
 
 ## Feature dictionary
 
-35 features across 6 categories:
+34 features + 1 target across 6 categories:
 
 | Category | Count | Examples |
 |---|---|---|
 | Account | 6 | `industry`, `region`, `employee_band`, `estimated_revenue_band` |
 | Contact | 4 | `role_function`, `seniority`, `buyer_role` |
-| Lead metadata | 7 | `lead_source`, `first_touch_channel`, `current_stage`, `is_mql` |
+| Lead metadata | 7 | `lead_source`, `first_touch_channel`, `is_mql`, `is_sql` |
 | Engagement | 11 | `touch_count`, `session_count`, `pricing_page_views`, `touches_week_1` |
 | Sales | 6 | `activity_count`, `opportunity_created`, `expected_acv` |
 | Target | 1 | `converted_within_90_days` |
 
 See `feature_dictionary.csv` in each bundle for full descriptions and dtypes.
 
-**Leakage trap:** `total_touches_all` counts touches over the full 90-day window, including post-snapshot events. It is flagged as `leakage_risk=True` in the feature dictionary. Can you spot it?
+**Leakage-flagged columns** (marked `leakage_risk=True` in the feature dictionary):
 
-**Note on `current_stage`:** The Parquet task splits include `current_stage`, which at the 90-day horizon contains terminal stages (`closed_won`/`closed_lost`) that encode the label. **Exclude it from modeling features.** The flat CSV convenience files (`lead_scoring.csv`) have this column pre-removed.
+- `total_touches_all` -- counts touches over the full 90-day window, including post-snapshot events. Can you spot why this leaks?
+- `current_stage` -- at the 90-day horizon, contains terminal stages (`closed_won`/`closed_lost`) that encode the label directly.
+
+Both are dropped from the flat CSV (`lead_scoring.csv`). If you load the Parquet task splits directly, exclude them from your feature set.
 
 ## Research companion
 
@@ -146,6 +151,10 @@ The `intermediate_instructor/` bundle includes the full hidden causal structure:
 - **Mechanism summary:** How each node in the graph maps to simulation behavior
 
 This enables research on causal inference, model interpretability, and DGP-aware evaluation.
+
+## Known limitations
+
+- **Difficulty tiers share the same conversion rate.** The simulation engine does not yet modulate conversion rates by difficulty profile. All three tiers produce similar base rates (~70%). The difficulty profiles are declared in each bundle's manifest and will produce meaningfully different signal-to-noise ratios once the engine is updated. For now, the primary difference between tiers is the declared profile metadata.
 
 ## Provenance
 

@@ -61,6 +61,7 @@ from datasets import load_dataset
 # Load intermediate difficulty
 ds = load_dataset("leadforge/leadforge-b2b-lead-scoring", name="intermediate")
 train = ds["train"].to_pandas()
+valid = ds["validation"].to_pandas()  # Note: file is valid.parquet, split name is "validation"
 test = ds["test"].to_pandas()
 ```
 

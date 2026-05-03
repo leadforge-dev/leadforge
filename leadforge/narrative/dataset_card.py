@@ -9,6 +9,8 @@ from __future__ import annotations
 from collections import Counter
 from typing import TYPE_CHECKING
 
+from leadforge.schema.features import LEAD_SNAPSHOT_FEATURES
+
 if TYPE_CHECKING:
     from leadforge.core.models import WorldSpec
     from leadforge.schema.tasks import TaskManifest
@@ -128,7 +130,7 @@ def render_dataset_card(
     # Table inventory
     # ------------------------------------------------------------------
     lines += ["## Table inventory", ""]
-    if table_counts:
+    if table_counts is not None:
         lines += [
             "| Table | Rows |",
             "|---|---:|",
@@ -145,8 +147,6 @@ def render_dataset_card(
     # ------------------------------------------------------------------
     # Feature categories
     # ------------------------------------------------------------------
-    from leadforge.schema.features import LEAD_SNAPSHOT_FEATURES
-
     lines += ["## Feature categories", ""]
     category_counts: Counter[str] = Counter()
     for feat in LEAD_SNAPSHOT_FEATURES:

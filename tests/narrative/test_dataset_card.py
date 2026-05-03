@@ -224,6 +224,13 @@ def test_card_table_inventory_without_counts() -> None:
     assert "not available" in card.lower()
 
 
+def test_card_table_inventory_empty_dict_renders_empty_table() -> None:
+    """An empty dict should render the table header with no rows, not the placeholder."""
+    card = render_dataset_card(_make_world_spec(), table_counts={})
+    assert "| Table | Rows |" in card
+    assert "not available" not in card.lower()
+
+
 # ---------------------------------------------------------------------------
 # Feature categories
 # ---------------------------------------------------------------------------
@@ -243,4 +250,5 @@ def test_card_leakage_flagged_columns() -> None:
     """Leakage-flagged columns are listed in the feature categories section."""
     card = render_dataset_card(_make_world_spec())
     assert "`total_touches_all`" in card
+    assert "`current_stage`" in card
     assert "Leakage-flagged" in card

@@ -98,12 +98,13 @@ def print_summary(bundle_dir: Path, name: str) -> None:
     task_info = manifest["tasks"].get("converted_within_90_days", {})
     total_task_rows = sum(task_info.get(f"{s}_rows", 0) for s in ("train", "valid", "test"))
 
-    csv_path = bundle_dir / "lead_scoring.csv"
+    # Compute conversion rate from the train split Parquet (avoid re-reading CSV).
     conv_str = ""
-    if csv_path.exists():
-        df = pd.read_csv(csv_path)
-        rate = df["converted_within_90_days"].mean()
-        conv_str = f", conversion={rate:.1%}"
+    train_path = bundle_dir / "tasks" / "converted_within_90_days" / "train.parquet"
+    if train_path.exists():
+        train_df = pd.read_parquet(train_path, columns=["converted_within_90_days"])
+        rate = train_df["converted_within_90_days"].mean()
+        conv_str = f", train_conversion={rate:.1%}"
 
     print(f"  {name}: {table_summary}")
     print(f"    task rows={total_task_rows}{conv_str}")
