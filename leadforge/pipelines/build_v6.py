@@ -6,9 +6,9 @@ v6 produces TWO exports:
   column computed from the simulator's actual event timeline (days 15..90).
 
 Key v6 changes over v5:
-- Snapshot day 14 (was 10).
+- Snapshot day 14.
 - Causally-grounded leakage trap (post-snapshot touches from sim events).
-- No boost/noise injection -- trap signal is purely causal.
+- Poisson(1) boost on trap column for converted leads (restores signal post-engine-changes).
 - ``touches_last_7_days`` momentum feature.
 - ``acquisition_wave`` cohort feature for distribution-shift lecture.
 - Nonlinear interaction: opportunity_created x touches_last_7_days.
@@ -36,6 +36,7 @@ __all__ = [
     "SUBSAMPLE_N",
     "TARGET_RATE",
     "assign_acquisition_wave",
+    "boost_leakage_trap",
     "cap_expected_acv",
     "compute_post_snapshot_touches",
     "derive_features",
@@ -205,6 +206,21 @@ def compute_post_snapshot_touches(
     result = snapshot_df[["lead_id"]].merge(counts, on="lead_id", how="left")
     result[INSTRUCTOR_TRAP_COL] = result[INSTRUCTOR_TRAP_COL].fillna(0).astype(int)
     return result[INSTRUCTOR_TRAP_COL]
+
+
+def boost_leakage_trap(df: pd.DataFrame, seed: int) -> pd.DataFrame:
+    """Amplify the causal trap signal with target-correlated Poisson noise.
+
+    Converted leads get an extra Poisson(1) count added to the trap column,
+    making it a stronger leakage signal for teaching purposes.
+    """
+    rng = RNGRoot(seed).numpy_child("leakage_trap_boost")
+    df = df.copy()
+    n = len(df)
+    converted = df["converted"].values
+    boost = converted * rng.poisson(1, size=n)
+    df[INSTRUCTOR_TRAP_COL] = df[INSTRUCTOR_TRAP_COL] + boost
+    return df
 
 
 def rename_and_select(

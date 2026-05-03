@@ -31,6 +31,7 @@ from leadforge.pipelines.build_v6 import (
     SEED,
     SNAPSHOT_DAY,
     assign_acquisition_wave,
+    boost_leakage_trap,
     compute_post_snapshot_touches,
     derive_features,
     inject_missingness,
@@ -89,6 +90,9 @@ def build_v6_datasets(seed: int = SEED) -> tuple[pd.DataFrame, pd.DataFrame]:
 
     # Rename and select (instructor first to keep trap column)
     df_instructor = rename_and_select(df, instructor=True)
+
+    # Boost trap signal with target-correlated Poisson noise
+    df_instructor = boost_leakage_trap(df_instructor, seed)
 
     print("Subsampling...", file=sys.stderr)
     df_instructor = subsample(df_instructor, seed)
