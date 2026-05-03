@@ -1,0 +1,175 @@
+{
+  "version": "v7",
+  "student_path": "lead_scoring_intro/lead_scoring_intro_v7.csv",
+  "instructor_path": "lead_scoring_intro/lead_scoring_intro_v7_instructor.csv",
+  "student_shape": [
+    1000,
+    20
+  ],
+  "instructor_shape": [
+    1000,
+    21
+  ],
+  "student_columns": [
+    "industry",
+    "region",
+    "company_size",
+    "company_revenue",
+    "contact_role",
+    "seniority",
+    "lead_source",
+    "opportunity_created",
+    "demo_completed",
+    "expected_acv",
+    "inbound_touches",
+    "outbound_touches",
+    "touches_week_1",
+    "touches_last_7_days",
+    "days_since_first_touch",
+    "web_sessions",
+    "sales_activities",
+    "days_since_last_touch",
+    "acquisition_wave",
+    "converted"
+  ],
+  "leakage_columns": [
+    "__leakage__touches_post_snapshot_21_90"
+  ],
+  "acv_stats": {
+    "min": 18000.0,
+    "mean": 59945.19187817259,
+    "median": 55000.0,
+    "p95": 117537.0,
+    "p99": 119462.76,
+    "max": 119937.0,
+    "at_max_frac": 0.0010152284263959391
+  },
+  "categorical_uniques": {
+    "industry": [
+      "healthcare_non_clinical",
+      "logistics",
+      "manufacturing",
+      "professional_services"
+    ],
+    "region": [
+      "UK",
+      "US"
+    ],
+    "company_size": [
+      "1000-1999",
+      "200-499",
+      "2000+",
+      "500-999"
+    ],
+    "company_revenue": [
+      "$10M-$50M",
+      "$1M-$10M",
+      "$200M+",
+      "$50M-$200M"
+    ],
+    "contact_role": [
+      "ap_manager",
+      "it_director",
+      "procurement_manager",
+      "vp_finance"
+    ],
+    "seniority": [
+      "c_suite",
+      "director",
+      "individual_contributor",
+      "manager",
+      "vp"
+    ],
+    "lead_source": [
+      "inbound_marketing",
+      "partner_referral",
+      "sdr_outbound"
+    ],
+    "acquisition_wave": [
+      "A",
+      "B",
+      "C"
+    ]
+  },
+  "baseline_metrics": {
+    "auc": 0.6252910052910052,
+    "pr_auc": 0.38254739964179735,
+    "base_rate": 0.3,
+    "precision@25": 0.4,
+    "recall@25": 0.1111111111111111,
+    "lift@25": 1.3333333333333335,
+    "precision@50": 0.44,
+    "recall@50": 0.24444444444444444,
+    "lift@50": 1.4666666666666668
+  },
+  "tree_metrics": {
+    "mean_lr_auc": 0.6141693121693123,
+    "mean_gbm_auc": 0.673058201058201,
+    "mean_improvement": 0.05888888888888877
+  },
+  "value_aware": [
+    {
+      "k": 25,
+      "captured_prob": 674418.0,
+      "captured_ev": 932505.0,
+      "uplift": 38.26810672313016
+    },
+    {
+      "k": 50,
+      "captured_prob": 1517099.0,
+      "captured_ev": 1552505.0,
+      "uplift": 2.333796278291661
+    }
+  ],
+  "trap_stats": {
+    "trap_column": "__leakage__touches_post_snapshot_21_90",
+    "mean_delta": 0.012328042328042344,
+    "min_delta": 0.004761904761904745,
+    "max_delta": 0.01693121693121702,
+    "median_delta": 0.013095238095238104,
+    "n_positive": 10
+  },
+  "trap_per_seed": {
+    "42": 0.01693121693121702,
+    "43": 0.016084656084656035,
+    "44": 0.013068783068783119,
+    "45": 0.009417989417989325,
+    "46": 0.009576719576719572,
+    "47": 0.01312169312169309,
+    "48": 0.013121693121693201,
+    "49": 0.012486772486772435,
+    "50": 0.014708994708994894,
+    "51": 0.004761904761904745
+  },
+  "missingness": {
+    "seniority": {
+      "count": 28,
+      "rate": 0.028
+    },
+    "expected_acv": {
+      "count": 15,
+      "rate": 0.015
+    },
+    "days_since_first_touch": {
+      "count": 40,
+      "rate": 0.04
+    },
+    "web_sessions": {
+      "count": 66,
+      "rate": 0.066
+    },
+    "days_since_last_touch": {
+      "count": 42,
+      "rate": 0.042
+    }
+  },
+  "cohort_split": {
+    "random_auc": 0.6388888888888888,
+    "random_pr_auc": 0.4027868952070537,
+    "cohort_auc": 0.5727797690163282,
+    "cohort_pr_auc": 0.3394967239490897,
+    "drop": 0.06610911987256063
+  },
+  "errors": [],
+  "warnings": []
+}
