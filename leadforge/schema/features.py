@@ -116,8 +116,12 @@ LEAD_SNAPSHOT_FEATURES: tuple[FeatureSpec, ...] = (
     FeatureSpec(
         "current_stage",
         "string",
-        "Funnel stage at snapshot anchor date.",
+        "Funnel stage at snapshot anchor date. WARNING: at full-horizon "
+        "(90-day) snapshots this contains terminal stages (closed_won / "
+        "closed_lost) that encode the label. Exclude from modeling or use "
+        "a windowed snapshot.",
         "lead_meta",
+        leakage_risk=True,
     ),
     FeatureSpec(
         "is_mql",
