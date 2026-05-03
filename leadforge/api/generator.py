@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from leadforge.core.enums import DifficultyProfile, ExposureMode
-from leadforge.core.models import GenerationConfig, WorldBundle, WorldSpec
+from leadforge.core.models import DifficultyParams, GenerationConfig, WorldBundle, WorldSpec
 from leadforge.core.rng import RNGRoot
 from leadforge.core.sentinels import _MISSING
 
@@ -188,6 +188,19 @@ class Generator:
             profiles = recipe.load_difficulty_profiles()
             profile = profiles.get(config.difficulty.value, {})
             category_latent_correlations = profile.get("category_latent_correlations")
+
+            # Construct DifficultyParams from profile and attach to config.
+            cr_range = profile.get("conversion_rate_range", [0.18, 0.28])
+            difficulty_params = DifficultyParams(
+                signal_strength=profile.get("signal_strength", 0.70),
+                noise_scale=profile.get("noise_scale", 0.30),
+                missing_rate=profile.get("missing_rate", 0.08),
+                outlier_rate=profile.get("outlier_rate", 0.04),
+                conversion_rate_lo=cr_range[0],
+                conversion_rate_hi=cr_range[1],
+                committee_friction=profile.get("committee_friction", 0.30),
+            )
+            config = dataclasses.replace(config, difficulty_params=difficulty_params)
         except (FileNotFoundError, KeyError):
             category_latent_correlations = None
 

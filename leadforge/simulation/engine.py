@@ -197,7 +197,10 @@ def simulate_world(
     post_sim_rng = root.child("simulation_post_sim")
 
     mechanisms = assign_mechanisms(
-        world_graph.motif_family, mech_rng, latent_touch_intensity=latent_touch_intensity
+        world_graph.motif_family,
+        mech_rng,
+        latent_touch_intensity=latent_touch_intensity,
+        difficulty_params=config.difficulty_params,
     )
     # Narrow type for direct conversion path (daily_probability is on
     # ConversionHazard, not the Mechanism ABC).
@@ -246,6 +249,14 @@ def simulate_world(
     session_ctr = 0
     activity_ctr = 0
 
+    # Effective churn rate — modestly scaled up by committee_friction for harder tiers.
+    dp = config.difficulty_params
+    effective_churn_rate = (
+        _DAILY_CHURN_RATE * (1.0 + 0.5 * dp.committee_friction)
+        if dp is not None
+        else _DAILY_CHURN_RATE
+    )
+
     # -------------------------------------------------------------------
     # Main simulation loop: t = 0 … horizon_days-1
     # -------------------------------------------------------------------
@@ -264,7 +275,7 @@ def simulate_world(
             )
 
             # -- 1. Churn check (transition stream) ----------------------
-            if transition_rng.random() < _DAILY_CHURN_RATE:
+            if transition_rng.random() < effective_churn_rate:
                 state.mark_churned(t)
                 continue  # no events emitted on churn day
 
