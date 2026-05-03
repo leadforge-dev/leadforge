@@ -73,7 +73,13 @@ def write_bundle(
     # ------------------------------------------------------------------
     # 2. Snapshot + task splits → tasks/
     # ------------------------------------------------------------------
-    snapshot = build_snapshot(result, population, horizon_days=config.horizon_days)
+    snapshot = build_snapshot(
+        result,
+        population,
+        horizon_days=config.horizon_days,
+        difficulty_params=config.difficulty_params,
+        seed=config.seed,
+    )
     task = task_manifest_for_config(config.primary_task, config.label_window_days)
     task_row_counts = write_task_splits(snapshot, root / "tasks", seed=config.seed, task=task)
 

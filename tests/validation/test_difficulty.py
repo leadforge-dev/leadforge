@@ -47,8 +47,10 @@ class TestCheckDifficulty:
 
 
 class TestDifficultyOrdering:
-    def test_ordering_is_noop_for_v1(self, bundle_dir: Path) -> None:
-        """Until the engine modulates by difficulty, ordering check is a no-op."""
+    def test_same_bundle_fails_for_multiple_difficulties(self, bundle_dir: Path) -> None:
+        """Same bundle cannot satisfy multiple difficulty ranges."""
         bundles = {"intro": bundle_dir, "intermediate": bundle_dir, "advanced": bundle_dir}
         errors = check_difficulty_ordering(bundles)
-        assert errors == []
+        # A single bundle's rate can't be in all three ranges at once,
+        # so we expect at least one violation.
+        assert len(errors) > 0

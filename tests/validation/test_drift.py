@@ -77,13 +77,12 @@ class TestCrossSeedStability:
         """A >5x spread in conversion rates should be flagged."""
         first_seed = next(iter(multi_seed_bundles))
         real = multi_seed_bundles[first_seed]
-        fake = tmp_path / "low_rate"
+        fake = tmp_path / "high_rate"
         shutil.copytree(real, fake)
         train_path = fake / "tasks/converted_within_90_days/train.parquet"
         df = pd.read_parquet(train_path)
-        # Set all but one row to False → very low rate.
-        df["converted_within_90_days"] = False
-        df.iloc[0, df.columns.get_loc("converted_within_90_days")] = True
+        # Set all rows to True → 100% rate vs real's ~10-30%.
+        df["converted_within_90_days"] = True
         df.to_parquet(train_path)
 
         bundles = {first_seed: real, 997: fake}

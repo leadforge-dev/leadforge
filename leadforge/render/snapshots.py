@@ -13,8 +13,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import numpy as np
 import pandas as pd
 
+from leadforge.core.rng import RNGRoot
 from leadforge.schema.entities import (
     OpportunityRow,
     SalesActivityRow,
@@ -25,6 +27,7 @@ from leadforge.schema.features import LEAD_SNAPSHOT_FEATURES
 from leadforge.simulation.population import REVENUE_BAND_MIDPOINTS
 
 if TYPE_CHECKING:
+    from leadforge.core.models import DifficultyParams
     from leadforge.simulation.engine import SimulationResult
     from leadforge.simulation.population import PopulationResult
 
@@ -56,6 +59,8 @@ def build_snapshot(
     population: PopulationResult,
     horizon_days: int = 90,
     snapshot_day: int | None = None,
+    difficulty_params: DifficultyParams | None = None,
+    seed: int = 42,
 ) -> pd.DataFrame:
     """Build the lead snapshot DataFrame from simulation output.
 
@@ -311,4 +316,89 @@ def build_snapshot(
         if col in snapshot.columns:
             snapshot[col] = snapshot[col].astype(dtype)
 
+    # -------------------------------------------------------------------
+    # Difficulty distortions: noise, missingness, outliers.
+    # -------------------------------------------------------------------
+    if difficulty_params is not None:
+        snapshot = _apply_difficulty_distortions(snapshot, difficulty_params, seed)
+
     return snapshot
+
+
+# ---------------------------------------------------------------------------
+# Difficulty distortion helpers
+# ---------------------------------------------------------------------------
+
+# Derive eligible columns from the feature spec rather than runtime dtype
+# sniffing.  This guarantees categoricals, booleans, IDs, and labels are
+# never distorted even if their runtime dtype happens to be numeric.
+_FLOAT_DISTORTION_COLS: list[str] = [
+    f.name for f in LEAD_SNAPSHOT_FEATURES if f.dtype in ("Float64", "float64") and not f.is_target
+]
+_NUMERIC_DISTORTION_COLS: list[str] = [
+    f.name
+    for f in LEAD_SNAPSHOT_FEATURES
+    if f.dtype in ("Float64", "float64", "Int64", "int64") and not f.is_target
+]
+
+
+def _apply_difficulty_distortions(
+    df: pd.DataFrame,
+    params: DifficultyParams,
+    seed: int,
+) -> pd.DataFrame:
+    """Apply noise, missingness, and outliers to numeric snapshot features.
+
+    Returns a new DataFrame — the input is not mutated.
+    """
+    df = df.copy()
+    rng_root = RNGRoot(seed)
+    np_rng = rng_root.numpy_child("snapshot_distortions")
+
+    # Filter to columns actually present (guards against feature spec drift).
+    float_cols = [c for c in _FLOAT_DISTORTION_COLS if c in df.columns]
+    all_numeric_cols = [c for c in _NUMERIC_DISTORTION_COLS if c in df.columns]
+
+    # 1. Gaussian noise on float features only (avoids int casting issues).
+    if params.noise_scale > 0:
+        for col in float_cols:
+            valid_mask = df[col].notna()
+            if valid_mask.sum() == 0:
+                continue
+            col_std = float(df.loc[valid_mask, col].std())
+            if col_std == 0 or np.isnan(col_std):
+                continue
+            noise = np_rng.normal(0, params.noise_scale * col_std, size=len(df))
+            # Add noise only where values are valid.
+            values = df[col].copy()
+            values[valid_mask] = values[valid_mask] + noise[valid_mask.values]
+            df[col] = values
+
+    # 2. MCAR missingness injection (all numeric columns).
+    if params.missing_rate > 0:
+        mask = np_rng.random(size=(len(df), len(all_numeric_cols))) < params.missing_rate
+        for i, col in enumerate(all_numeric_cols):
+            col_mask = mask[:, i]
+            if col_mask.any():
+                # Convert int columns to float to support NaN.
+                if df[col].dtype in ("int64", "Int64"):
+                    df[col] = df[col].astype("Float64")
+                df.loc[col_mask, col] = np.nan
+
+    # 3. Outlier injection (float columns only).  Uses 5σ to produce values
+    #    clearly distinguishable from natural variation.
+    if params.outlier_rate > 0:
+        for col in float_cols:
+            valid_mask = df[col].notna()
+            col_std = float(df.loc[valid_mask, col].std())
+            if col_std == 0 or np.isnan(col_std):
+                continue
+            col_median = float(df[col].median())
+            outlier_mask = np_rng.random(size=len(df)) < params.outlier_rate
+            signs = np_rng.choice([-1, 1], size=len(df)).astype(float)
+            outlier_values = col_median + signs * 5 * col_std
+            combined = outlier_mask & valid_mask.values
+            if combined.any():
+                df.loc[combined, col] = outlier_values[combined]
+
+    return df

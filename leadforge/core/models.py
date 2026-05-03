@@ -16,6 +16,23 @@ if TYPE_CHECKING:
     from leadforge.structure.graph import WorldGraph
 
 
+@dataclass(frozen=True)
+class DifficultyParams:
+    """Numeric parameters from a difficulty profile.
+
+    Carried on :class:`GenerationConfig` to thread difficulty-dependent
+    behaviour through the simulation engine and snapshot builder.
+    """
+
+    signal_strength: float
+    noise_scale: float
+    missing_rate: float
+    outlier_rate: float
+    conversion_rate_lo: float
+    conversion_rate_hi: float
+    committee_friction: float
+
+
 def _require_positive_int(value: Any, name: str) -> None:
     """Raise ``InvalidConfigError`` unless *value* is a positive plain ``int``.
 
@@ -49,6 +66,7 @@ class GenerationConfig:
     label_window_days: int = 90
     output_path: str = "./out"
     package_version: str = field(default_factory=lambda: __version__)
+    difficulty_params: DifficultyParams | None = None
 
     def __post_init__(self) -> None:
         if isinstance(self.seed, bool) or not isinstance(self.seed, int):
