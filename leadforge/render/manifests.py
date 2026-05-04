@@ -35,6 +35,7 @@ def build_manifest(
     task_row_counts: dict[str, dict[str, int]],
     bundle_root: Path,
     generation_timestamp: str | None = None,
+    redacted_columns: list[str] | None = None,
 ) -> dict[str, Any]:
     """Build the bundle manifest dict.
 
@@ -49,12 +50,19 @@ def build_manifest(
         task_row_counts: Mapping of task_id → {split_name → row count}.
         bundle_root: Root directory of the written bundle.
         generation_timestamp: ISO-8601 UTC timestamp string.  Defaults to now.
+        redacted_columns: Sorted list of column names that the bundle writer
+            removed from snapshot / task splits / feature dictionary for
+            this exposure mode.  Recorded in the manifest so consumers
+            (and the validator) can audit redaction without inspecting
+            package internals.  Defaults to ``[]`` (nothing redacted).
 
     Returns:
         A JSON-serialisable dict ready to be written as ``manifest.json``.
     """
     if generation_timestamp is None:
         generation_timestamp = datetime.now(UTC).isoformat(timespec="seconds")
+
+    redacted_columns_list = sorted(redacted_columns) if redacted_columns else []
 
     # Build table entries with row counts and file hashes.
     tables: dict[str, Any] = {}
@@ -91,6 +99,7 @@ def build_manifest(
         "primary_task": config.primary_task,
         "label_window_days": config.label_window_days,
         "motif_family": world_graph.motif_family,
+        "redacted_columns": redacted_columns_list,
         "tables": tables,
         "tasks": tasks,
     }

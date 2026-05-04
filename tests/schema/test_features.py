@@ -63,34 +63,69 @@ def test_no_leakage_risk_on_target() -> None:
             assert not f.leakage_risk
 
 
-def test_leakage_trap_implies_leakage_risk() -> None:
-    """Pedagogical traps must also be leakage_risk — otherwise the redaction
-    rule (drop ``leakage_risk and not is_leakage_trap``) can't tell them apart."""
+def test_target_is_published_in_all_modes() -> None:
+    """The label must never be redacted — that would yield an unusable bundle."""
+    from leadforge.core.enums import ExposureMode
+
     for f in LEAD_SNAPSHOT_FEATURES:
-        if f.is_leakage_trap:
-            assert f.leakage_risk, f"{f.name} is a leakage trap but not flagged leakage_risk"
+        if f.is_target:
+            for mode in ExposureMode:
+                assert mode not in f.redact_in_modes, (
+                    f"target {f.name} is marked for redaction in {mode}"
+                )
 
 
-def test_total_touches_all_is_leakage_trap() -> None:
-    by_name = {f.name: f for f in LEAD_SNAPSHOT_FEATURES}
-    f = by_name["total_touches_all"]
-    assert f.leakage_risk
-    assert f.is_leakage_trap
+def test_current_stage_is_redacted_in_student_public() -> None:
+    """The label-encoding column must be in the student_public redaction set."""
+    from leadforge.core.enums import ExposureMode
 
-
-def test_current_stage_is_redacted_not_trap() -> None:
-    """``current_stage`` must be redacted from student_public — not a trap."""
     by_name = {f.name: f for f in LEAD_SNAPSHOT_FEATURES}
     f = by_name["current_stage"]
     assert f.leakage_risk
-    assert not f.is_leakage_trap
+    assert ExposureMode.student_public in f.redact_in_modes
 
 
-def test_student_public_redacted_set_excludes_traps() -> None:
-    from leadforge.schema.features import STUDENT_PUBLIC_REDACTED_COLUMNS
+def test_total_touches_all_kept_as_pedagogical_trap() -> None:
+    """The deliberate trap is leakage_risk but not redacted in any mode."""
+    by_name = {f.name: f for f in LEAD_SNAPSHOT_FEATURES}
+    f = by_name["total_touches_all"]
+    assert f.leakage_risk
+    assert f.redact_in_modes == frozenset()
 
-    assert "current_stage" in STUDENT_PUBLIC_REDACTED_COLUMNS
-    assert "total_touches_all" not in STUDENT_PUBLIC_REDACTED_COLUMNS
+
+def test_redacted_columns_for_student_public() -> None:
+    from leadforge.core.enums import ExposureMode
+    from leadforge.schema.features import redacted_columns_for
+
+    redacted = redacted_columns_for(ExposureMode.student_public)
+    assert "current_stage" in redacted
+    assert "total_touches_all" not in redacted
+    assert "converted_within_90_days" not in redacted
+
+
+def test_redacted_columns_for_research_instructor_is_empty() -> None:
+    from leadforge.core.enums import ExposureMode
+    from leadforge.schema.features import redacted_columns_for
+
+    assert redacted_columns_for(ExposureMode.research_instructor) == frozenset()
+
+
+def test_redacted_columns_for_accepts_custom_features() -> None:
+    """The function is parameterizable — future per-recipe feature sets work."""
+    from leadforge.core.enums import ExposureMode
+    from leadforge.schema.features import FeatureSpec, redacted_columns_for
+
+    custom = (
+        FeatureSpec(
+            "x",
+            "string",
+            "test",
+            "lead_meta",
+            redact_in_modes=frozenset({ExposureMode.student_public}),
+        ),
+        FeatureSpec("y", "string", "test", "lead_meta"),
+    )
+    assert redacted_columns_for(ExposureMode.student_public, features=custom) == frozenset({"x"})
 
 
 # ---------------------------------------------------------------------------
@@ -110,15 +145,7 @@ def test_feature_dictionary_df_row_count_matches_features() -> None:
 
 def test_feature_dictionary_df_columns() -> None:
     df = feature_dictionary_df()
-    expected = {
-        "name",
-        "dtype",
-        "description",
-        "category",
-        "is_target",
-        "leakage_risk",
-        "is_leakage_trap",
-    }
+    expected = {"name", "dtype", "description", "category", "is_target", "leakage_risk"}
     assert set(df.columns) == expected
 
 

@@ -13,15 +13,7 @@ import pandas as pd
 
 from leadforge.schema.features import LEAD_SNAPSHOT_FEATURES, FeatureSpec
 
-_COLUMNS = (
-    "name",
-    "dtype",
-    "description",
-    "category",
-    "is_target",
-    "leakage_risk",
-    "is_leakage_trap",
-)
+_COLUMNS = ("name", "dtype", "description", "category", "is_target", "leakage_risk")
 
 
 def feature_dictionary_df(
@@ -29,8 +21,14 @@ def feature_dictionary_df(
 ) -> pd.DataFrame:
     """Return the feature dictionary as a ``pd.DataFrame``.
 
-    Columns: name, dtype, description, category, is_target, leakage_risk,
-    is_leakage_trap.
+    Columns: name, dtype, description, category, is_target, leakage_risk.
+
+    The redaction policy (``FeatureSpec.redact_in_modes``) is intentionally
+    *not* serialised here: it is package-internal state, and which columns
+    a given bundle actually published is observable from the bundle's
+    schema and from ``manifest.redacted_columns``.  Keeping this CSV's
+    column set stable preserves backward compatibility with downstream
+    consumers that parse it strictly.
 
     Args:
         features: Ordered tuple of :class:`~leadforge.schema.features.FeatureSpec`
@@ -39,8 +37,8 @@ def feature_dictionary_df(
     Returns:
         A ``pd.DataFrame`` with one row per feature.  String columns
         (``name``, ``dtype``, ``description``, ``category``) use
-        ``pd.StringDtype``; flag columns (``is_target``, ``leakage_risk``,
-        ``is_leakage_trap``) use ``pd.BooleanDtype``.
+        ``pd.StringDtype``; flag columns (``is_target``, ``leakage_risk``)
+        use ``pd.BooleanDtype``.
     """
     rows = [
         {
@@ -50,7 +48,6 @@ def feature_dictionary_df(
             "category": f.category,
             "is_target": f.is_target,
             "leakage_risk": f.leakage_risk,
-            "is_leakage_trap": f.is_leakage_trap,
         }
         for f in features
     ]
@@ -59,7 +56,6 @@ def feature_dictionary_df(
         df[col] = df[col].astype("string")
     df["is_target"] = df["is_target"].astype("boolean")
     df["leakage_risk"] = df["leakage_risk"].astype("boolean")
-    df["is_leakage_trap"] = df["is_leakage_trap"].astype("boolean")
     return df
 
 

@@ -4,43 +4,38 @@
 :class:`BundleFilter` that governs which artefacts are written when
 :func:`~leadforge.api.bundle.write_bundle` produces an output bundle.
 
+The per-feature redaction policy lives separately on
+:attr:`leadforge.schema.features.FeatureSpec.redact_in_modes` and is queried
+via :func:`leadforge.schema.features.redacted_columns_for`.  ``BundleFilter``
+deliberately does *not* duplicate that information so that the writer and
+the validator both consult the same source of truth.
+
 Adding a new mode: define its ``BundleFilter`` entry in ``FILTERS``.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from leadforge.core.enums import ExposureMode
-from leadforge.schema.features import STUDENT_PUBLIC_REDACTED_COLUMNS
 
 
 @dataclass(frozen=True)
 class BundleFilter:
-    """Rules that govern bundle publication for one :class:`ExposureMode`.
+    """Mode-level publication policy.
 
     Attributes:
         write_metadata: Whether to create ``metadata/`` with hidden-truth
             files (``graph.json``, ``graph.graphml``, ``world_spec.json``,
             ``latent_registry.json``, ``mechanism_summary.json``).
-        redacted_columns: Snapshot/task-split columns that must be stripped
-            from the published bundle.  Empty for ``research_instructor``.
-            For ``student_public`` this is the set of features flagged
-            ``leakage_risk=True`` and ``is_leakage_trap=False`` — i.e. true
-            label leaks (``current_stage``), but not pedagogical traps
-            (``total_touches_all``).
     """
 
     write_metadata: bool
-    redacted_columns: frozenset[str] = field(default_factory=frozenset)
 
 
 #: Canonical filter rules for every supported exposure mode.
 FILTERS: dict[ExposureMode, BundleFilter] = {
-    ExposureMode.student_public: BundleFilter(
-        write_metadata=False,
-        redacted_columns=STUDENT_PUBLIC_REDACTED_COLUMNS,
-    ),
+    ExposureMode.student_public: BundleFilter(write_metadata=False),
     ExposureMode.research_instructor: BundleFilter(write_metadata=True),
 }
 

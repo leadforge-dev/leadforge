@@ -16,7 +16,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from leadforge.exposure.filters import get_filter
 from leadforge.exposure.modes import apply_exposure
 from leadforge.narrative.dataset_card import render_dataset_card
 from leadforge.render.manifests import build_manifest, write_manifest
@@ -24,7 +23,7 @@ from leadforge.render.relational import to_dataframes
 from leadforge.render.snapshots import build_snapshot
 from leadforge.render.tasks import write_task_splits
 from leadforge.schema.dictionaries import write_feature_dictionary
-from leadforge.schema.features import LEAD_SNAPSHOT_FEATURES
+from leadforge.schema.features import LEAD_SNAPSHOT_FEATURES, redacted_columns_for
 from leadforge.schema.tables import write_parquet
 from leadforge.schema.tasks import task_manifest_for_config
 
@@ -77,7 +76,9 @@ def write_bundle(
     #
     # Apply exposure-mode redaction here (rather than in apply_exposure)
     # so that the manifest's per-file SHA-256 hashes reflect the published
-    # column set without a post-write rewrite step.
+    # column set without a post-write rewrite step.  The redacted column
+    # set is derived from the canonical feature spec — the same source
+    # of truth the validator uses to check bundles.
     # ------------------------------------------------------------------
     snapshot = build_snapshot(
         result,
@@ -86,8 +87,7 @@ def write_bundle(
         difficulty_params=config.difficulty_params,
         seed=config.seed,
     )
-    bundle_filter = get_filter(config.exposure_mode)
-    redacted = bundle_filter.redacted_columns
+    redacted = redacted_columns_for(config.exposure_mode)
     if redacted:
         drop_cols = [c for c in redacted if c in snapshot.columns]
         if drop_cols:
@@ -125,5 +125,6 @@ def write_bundle(
         task_row_counts={task.task_id: task_row_counts},
         bundle_root=root,
         generation_timestamp=generation_timestamp,
+        redacted_columns=sorted(redacted),
     )
     write_manifest(manifest, root)

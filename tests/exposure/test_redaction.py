@@ -1,26 +1,27 @@
 """End-to-end tests for exposure-mode column redaction.
 
-These tests cover the post-v1 leakage fix: ``current_stage`` (and any other
-``leakage_risk and not is_leakage_trap`` column) is stripped from
-``student_public`` bundles, preserved in ``research_instructor`` bundles,
-and the deliberately included pedagogical trap ``total_touches_all`` is
-left in place in both modes.
+These tests cover the post-v1 leakage fix: any column whose FeatureSpec
+has the current ``ExposureMode`` in its ``redact_in_modes`` set is
+stripped from the published bundle for that mode.  ``current_stage`` is
+redacted in ``student_public``; ``total_touches_all`` (the deliberately
+included pedagogical trap) is preserved in all modes.
 """
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pandas as pd
+import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
 from leadforge.api.generator import Generator
 from leadforge.core.enums import ExposureMode
-from leadforge.exposure.filters import FILTERS
 from leadforge.schema.features import (
     LEAD_SNAPSHOT_FEATURES,
-    STUDENT_PUBLIC_REDACTED_COLUMNS,
+    redacted_columns_for,
 )
 from leadforge.validation.bundle_checks import validate_bundle
 
@@ -42,23 +43,17 @@ def _task_columns(bundle_root: Path, split: str) -> set[str]:
 # ---------------------------------------------------------------------------
 
 
-def test_filter_redaction_set_matches_features() -> None:
-    """``BundleFilter.redacted_columns`` for student_public must match the
-    derived feature-spec set."""
-    assert FILTERS[ExposureMode.student_public].redacted_columns == STUDENT_PUBLIC_REDACTED_COLUMNS
-
-
-def test_research_instructor_redacts_nothing() -> None:
-    assert FILTERS[ExposureMode.research_instructor].redacted_columns == frozenset()
-
-
-def test_redaction_set_is_non_empty() -> None:
+def test_redaction_set_for_student_public_is_non_empty() -> None:
     """If this regresses to empty, the fix is not actually doing anything."""
-    assert "current_stage" in STUDENT_PUBLIC_REDACTED_COLUMNS
+    assert "current_stage" in redacted_columns_for(ExposureMode.student_public)
 
 
 def test_redaction_set_excludes_pedagogical_trap() -> None:
-    assert "total_touches_all" not in STUDENT_PUBLIC_REDACTED_COLUMNS
+    assert "total_touches_all" not in redacted_columns_for(ExposureMode.student_public)
+
+
+def test_redaction_set_for_research_instructor_is_empty() -> None:
+    assert redacted_columns_for(ExposureMode.research_instructor) == frozenset()
 
 
 # ---------------------------------------------------------------------------
@@ -90,7 +85,7 @@ class TestStudentPublicRedaction:
     def test_no_redacted_column_in_any_split(self, bundle: Path) -> None:
         for split in ("train", "valid", "test"):
             cols = _task_columns(bundle, split)
-            leaked = cols & STUDENT_PUBLIC_REDACTED_COLUMNS
+            leaked = cols & redacted_columns_for(ExposureMode.student_public)
             assert not leaked, f"redacted columns present in student_public {split}: {leaked}"
 
     def test_target_column_still_present(self, bundle: Path) -> None:
@@ -107,10 +102,16 @@ class TestStudentPublicRedaction:
 
     def test_feature_dictionary_row_count_matches_visible_features(self, bundle: Path) -> None:
         df = pd.read_csv(bundle / "feature_dictionary.csv")
-        expected = sum(
-            1 for f in LEAD_SNAPSHOT_FEATURES if f.name not in STUDENT_PUBLIC_REDACTED_COLUMNS
-        )
+        redacted = redacted_columns_for(ExposureMode.student_public)
+        expected = sum(1 for f in LEAD_SNAPSHOT_FEATURES if f.name not in redacted)
         assert len(df) == expected
+
+    def test_manifest_records_redacted_columns(self, bundle: Path) -> None:
+        manifest = json.loads((bundle / "manifest.json").read_text())
+        assert "redacted_columns" in manifest
+        declared = set(manifest["redacted_columns"])
+        expected = set(redacted_columns_for(ExposureMode.student_public))
+        assert declared == expected
 
     def test_validate_bundle_passes(self, bundle: Path) -> None:
         """The new exposure-redaction check must not flag a properly built bundle."""
@@ -176,7 +177,7 @@ class TestCrossModeConsistency:
         s_cols = _task_columns(student, "train")
         i_cols = _task_columns(instructor, "train")
         extra = i_cols - s_cols
-        assert extra == set(STUDENT_PUBLIC_REDACTED_COLUMNS)
+        assert extra == set(redacted_columns_for(ExposureMode.student_public))
 
     def test_shared_column_values_match(self, both: tuple[Path, Path]) -> None:
         student, instructor = both
@@ -192,23 +193,39 @@ class TestCrossModeConsistency:
 
 
 class TestValidateBundleEnforcesRedaction:
-    def test_corrupted_student_bundle_fails_redaction_check(self, tmp_path: Path) -> None:
-        """If a build pipeline regresses and re-introduces ``current_stage``,
-        ``validate_bundle`` must catch it."""
-        # Build an instructor bundle (which includes current_stage), then
-        # rewrite the manifest to claim it is student_public.
-        out = tmp_path / "tampered"
-        _build("research_instructor", out)
-        manifest_path = out / "manifest.json"
-        import json
+    def test_regression_re_inserted_redacted_column_is_caught(self, tmp_path: Path) -> None:
+        """Real regression scenario: a future bug causes the writer to leave
+        ``current_stage`` in a student_public task split.  We simulate this
+        by writing a real student_public bundle, then re-injecting
+        ``current_stage`` into one of its parquet files.  ``validate_bundle``
+        must flag it independently of the writer's filter logic.
+        """
+        out = tmp_path / "regressed"
+        _build("student_public", out)
 
+        train_path = out / "tasks/converted_within_90_days/train.parquet"
+        df = pd.read_parquet(train_path)
+        df["current_stage"] = "negotiation"
+        pq.write_table(pa.Table.from_pandas(df, preserve_index=False), train_path)
+
+        errors = validate_bundle(out, include_realism=False)
+        redaction_errors = [e for e in errors if "redacted columns" in e and "current_stage" in e]
+        assert redaction_errors, (
+            "validate_bundle must flag a student_public bundle whose task split "
+            "contains current_stage, derived from the feature spec independently"
+        )
+
+    def test_manifest_disagreement_with_feature_spec_is_caught(self, tmp_path: Path) -> None:
+        """The validator cross-checks ``manifest.redacted_columns`` against
+        the feature-spec-derived expected set."""
+        out = tmp_path / "manifest_mismatch"
+        _build("student_public", out)
+
+        manifest_path = out / "manifest.json"
         manifest = json.loads(manifest_path.read_text())
-        manifest["exposure_mode"] = "student_public"
+        manifest["redacted_columns"] = []  # claim nothing was redacted
         manifest_path.write_text(json.dumps(manifest, indent=2))
 
         errors = validate_bundle(out, include_realism=False)
-        redaction_errors = [e for e in errors if "redacted columns" in e]
-        assert redaction_errors, (
-            "validate_bundle must flag a student_public-claiming bundle that "
-            "still contains current_stage"
-        )
+        mismatch_errors = [e for e in errors if "manifest.redacted_columns" in e]
+        assert mismatch_errors

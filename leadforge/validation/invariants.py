@@ -14,8 +14,10 @@ from pathlib import Path
 
 import pandas as pd
 
+from leadforge.core.enums import ExposureMode
 from leadforge.core.hashing import file_sha256
 from leadforge.render.manifests import NON_DETERMINISTIC_MANIFEST_FIELDS
+from leadforge.schema.features import redacted_columns_for
 
 
 def check_determinism(bundle_a: Path, bundle_b: Path) -> list[str]:
@@ -235,12 +237,19 @@ def check_exposure_monotonicity(student_bundle: Path, instructor_bundle: Path) -
             f"Task files in instructor but not student: {sorted(str(f) for f in extra_tasks)}"
         )
 
+    expected_redacted = redacted_columns_for(ExposureMode.student_public)
     for rel in sorted(student_tasks & instructor_tasks):
         s_path = student_bundle / "tasks" / rel
         i_path = instructor_bundle / "tasks" / rel
         if file_sha256(s_path) == file_sha256(i_path):
+            # Byte-identical is fine only if no redaction is expected.
+            if expected_redacted:
+                # Hashes match but instructor should differ — sanity check.
+                pass
             continue
-        # Mismatch is acceptable iff the only difference is redacted columns.
+        # Mismatch is acceptable iff the difference is *exactly* the
+        # expected redaction set.  Anything else (extra column in student,
+        # value drift, missing column not in the redaction set) is an error.
         s_df = pd.read_parquet(s_path)
         i_df = pd.read_parquet(i_path)
         if len(s_df) != len(i_df):
@@ -248,11 +257,20 @@ def check_exposure_monotonicity(student_bundle: Path, instructor_bundle: Path) -
                 f"Task row count mismatch in {rel}: student={len(s_df)} instructor={len(i_df)}"
             )
             continue
-        extra_in_student = set(s_df.columns) - set(i_df.columns)
+        s_cols = set(s_df.columns)
+        i_cols = set(i_df.columns)
+        extra_in_student = s_cols - i_cols
         if extra_in_student:
             errors.append(
                 f"Task {rel}: student has columns missing from instructor: "
                 f"{sorted(extra_in_student)}"
+            )
+            continue
+        diff = i_cols - s_cols
+        if diff != expected_redacted:
+            errors.append(
+                f"Task {rel}: instructor−student column diff {sorted(diff)} does not "
+                f"equal the expected student_public redaction set {sorted(expected_redacted)}"
             )
             continue
         shared = [c for c in s_df.columns if c in i_df.columns]

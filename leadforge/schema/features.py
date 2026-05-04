@@ -8,12 +8,30 @@ post-anchor data is included (leakage rule, §4 of the architecture spec).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+from leadforge.core.enums import ExposureMode
 
 
 @dataclass(frozen=True)
 class FeatureSpec:
     """Metadata for one column in the lead snapshot table.
+
+    Two concerns are kept deliberately separate:
+
+    - :attr:`leakage_risk` is *descriptive*: the value of this column is
+      computed from events that may post-date the snapshot anchor and so
+      correlates with the label.  It is informational metadata for
+      downstream consumers and is preserved in the published feature
+      dictionary.
+    - :attr:`redact_in_modes` is *prescriptive*: the bundle writer must
+      strip this column from any export whose mode is in this set.
+
+    These can disagree: ``total_touches_all`` is ``leakage_risk=True``
+    (it does encode post-snapshot information) but
+    ``redact_in_modes=frozenset()`` (it is deliberately retained as a
+    pedagogical trap).  Conversely a recipe could redact a column that
+    is not itself leakage-risky for unrelated policy reasons.
 
     Attributes:
         name: Column name as it appears in the Parquet file.
@@ -23,13 +41,10 @@ class FeatureSpec:
         category: Logical grouping (``"account"``, ``"contact"``,
             ``"lead_meta"``, ``"engagement"``, ``"sales"``, ``"target"``).
         is_target: True for the label column only.
-        leakage_risk: True if the column could contain post-snapshot-anchor
-            information that materially encodes the label.
-        is_leakage_trap: True for columns that are deliberately included in
-            ``student_public`` exports as a pedagogical leakage trap (e.g.
-            ``total_touches_all``).  Such columns may set ``leakage_risk=True``
-            but are exempt from the exposure-layer redaction that strips
-            other leakage-risk columns from public bundles.
+        leakage_risk: Descriptive — this column is post-snapshot correlated.
+        redact_in_modes: Prescriptive — exposure modes in which the
+            bundle writer must strip this column from snapshot, task
+            splits, and feature dictionary.
     """
 
     name: str
@@ -38,7 +53,7 @@ class FeatureSpec:
     category: str
     is_target: bool = False
     leakage_risk: bool = False
-    is_leakage_trap: bool = False
+    redact_in_modes: frozenset[ExposureMode] = field(default_factory=frozenset)
 
 
 # ---------------------------------------------------------------------------
@@ -128,6 +143,7 @@ LEAD_SNAPSHOT_FEATURES: tuple[FeatureSpec, ...] = (
         "a windowed snapshot.",
         "lead_meta",
         leakage_risk=True,
+        redact_in_modes=frozenset({ExposureMode.student_public}),
     ),
     FeatureSpec(
         "is_mql",
@@ -241,7 +257,7 @@ LEAD_SNAPSHOT_FEATURES: tuple[FeatureSpec, ...] = (
         "revenue band midpoint heuristic (NaN if neither available).",
         "sales",
     ),
-    # -- Leakage trap --
+    # -- Pedagogical leakage trap (deliberately retained in all modes) --
     FeatureSpec(
         "total_touches_all",
         "Int64",
@@ -249,7 +265,6 @@ LEAD_SNAPSHOT_FEATURES: tuple[FeatureSpec, ...] = (
         "post-snapshot data. Included for pedagogical purposes only.",
         "engagement",
         leakage_risk=True,
-        is_leakage_trap=True,
     ),
     # -- Target --
     FeatureSpec(
@@ -263,10 +278,21 @@ LEAD_SNAPSHOT_FEATURES: tuple[FeatureSpec, ...] = (
 )
 
 
-# Columns redacted from ``student_public`` exports: leakage-risk columns that
-# are *not* explicitly flagged as pedagogical traps.  Derived from the canonical
-# feature spec at import time so adding a new ``leakage_risk=True`` feature
-# automatically extends the redaction set.
-STUDENT_PUBLIC_REDACTED_COLUMNS: frozenset[str] = frozenset(
-    f.name for f in LEAD_SNAPSHOT_FEATURES if f.leakage_risk and not f.is_leakage_trap
-)
+def redacted_columns_for(
+    mode: ExposureMode,
+    features: tuple[FeatureSpec, ...] = LEAD_SNAPSHOT_FEATURES,
+) -> frozenset[str]:
+    """Return the set of column names that must be stripped from *mode* exports.
+
+    The redaction policy is encoded per-feature in
+    :attr:`FeatureSpec.redact_in_modes`.  Callers (the bundle writer, the
+    validation check) all derive their answer from this single function, so
+    a single source of truth governs both producing and verifying bundles.
+
+    Args:
+        mode: The exposure mode being published.
+        features: Feature spec tuple to consult.  Defaults to the canonical
+            lead snapshot list; callable with a custom tuple for tests or
+            future per-recipe feature sets.
+    """
+    return frozenset(f.name for f in features if mode in f.redact_in_modes)
