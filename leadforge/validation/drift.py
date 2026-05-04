@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import pyarrow.parquet as pq
 
 from leadforge.core.serialization import load_json
 
@@ -66,10 +67,17 @@ def check_cross_seed_stability(bundles: dict[int, Path]) -> list[str]:
         if len(df) > 0:
             rates[seed] = float(df[_LABEL_COLUMN].mean())
 
+        # ``current_stage`` is redacted from ``leads.parquet`` in
+        # ``student_public`` mode (bundle schema v3+).  Skip stage diversity
+        # collection in that case — degeneracy still surfaces via the
+        # conversion-rate spread checks below, and via ``check_realism`` on
+        # any ``research_instructor`` bundle that does carry the column.
         leads_path = bundle_path / "tables/leads.parquet"
         if leads_path.exists():
-            leads = pd.read_parquet(leads_path, columns=["current_stage"])
-            stage_counts[seed] = int(leads["current_stage"].nunique())
+            schema_names = set(pq.read_schema(leads_path).names)
+            if "current_stage" in schema_names:
+                leads = pd.read_parquet(leads_path, columns=["current_stage"])
+                stage_counts[seed] = int(leads["current_stage"].nunique())
 
     # Check conversion rate spread — if one seed's rate is 5x another's, that's suspicious
     if len(rates) >= 2:

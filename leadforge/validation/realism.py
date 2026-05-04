@@ -131,10 +131,21 @@ def _check_feature_ranges(root: Path, manifest: dict[str, Any]) -> list[str]:
 
 
 def _check_stage_distribution(root: Path) -> list[str]:
-    """Check that leads span multiple funnel stages (not all stuck in one)."""
+    """Check that leads span multiple funnel stages (not all stuck in one).
+
+    ``current_stage`` is redacted from the relational ``leads.parquet`` in
+    ``student_public`` mode (bundle schema v3 onward), so this check is a
+    no-op there — the underlying simulation is identical to the
+    ``research_instructor`` bundle, which still carries the column and will
+    surface a degenerate simulation through the same check.
+    """
     errors: list[str] = []
     leads_path = root / "tables/leads.parquet"
     if not leads_path.exists():
+        return errors
+
+    schema_names = set(pq.read_schema(leads_path).names)
+    if "current_stage" not in schema_names:
         return errors
 
     df = pd.read_parquet(leads_path, columns=["current_stage"])

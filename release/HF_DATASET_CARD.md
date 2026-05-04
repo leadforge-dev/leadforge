@@ -77,7 +77,7 @@ df = pd.read_csv("hf://datasets/leadforge/leadforge-b2b-lead-scoring/intermediat
 | | Intro | Intermediate | Advanced |
 |---|---|---|---|
 | Leads | 5,000 | 5,000 | 5,000 |
-| Features | 32 + 1 trap (+ 1 target) | 32 + 1 trap (+ 1 target) | 32 + 1 trap (+ 1 target) |
+| Features | 30 + 1 trap (+ 1 target) | 30 + 1 trap (+ 1 target) | 30 + 1 trap (+ 1 target) |
 | Target | `converted_within_90_days` | `converted_within_90_days` | `converted_within_90_days` |
 | Conversion rate | 41.5% | 20.1% | 7.9% |
 | Signal strength | 0.90 | 0.70 | 0.50 |
@@ -92,12 +92,13 @@ df = pd.read_csv("hf://datasets/leadforge/leadforge-b2b-lead-scoring/intermediat
 
 Each difficulty tier includes 9 Parquet tables under `tables/`: accounts, contacts, leads, touches, sessions, sales_activities, opportunities, customers, subscriptions. These form a normalized CRM schema linked by foreign keys.
 
-## Leakage handling
+## Leakage handling (bundle schema v3)
 
-- **Stripped from public bundles:** `current_stage` directly encoded the label at the 90-day horizon (terminal stages `closed_won`/`closed_lost`). Removed in `student_public` mode; available in `intermediate_instructor/`. The `manifest.json` field `redacted_columns` lists what was stripped.
+- **Stripped from public bundles:** `current_stage` (label-encoding at the 90-day horizon) and `is_sql` (P(conv | is_sql=False) ≈ 0.04 / 0.015 / 0.006 across tiers — near-deterministic for non-conversion). Both available in `intermediate_instructor/`. The `manifest.json` field `redacted_columns` lists what was stripped.
+- **Removed entirely:** `is_mql` (constant `True` in the simulator — zero variance, no information).
 - **Deliberately retained as a pedagogical trap:** `total_touches_all` counts touches over the full 90-day window including post-snapshot events. Flagged `leakage_risk=True` in `feature_dictionary.csv`. Use it as an exercise — train with and without, compare AUC, explain the gap.
 
-**Caveats:** event-aggregate features (`touch_count`, `session_count`, ...) are computed over the same 90-day window that the label resolves in, so they correlate with post-conversion events; `is_mql` is constant `True` in all bundles; `is_sql=False` is near-deterministic for non-conversion. A windowed-snapshot follow-up will address this structurally — see the package CHANGELOG.
+**Caveat:** event-aggregate features (`touch_count`, `session_count`, ...) are computed over the same 90-day window the label resolves in, so they correlate with post-conversion events. A windowed-snapshot rebuild is the structural fix — see [issue #57](https://github.com/leadforge-dev/leadforge/issues/57).
 
 ## Research companion
 

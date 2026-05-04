@@ -368,7 +368,6 @@ def _generate_leads(
                 first_touch_channel=lead_source,
                 current_stage="mql",
                 owner_rep_id=owner_rep_id,
-                is_mql=True,
                 is_sql=False,
                 converted_within_90_days=False,
                 conversion_timestamp=None,

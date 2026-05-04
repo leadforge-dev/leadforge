@@ -177,9 +177,16 @@ class TestLeadOutcomes:
         result = _run_sim()
         assert all(isinstance(row.converted_within_90_days, bool) for row in result.leads)
 
-    def test_all_leads_are_mql(self) -> None:
+    def test_no_lead_is_initialised_pre_mql(self) -> None:
+        """All leads enter the simulation at MQL stage; pre-MQL stages don't
+        appear.  ``is_mql`` was removed from the schema in v3 because of
+        this invariant — but the invariant itself still holds."""
         result = _run_sim()
-        assert all(row.is_mql for row in result.leads)
+        # Stages that would mean "not yet MQL" — none should be present in
+        # initial population, nor in final state because the funnel only
+        # advances forward.
+        pre_mql_stages = {"awareness", "interest"}
+        assert not any(row.current_stage in pre_mql_stages for row in result.leads)
 
     def test_converted_leads_have_timestamp(self) -> None:
         result = _run_sim(n_leads=100)

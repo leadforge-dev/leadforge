@@ -150,11 +150,14 @@ class LeadRow:
         "first_touch_channel": "string",
         "current_stage": "string",
         "owner_rep_id": "string",
-        "is_mql": "boolean",
         "is_sql": "boolean",
         "converted_within_90_days": "boolean",
         "conversion_timestamp": "string",
     }
+
+    # ``is_mql`` was removed in bundle schema v3 (issue #57).  Every lead
+    # is initialised at MQL stage in ``simulation/population.py``, so the
+    # field was constant ``True`` and zero-variance across all bundles.
 
     lead_id: str
     contact_id: str
@@ -164,7 +167,6 @@ class LeadRow:
     first_touch_channel: str
     current_stage: str
     owner_rep_id: str
-    is_mql: bool
     is_sql: bool
     converted_within_90_days: bool
     conversion_timestamp: str | None = None

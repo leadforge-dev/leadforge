@@ -145,17 +145,23 @@ LEAD_SNAPSHOT_FEATURES: tuple[FeatureSpec, ...] = (
         leakage_risk=True,
         redact_in_modes=frozenset({ExposureMode.student_public}),
     ),
-    FeatureSpec(
-        "is_mql",
-        "boolean",
-        "Whether the lead had achieved MQL status at snapshot date.",
-        "lead_meta",
-    ),
+    # Note: ``is_mql`` was removed from the canonical feature list (issue #57)
+    # because every lead is initialised at MQL stage in
+    # ``leadforge/simulation/population.py``, making the column constant
+    # ``True`` and zero-variance.  The underlying ``LeadRow.is_mql`` field
+    # still lives on the relational ``leads.parquet`` table.
     FeatureSpec(
         "is_sql",
         "boolean",
-        "Whether the lead had achieved SQL status at snapshot date.",
+        "Whether the lead had achieved SQL status at snapshot date. "
+        "Strongly correlated with the label: the simulator only converts "
+        "non-SQL leads via a rare direct-conversion path, so "
+        "is_sql=False predicts non-conversion with very high probability "
+        "(P(conv | is_sql=False) ≈ 0.04 / 0.015 / 0.006 across difficulty "
+        "tiers).  Redacted from student_public bundles.",
         "lead_meta",
+        leakage_risk=True,
+        redact_in_modes=frozenset({ExposureMode.student_public}),
     ),
     # -- Engagement features --
     FeatureSpec(
