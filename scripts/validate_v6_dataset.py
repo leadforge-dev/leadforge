@@ -14,19 +14,15 @@ import sys
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import GradientBoostingClassifier
-from sklearn.metrics import (
-    roc_auc_score,
-)
+from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
 
-from leadforge.pipelines.common import (
-    BINARY_FEATURES,
-    CAT_FEATURES,
-    TARGET,
-)
+from leadforge.pipelines.common import BINARY_FEATURES, CAT_FEATURES, TARGET
 from leadforge.pipelines.ml import (
     LEAKAGE_PREFIX,
     build_baseline_pipeline,
+    build_preprocessor,
 )
 from leadforge.pipelines.ml import (
     fit_evaluate as _fit_evaluate,
@@ -191,13 +187,9 @@ def check_tree_improvement(df: pd.DataFrame, label: str) -> tuple[list[str], dic
         lr_aucs.append(lr_auc)
 
         # GBM with one-hot encoded features
-        from sklearn.pipeline import Pipeline as _Pipeline
-
-        from leadforge.pipelines.ml import build_preprocessor as _build_pre
-
-        gb = _Pipeline(
+        gb = Pipeline(
             [
-                ("preprocessor", _build_pre(num_cols, cat_cols)),
+                ("preprocessor", build_preprocessor(num_cols, cat_cols)),
                 ("classifier", GradientBoostingClassifier(n_estimators=100, random_state=42)),
             ]
         )

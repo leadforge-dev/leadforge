@@ -34,6 +34,14 @@ class FollowupRampConfig:
     ramp_days: int = 10
     latent_weights: dict[str, float] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        if self.boost_after_day < 0:
+            raise ValueError(f"boost_after_day must be non-negative, got {self.boost_after_day}")
+        if self.boost_factor < 1.0:
+            raise ValueError(f"boost_factor must be >= 1.0, got {self.boost_factor}")
+        if self.ramp_days < 1:
+            raise ValueError(f"ramp_days must be >= 1, got {self.ramp_days}")
+
 
 class PoissonIntensity(Mechanism):
     """Poisson-distributed event count driven by latent traits.
@@ -211,16 +219,7 @@ class LatentDecayIntensity(Mechanism):
 
         # Resolve followup config: prefer the dataclass, fall back to legacy params
         if followup is not None:
-            if followup.boost_after_day < 0:
-                raise ValueError(
-                    f"followup.boost_after_day must be non-negative, got {followup.boost_after_day}"
-                )
-            if followup.boost_factor < 1.0:
-                raise ValueError(
-                    f"followup.boost_factor must be >= 1.0, got {followup.boost_factor}"
-                )
-            if followup.ramp_days < 1:
-                raise ValueError(f"followup.ramp_days must be >= 1, got {followup.ramp_days}")
+            # Validation is handled by FollowupRampConfig.__post_init__
             self._followup_after: int | None = followup.boost_after_day
             self._followup_factor = followup.boost_factor
             self._followup_ramp = followup.ramp_days

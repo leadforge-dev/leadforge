@@ -205,12 +205,10 @@ class TestSubsample:
         pd.testing.assert_frame_equal(r1, r2)
 
     def test_insufficient_positives(self):
-        """When fewer positives available than needed, warns and adjusts."""
+        """When fewer positives than needed, raises ValueError."""
         df = _make_v5_df(n=200, conversion_rate=0.05)  # only ~10 positives
-        with pytest.warns(UserWarning, match="positives available"):
-            result = subsample(df, seed=42, n=100, target_rate=0.50)  # need 50 positives
-        # All available positives should be included
-        assert result["converted"].sum() <= 10
+        with pytest.raises(ValueError, match="positives available"):
+            subsample(df, seed=42, n=100, target_rate=0.50)  # need 50 positives
 
     def test_insufficient_negatives(self):
         """When fewer negatives than needed, raises ValueError."""
@@ -224,9 +222,9 @@ class TestSubsample:
         assert list(result.index) == list(range(len(result)))
 
     def test_n_larger_than_input_raises(self):
-        """Requesting more negatives than available raises ValueError."""
+        """Requesting more rows than available raises ValueError."""
         df = _make_v5_df(n=50)
-        with pytest.raises(ValueError, match="negatives available"):
+        with pytest.raises(ValueError, match="available"):
             subsample(df, seed=42, n=200, target_rate=0.30)
 
 

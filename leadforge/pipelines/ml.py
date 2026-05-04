@@ -112,7 +112,7 @@ def fit_evaluate(
         x, y, test_size=test_size, random_state=seed, stratify=y
     )
 
-    pipe = build_baseline_pipeline(num_cols, cat_cols, seed=42)
+    pipe = build_baseline_pipeline(num_cols, cat_cols, seed=seed)
     pipe.fit(x_train, y_train)
     probs = pipe.predict_proba(x_test)[:, 1]
 

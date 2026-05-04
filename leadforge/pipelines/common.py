@@ -7,8 +7,6 @@ import from here and override only what differs.
 
 from __future__ import annotations
 
-import warnings
-
 import numpy as np
 import pandas as pd
 
@@ -19,11 +17,16 @@ __all__ = [
     "ACV_FLOOR",
     "BINARY_FEATURES",
     "CAT_FEATURES",
+    "FINAL_COLUMNS_INSTRUCTOR",
+    "FINAL_COLUMNS_STUDENT",
+    "INSTRUCTOR_TRAP_COL",
     "NUM_FEATURES",
+    "RENAME_MAP",
     "SUBSAMPLE_N",
     "TARGET",
     "TARGET_RATE",
     "assign_acquisition_wave",
+    "compute_post_snapshot_touches",
     "derive_features",
     "inject_missingness_v6",
     "rename_and_select",
@@ -71,6 +74,47 @@ BINARY_FEATURES = [
     "opportunity_created",
     "demo_completed",
 ]
+
+INSTRUCTOR_TRAP_COL = "__leakage__touches_post_snapshot_21_90"
+
+# v6/v7 student column set: 19 features + 1 target = 20 columns.
+FINAL_COLUMNS_STUDENT = [
+    "industry",
+    "region",
+    "company_size",
+    "company_revenue",
+    "contact_role",
+    "seniority",
+    "lead_source",
+    "opportunity_created",
+    "demo_completed",
+    "expected_acv",
+    "inbound_touches",
+    "outbound_touches",
+    "touches_week_1",
+    "touches_last_7_days",
+    "days_since_first_touch",
+    "web_sessions",
+    "sales_activities",
+    "days_since_last_touch",
+    "acquisition_wave",
+    "converted",
+]
+
+# Instructor adds the trap column at the end.
+FINAL_COLUMNS_INSTRUCTOR = FINAL_COLUMNS_STUDENT + [INSTRUCTOR_TRAP_COL]
+
+# Snapshot column -> v6/v7 column renaming.
+RENAME_MAP = {
+    "employee_band": "company_size",
+    "estimated_revenue_band": "company_revenue",
+    "role_function": "contact_role",
+    "inbound_touch_count": "inbound_touches",
+    "outbound_touch_count": "outbound_touches",
+    "session_count": "web_sessions",
+    "activity_count": "sales_activities",
+    "converted_within_90_days": "converted",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -179,6 +223,38 @@ def rename_and_select(
     return df[columns]
 
 
+def compute_post_snapshot_touches(
+    snapshot_df: pd.DataFrame,
+    all_touches: list,
+    lead_dates: dict[str, str],
+    snapshot_day: int = 20,
+    horizon_day: int = 90,
+    trap_col: str = INSTRUCTOR_TRAP_COL,
+) -> pd.Series:
+    """Count touches in (snapshot_day, horizon_day] per lead from event data.
+
+    This is the causal leakage trap: it counts actual simulated touches that
+    occur after the snapshot cutoff. The trap is predictive because future
+    engagement and conversion share latent causal drivers.
+    """
+    if not all_touches:
+        return pd.Series(0, index=snapshot_df.index, name=trap_col)
+
+    td = pd.DataFrame([t.to_dict() for t in all_touches])
+    td["_ts"] = pd.to_datetime(td["touch_timestamp"])
+    td["_lead_date"] = td["lead_id"].map({lid: pd.Timestamp(d) for lid, d in lead_dates.items()})
+    td["_day"] = (td["_ts"] - td["_lead_date"]).dt.days
+
+    # Filter: days in (snapshot_day, horizon_day]
+    post = td[(td["_day"] > snapshot_day) & (td["_day"] <= horizon_day)]
+    counts = post.groupby("lead_id").size().reset_index(name=trap_col)
+
+    # Merge back onto snapshot
+    result = snapshot_df[["lead_id"]].merge(counts, on="lead_id", how="left")
+    result[trap_col] = result[trap_col].fillna(0).astype(int)
+    return result[trap_col]
+
+
 def subsample(
     df: pd.DataFrame,
     seed: int,
@@ -197,12 +273,10 @@ def subsample(
     n_neg = n - n_pos
 
     if len(positives) < n_pos:
-        warnings.warn(
-            f"only {len(positives)} positives available, need {n_pos}",
-            stacklevel=2,
+        raise ValueError(
+            f"only {len(positives)} positives available, need {n_pos}; "
+            f"cannot produce {n} rows at target_rate={target_rate}"
         )
-        n_pos = len(positives)
-        n_neg = n - n_pos
     if len(negatives) < n_neg:
         raise ValueError(
             f"only {len(negatives)} negatives available, need {n_neg}; "
