@@ -57,7 +57,6 @@ def _make_lead() -> LeadRow:
         first_touch_channel="organic_search",
         current_stage="mql",
         owner_rep_id="rep_000001",
-        is_mql=True,
         is_sql=False,
         converted_within_90_days=False,
         conversion_timestamp=None,
@@ -111,7 +110,7 @@ def test_empty_dataframe_has_zero_rows(cls: type) -> None:
 
 def test_lead_empty_dataframe_boolean_columns() -> None:
     df = LeadRow.empty_dataframe()
-    assert str(df["is_mql"].dtype) == "boolean"
+    assert str(df["is_sql"].dtype) == "boolean"
     assert str(df["converted_within_90_days"].dtype) == "boolean"
 
 
@@ -145,7 +144,7 @@ def test_lead_rows_parquet_roundtrip(tmp_path: Path) -> None:
     write_parquet(df, path)
     restored = read_parquet(path)
     assert restored["lead_id"].iloc[0] == "lead_000001"
-    assert bool(restored["is_mql"].iloc[0]) is True
+    assert bool(restored["is_sql"].iloc[0]) is False
 
 
 # ---------------------------------------------------------------------------

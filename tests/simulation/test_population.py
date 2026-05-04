@@ -200,7 +200,6 @@ def test_lead_initial_stage_is_mql() -> None:
     result = _make_result()
     for lead in result.leads:
         assert lead.current_stage == "mql"
-        assert lead.is_mql is True
         assert lead.is_sql is False
         assert lead.converted_within_90_days is False
         assert lead.conversion_timestamp is None

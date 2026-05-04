@@ -130,14 +130,16 @@ Each bundle contains a `dataset_card.md` and a `feature_dictionary.csv` with the
 
 **Leakage handling (bundle schema v3)**
 
-Three columns in the original simulator output were either label-encoding or near-deterministic for the negative class. The exposure layer handles them as follows:
+Redaction in `student_public` bundles applies uniformly to **both** the task splits *and* the relational tables. Joining `tables/leads.parquet` back to your features cannot recover a redacted column.
 
-- `current_stage` -- at the 90-day horizon, contains terminal stages (`closed_won`/`closed_lost`) that encode the label directly. **Stripped from `student_public` bundles**; available in `intermediate_instructor/`.
-- `is_sql` -- `is_sql=False` predicts non-conversion with very high probability (P(conv | is_sql=False) ≈ 0.04 / 0.015 / 0.006 across intro / intermediate / advanced). **Stripped from `student_public` bundles**; available in `intermediate_instructor/`.
-- `is_mql` -- removed entirely (in all modes): every lead is initialised at MQL stage in the simulator, so the column was constant `True` and zero-variance.
-- `total_touches_all` -- counts touches over the full 90-day window, including post-snapshot events. **Deliberately retained** as a pedagogical trap (flagged `leakage_risk=True` in the dictionary). Use it as an exercise: train with and without it, compare AUC, explain the gap.
+| Column | Status in `student_public` | Status in `intermediate_instructor` | Why |
+|---|---|---|---|
+| `current_stage` | redacted (gone from task splits and `tables/leads.parquet`) | retained | At day 90 this contains terminal stages (`closed_won`/`closed_lost`) that encode the label directly. |
+| `is_sql` | redacted | retained | `is_sql=False` predicts non-conversion with very high probability — measured across 5 seeds, P(conv \| is_sql=False) = 0.061 ± 0.026 (intro) / 0.020 ± 0.010 (intermediate) / 0.011 ± 0.004 (advanced). |
+| `is_mql` | removed entirely (no mode has it) | removed entirely | Every lead is initialised at MQL stage in the simulator, so the field was constant `True` and carried no information. |
+| `total_touches_all` | retained | retained | Deliberate pedagogical leakage trap (counts touches over the full 90-day window). Flagged `leakage_risk=True` in `feature_dictionary.csv`. Train with and without it, compare AUC, explain the gap. |
 
-The `redacted_columns` field in each bundle's `manifest.json` records exactly what was stripped from that bundle.
+The `redacted_columns` field in each bundle's `manifest.json` records exactly what was stripped.
 
 **Known caveats** (tracked in [issue #57](https://github.com/leadforge-dev/leadforge/issues/57)):
 

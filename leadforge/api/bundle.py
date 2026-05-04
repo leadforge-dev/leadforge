@@ -59,6 +59,14 @@ def write_bundle(
     population = bundle.population
     world_graph = bundle.world_graph
 
+    # The redaction set comes from the canonical feature spec — the same
+    # source of truth the validator uses.  It is applied uniformly to
+    # every published parquet file (relational tables AND task splits) so
+    # users doing feature engineering off the raw tables (per the
+    # README's "Option 3") cannot trivially reintroduce a redacted
+    # column by joining ``tables/leads.parquet`` to their feature set.
+    redacted = redacted_columns_for(config.exposure_mode)
+
     # ------------------------------------------------------------------
     # 1. Relational tables → tables/
     # ------------------------------------------------------------------
@@ -68,17 +76,19 @@ def write_bundle(
     dfs = to_dataframes(result, population)
     table_row_counts: dict[str, int] = {}
     for table_name, df in dfs.items():
+        if redacted:
+            cols_to_drop = [c for c in redacted if c in df.columns]
+            if cols_to_drop:
+                df = df.drop(columns=cols_to_drop)
         write_parquet(df, tables_dir / f"{table_name}.parquet")
         table_row_counts[table_name] = len(df)
 
     # ------------------------------------------------------------------
     # 2. Snapshot + task splits → tasks/
     #
-    # Apply exposure-mode redaction here (rather than in apply_exposure)
-    # so that the manifest's per-file SHA-256 hashes reflect the published
-    # column set without a post-write rewrite step.  The redacted column
-    # set is derived from the canonical feature spec — the same source
-    # of truth the validator uses to check bundles.
+    # Same redaction rule applied to the snapshot DataFrame before the
+    # task splits are written, so manifest SHA-256 hashes reflect the
+    # published column set without a post-write rewrite step.
     # ------------------------------------------------------------------
     snapshot = build_snapshot(
         result,
@@ -87,7 +97,6 @@ def write_bundle(
         difficulty_params=config.difficulty_params,
         seed=config.seed,
     )
-    redacted = redacted_columns_for(config.exposure_mode)
     if redacted:
         drop_cols = [c for c in redacted if c in snapshot.columns]
         if drop_cols:

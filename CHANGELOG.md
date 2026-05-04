@@ -9,34 +9,49 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/).
 
 ### Bundle schema v3
 
-`bundle_schema_version` bumped from `"2"` to `"3"`.  Two structural-leakage
-fixes follow up on PR #56 (issue #57):
+`bundle_schema_version` bumped from `"2"` to `"3"`.  Three structural
+changes follow up on PR #56 (issue #57):
 
-- **`is_mql` removed from the canonical feature list.**  Every lead is
-  initialised at MQL stage in the simulator, making the column constant
-  `True` and zero-variance.  It carried no information for modelling.
-  The `LeadRow.is_mql` field is retained on the relational `leads.parquet`
-  for now; only the snapshot/task-split column and feature-dictionary row
-  are removed.  Affects all exposure modes.
-- **`is_sql` redacted in `student_public` mode.**  Measured on the v3
-  bundles: P(converted | is_sql=False) ≈ 0.04 / 0.015 / 0.006 across
-  intro / intermediate / advanced.  At advanced tier this is effectively
+- **`is_mql` fully removed.**  Every lead is initialised at MQL stage in
+  the simulator, making the field constant `True` and zero-variance.
+  It carried no information for modelling and is now removed from the
+  `LeadRow` entity, the relational `leads.parquet`, the snapshot, the
+  task splits, and the feature dictionary — in all exposure modes.
+- **`is_sql` redacted in `student_public` mode.**  Measured across 5
+  seeds on full-size bundles: P(converted | is_sql=False) =
+  0.061 ± 0.026 (intro) / 0.020 ± 0.010 (intermediate) /
+  0.011 ± 0.004 (advanced).  At advanced tier this is essentially
   deterministic for the negative class — practically a one-rule
   classifier.  `is_sql` remains in `research_instructor` exports for
   DGP-aware research.
+- **Redaction now applies to relational tables too.**  In v2, the
+  exposure-layer redaction only stripped columns from the snapshot /
+  task splits; users following the README's "Option 3" (feature
+  engineering off the raw `tables/leads.parquet`) could trivially
+  rejoin redacted columns.  In v3, `redacted_columns_for(mode)` is
+  applied uniformly to every published parquet under both `tables/`
+  and `tasks/`.  In `student_public` bundles, `tables/leads.parquet`
+  no longer carries `current_stage` or `is_sql`.
 
-### New automated check
+### New automated checks
 
-`validate_bundle()` now flags any zero-variance feature in the published
-student_public task split (excluding ID columns and the target).
+- `tests/render/test_bundle_schema_v3_contract.py` pins the exact
+  column set per mode for v3 — any future change that touches the
+  feature spec or redaction policy without updating the contract
+  fails this test, forcing an explicit version coordination.
+- `test_no_zero_variance_features` in `tests/exposure/test_redaction.py`
+  asserts no constant or near-constant columns in the published
+  student_public task split (1% rare-class threshold on bundles
+  large enough for the threshold to be statistically meaningful).
 
 ### Bundle column counts (v3)
 
-- `student_public/{intro,intermediate,advanced}` — 32 columns (down from
-  34 in v2): `is_mql` removed, `is_sql` redacted; `current_stage`
-  redaction from PR #56 retained.
-- `research_instructor/intermediate_instructor` — 34 columns (down from
-  35): `is_mql` removed; `current_stage` and `is_sql` retained.
+- `student_public/{intro,intermediate,advanced}`: **32** task split
+  columns (down from 34 in v2); **9** columns in `tables/leads.parquet`
+  (down from 12).
+- `research_instructor/intermediate_instructor`: **34** task split
+  columns (down from 35); **11** columns in `tables/leads.parquet`
+  (down from 12 — `is_mql` removed).
 
 ### Open follow-up
 

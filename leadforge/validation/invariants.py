@@ -203,11 +203,42 @@ def check_exposure_monotonicity(student_bundle: Path, instructor_bundle: Path) -
     if extra_in_instructor:
         errors.append(f"Tables in instructor but not student: {sorted(extra_in_instructor)}")
 
+    expected_redacted = redacted_columns_for(ExposureMode.student_public)
     for table in sorted(student_tables & instructor_tables):
-        s_sha = file_sha256(student_bundle / "tables" / table)
-        i_sha = file_sha256(instructor_bundle / "tables" / table)
-        if s_sha != i_sha:
-            errors.append(f"Table content mismatch: {table}")
+        s_path = student_bundle / "tables" / table
+        i_path = instructor_bundle / "tables" / table
+        if file_sha256(s_path) == file_sha256(i_path):
+            continue
+        # Mismatch is acceptable iff the only difference is redacted
+        # columns (same logic as for task splits below).
+        s_df = pd.read_parquet(s_path)
+        i_df = pd.read_parquet(i_path)
+        if len(s_df) != len(i_df):
+            errors.append(
+                f"Table {table}: row count mismatch student={len(s_df)} instructor={len(i_df)}"
+            )
+            continue
+        s_cols = set(s_df.columns)
+        i_cols = set(i_df.columns)
+        extra_in_student = s_cols - i_cols
+        if extra_in_student:
+            errors.append(
+                f"Table {table}: student has columns missing from instructor: "
+                f"{sorted(extra_in_student)}"
+            )
+            continue
+        diff = i_cols - s_cols
+        if not diff.issubset(expected_redacted):
+            errors.append(
+                f"Table {table}: instructor−student column diff {sorted(diff)} contains "
+                f"non-redacted columns (expected subset of {sorted(expected_redacted)})"
+            )
+            continue
+        shared = [c for c in s_df.columns if c in i_df.columns]
+        s_shared = s_df[shared].reset_index(drop=True)
+        i_shared = i_df[shared].reset_index(drop=True)
+        if not s_shared.equals(i_shared):
+            errors.append(f"Table {table}: shared-column values differ between modes")
 
     # Both must have the same task splits with identical content
     student_tasks = (

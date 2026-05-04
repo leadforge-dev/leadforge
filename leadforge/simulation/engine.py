@@ -407,7 +407,6 @@ def simulate_world(
                 first_touch_channel=lead.first_touch_channel,
                 current_stage=state.current_stage,
                 owner_rep_id=lead.owner_rep_id,
-                is_mql=True,  # all leads start at mql
                 is_sql=is_sql,
                 converted_within_90_days=label,
                 conversion_timestamp=conv_ts,

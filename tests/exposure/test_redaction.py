@@ -122,25 +122,49 @@ class TestStudentPublicRedaction:
         assert redaction_errors == []
 
     def test_no_zero_variance_features(self, bundle: Path) -> None:
-        """Guard against constant-True/False columns regressing into the bundle.
+        """Guard against constant or near-constant columns regressing into
+        the bundle.
 
-        A zero-variance feature carries no information for modelling and was
-        the root cause of the ``is_mql`` issue (#57 sub-item 3): every lead
-        was initialised at MQL stage so the column was a constant ``True``.
-        ID columns and the target are exempt — IDs are unique by design and
-        the target's variance is the dataset's purpose.
+        ``is_mql`` was constant ``True`` and is caught by the strict
+        ``nunique >= 2`` assertion that runs on every bundle size.
+
+        For larger bundles (≥ 200 rows), additionally guard against the
+        weaker case of a column whose rarest low-cardinality value
+        appears in fewer than 1% of rows — practically zero-variance for
+        modelling.  Skipped on the tiny test fixtures because the 1%
+        threshold is below 2 rows there and the test would false-positive
+        on legitimate small-sample sparsity.
+
+        ID columns, the timestamp, and the target are exempt — IDs are
+        unique by design, the timestamp varies trivially, and the target's
+        variance is the dataset's purpose.
         """
         df = pd.read_parquet(bundle / "tasks/converted_within_90_days/train.parquet")
         exempt = {"account_id", "contact_id", "lead_id", "lead_created_at"}
         target = next(f.name for f in LEAD_SNAPSHOT_FEATURES if f.is_target)
         exempt.add(target)
+        n = len(df)
+        # 1% of rows, at least 2.  Only enforced on bundles large enough
+        # for the threshold to be statistically meaningful.
+        check_rare_class = n >= 200
+        min_rare_count = max(2, n // 100)
+
         for col in df.columns:
             if col in exempt:
                 continue
-            assert df[col].nunique(dropna=False) >= 2, (
+            counts = df[col].value_counts(dropna=False)
+            assert len(counts) >= 2, (
                 f"feature {col!r} has zero variance in the published "
-                f"student_public bundle ({df[col].nunique(dropna=False)} distinct value)"
+                f"student_public bundle ({len(counts)} distinct value)"
             )
+            if check_rare_class and len(counts) <= 5:
+                rarest_count = int(counts.min())
+                assert rarest_count >= min_rare_count, (
+                    f"feature {col!r} is near-constant in the published "
+                    f"student_public bundle: rarest value appears "
+                    f"{rarest_count} times in {n} rows "
+                    f"(threshold {min_rare_count})"
+                )
 
 
 # ---------------------------------------------------------------------------

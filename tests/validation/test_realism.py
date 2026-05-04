@@ -88,12 +88,22 @@ class TestRealism:
         manifest = load_json(corrupt / "manifest.json")
         train_path = corrupt / "tasks/converted_within_90_days/train.parquet"
         df = pd.read_parquet(train_path)
+        # Pick the first non-target boolean column at test time so this
+        # test self-heals when feature names change.  Falls back gracefully
+        # if the spec ever has zero non-target booleans (currently impossible).
+        from leadforge.schema.features import LEAD_SNAPSHOT_FEATURES
+
+        bool_col = next(
+            f.name
+            for f in LEAD_SNAPSHOT_FEATURES
+            if f.dtype == "boolean" and not f.is_target and f.name in df.columns
+        )
         # Replace boolean column with a string — clearly not boolean dtype.
-        df["opportunity_created"] = "yes"
+        df[bool_col] = "yes"
         df.to_parquet(train_path)
 
         errors = check_realism(corrupt, manifest)
-        assert any("non-boolean dtype" in e and "opportunity_created" in e for e in errors)
+        assert any("non-boolean dtype" in e and bool_col in e for e in errors)
 
     def test_detects_single_stage(self, tmp_path: Path, bundle_dir: Path) -> None:
         corrupt = tmp_path / "one_stage"
