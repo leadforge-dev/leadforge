@@ -106,7 +106,7 @@ leadforge generate \
 | Leads | 5,000 | 5,000 | 5,000 |
 | Accounts | 1,500 | 1,500 | 1,500 |
 | Contacts | 4,200 | 4,200 | 4,200 |
-| Columns | 34 (student_public) / 35 (instructor) | 34 / 35 | 34 / 35 |
+| Columns | 32 (student_public) / 34 (instructor) | 32 / 34 | 32 / 34 |
 | Target | `converted_within_90_days` | `converted_within_90_days` | `converted_within_90_days` |
 | Conversion rate (target) | 30-45% | 18-28% | 8-15% |
 | Conversion rate (observed) | 41.5% | 20.1% | 7.9% |
@@ -128,16 +128,20 @@ The sales funnel runs through inbound marketing (45%), SDR outbound (35%), and p
 
 Each bundle contains a `dataset_card.md` and a `feature_dictionary.csv` with the authoritative, auto-generated column list, descriptions, dtypes, and `leakage_risk` flags. Refer to those rather than mirroring counts here, which would drift.
 
-**Leakage handling**
+**Leakage handling (bundle schema v3)**
 
-- `current_stage` -- at the 90-day horizon, contains terminal stages (`closed_won`/`closed_lost`) that encode the label directly. **Stripped from `student_public` bundles** by the exposure layer; available in `intermediate_instructor/` for research and DGP-aware evaluation. The `redacted_columns` field in `manifest.json` records what was stripped.
-- `total_touches_all` -- counts touches over the full 90-day window, including post-snapshot events. **Deliberately retained** as a pedagogical trap (flagged `leakage_risk=True` in the dictionary). Use it as an exercise in leakage detection: train with and without it, compare AUC, then explain the gap.
+Three columns in the original simulator output were either label-encoding or near-deterministic for the negative class. The exposure layer handles them as follows:
 
-**Known caveats** (see [PR #56](https://github.com/leadforge-dev/leadforge/pull/56) for the discussion):
+- `current_stage` -- at the 90-day horizon, contains terminal stages (`closed_won`/`closed_lost`) that encode the label directly. **Stripped from `student_public` bundles**; available in `intermediate_instructor/`.
+- `is_sql` -- `is_sql=False` predicts non-conversion with very high probability (P(conv | is_sql=False) ≈ 0.04 / 0.015 / 0.006 across intro / intermediate / advanced). **Stripped from `student_public` bundles**; available in `intermediate_instructor/`.
+- `is_mql` -- removed entirely (in all modes): every lead is initialised at MQL stage in the simulator, so the column was constant `True` and zero-variance.
+- `total_touches_all` -- counts touches over the full 90-day window, including post-snapshot events. **Deliberately retained** as a pedagogical trap (flagged `leakage_risk=True` in the dictionary). Use it as an exercise: train with and without it, compare AUC, explain the gap.
 
-- All event-aggregate features (`touch_count`, `session_count`, `pricing_page_views`, ...) are computed over the same 90-day window in which the label resolves. They correlate with post-conversion events and are not yet structurally leakage-free. Stripping `current_stage` removes the most blatant deterministic leak; a windowed-snapshot follow-up is the structural fix.
-- `is_mql` is constant `True` across all leads in the current bundles (zero variance).
-- `is_sql=False` is near-deterministic for non-conversion (~3.8% / 1.5% / 0.6% conversion rate at intro / intermediate / advanced).
+The `redacted_columns` field in each bundle's `manifest.json` records exactly what was stripped from that bundle.
+
+**Known caveats** (tracked in [issue #57](https://github.com/leadforge-dev/leadforge/issues/57)):
+
+- All event-aggregate features (`touch_count`, `session_count`, `pricing_page_views`, ...) are computed over the same 90-day window in which the label resolves. They correlate with post-conversion events. The structural fix is a windowed snapshot rebuild — open follow-up.
 
 ## Research companion
 

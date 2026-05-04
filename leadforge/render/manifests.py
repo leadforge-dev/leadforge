@@ -20,7 +20,15 @@ if TYPE_CHECKING:
     from leadforge.structure.graph import WorldGraph
 
 # Bump this whenever the bundle layout or manifest schema changes.
-BUNDLE_SCHEMA_VERSION = "2"
+# History:
+#   "1" — initial layout (pre-M8)
+#   "2" — M8 render layer: tables/, tasks/, dataset_card.md,
+#         feature_dictionary.csv, manifest.json structure
+#   "3" — issue #57 follow-up: ``is_mql`` removed from the canonical
+#         feature list (zero-variance); ``is_sql`` redacted in
+#         ``student_public`` mode (near-deterministic for non-conversion).
+#         ``manifest.redacted_columns`` was already added in PR #56.
+BUNDLE_SCHEMA_VERSION = "3"
 
 # Manifest fields whose value is non-deterministic by design (wall-clock,
 # host metadata, etc.).  Determinism checks must ignore these fields when

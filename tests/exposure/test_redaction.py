@@ -121,6 +121,27 @@ class TestStudentPublicRedaction:
         redaction_errors = [e for e in errors if "redacted columns" in e]
         assert redaction_errors == []
 
+    def test_no_zero_variance_features(self, bundle: Path) -> None:
+        """Guard against constant-True/False columns regressing into the bundle.
+
+        A zero-variance feature carries no information for modelling and was
+        the root cause of the ``is_mql`` issue (#57 sub-item 3): every lead
+        was initialised at MQL stage so the column was a constant ``True``.
+        ID columns and the target are exempt — IDs are unique by design and
+        the target's variance is the dataset's purpose.
+        """
+        df = pd.read_parquet(bundle / "tasks/converted_within_90_days/train.parquet")
+        exempt = {"account_id", "contact_id", "lead_id", "lead_created_at"}
+        target = next(f.name for f in LEAD_SNAPSHOT_FEATURES if f.is_target)
+        exempt.add(target)
+        for col in df.columns:
+            if col in exempt:
+                continue
+            assert df[col].nunique(dropna=False) >= 2, (
+                f"feature {col!r} has zero variance in the published "
+                f"student_public bundle ({df[col].nunique(dropna=False)} distinct value)"
+            )
+
 
 # ---------------------------------------------------------------------------
 # End-to-end: research_instructor keeps everything

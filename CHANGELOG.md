@@ -7,6 +7,45 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+### Bundle schema v3
+
+`bundle_schema_version` bumped from `"2"` to `"3"`.  Two structural-leakage
+fixes follow up on PR #56 (issue #57):
+
+- **`is_mql` removed from the canonical feature list.**  Every lead is
+  initialised at MQL stage in the simulator, making the column constant
+  `True` and zero-variance.  It carried no information for modelling.
+  The `LeadRow.is_mql` field is retained on the relational `leads.parquet`
+  for now; only the snapshot/task-split column and feature-dictionary row
+  are removed.  Affects all exposure modes.
+- **`is_sql` redacted in `student_public` mode.**  Measured on the v3
+  bundles: P(converted | is_sql=False) ≈ 0.04 / 0.015 / 0.006 across
+  intro / intermediate / advanced.  At advanced tier this is effectively
+  deterministic for the negative class — practically a one-rule
+  classifier.  `is_sql` remains in `research_instructor` exports for
+  DGP-aware research.
+
+### New automated check
+
+`validate_bundle()` now flags any zero-variance feature in the published
+student_public task split (excluding ID columns and the target).
+
+### Bundle column counts (v3)
+
+- `student_public/{intro,intermediate,advanced}` — 32 columns (down from
+  34 in v2): `is_mql` removed, `is_sql` redacted; `current_stage`
+  redaction from PR #56 retained.
+- `research_instructor/intermediate_instructor` — 34 columns (down from
+  35): `is_mql` removed; `current_stage` and `is_sql` retained.
+
+### Open follow-up
+
+Issue #57 sub-item 1 remains open: event-aggregate features
+(`touch_count`, `session_count`, `pricing_page_views`, ...) are still
+computed over the same 90-day window the label resolves in.  The
+structural fix is a windowed snapshot rebuild and is deferred to its
+own PR.
+
 ---
 
 ## v1.0.0 — 2026-05-02

@@ -89,11 +89,11 @@ class TestRealism:
         train_path = corrupt / "tasks/converted_within_90_days/train.parquet"
         df = pd.read_parquet(train_path)
         # Replace boolean column with a string — clearly not boolean dtype.
-        df["is_mql"] = "yes"
+        df["opportunity_created"] = "yes"
         df.to_parquet(train_path)
 
         errors = check_realism(corrupt, manifest)
-        assert any("non-boolean dtype" in e and "is_mql" in e for e in errors)
+        assert any("non-boolean dtype" in e and "opportunity_created" in e for e in errors)
 
     def test_detects_single_stage(self, tmp_path: Path, bundle_dir: Path) -> None:
         corrupt = tmp_path / "one_stage"
