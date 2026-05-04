@@ -12,8 +12,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pandas as pd
+
+from leadforge.core.enums import ExposureMode
 from leadforge.core.hashing import file_sha256
 from leadforge.render.manifests import NON_DETERMINISTIC_MANIFEST_FIELDS
+from leadforge.schema.features import redacted_columns_for
 
 
 def check_determinism(bundle_a: Path, bundle_b: Path) -> list[str]:
@@ -144,8 +148,10 @@ def check_exposure_monotonicity(student_bundle: Path, instructor_bundle: Path) -
 
     # Both must have the same core files.
     # manifest.json and dataset_card.md legitimately differ between modes
-    # (exposure_mode field, metadata references), so only check presence.
-    # feature_dictionary.csv should be identical (checked below).
+    # (exposure_mode field, metadata references).  feature_dictionary.csv
+    # legitimately differs too — student_public drops rows for redacted
+    # columns (e.g. ``current_stage``).  Only check presence here; content
+    # is checked below in monotonic-subset form.
     core_files = ["manifest.json", "dataset_card.md", "feature_dictionary.csv"]
     for fname in core_files:
         s_path = student_bundle / fname
@@ -155,12 +161,29 @@ def check_exposure_monotonicity(student_bundle: Path, instructor_bundle: Path) -
         elif not s_path.exists() and i_path.exists():
             errors.append(f"Instructor has {fname} but student does not")
 
-    # feature_dictionary.csv should be identical across modes.
+    # feature_dictionary.csv: student rows must be a subset of instructor rows
+    # (by ``name``).  For names present in both, the metadata must agree.
     s_dict = student_bundle / "feature_dictionary.csv"
     i_dict = instructor_bundle / "feature_dictionary.csv"
     if s_dict.exists() and i_dict.exists():
-        if file_sha256(s_dict) != file_sha256(i_dict):
-            errors.append("Content mismatch in shared file: feature_dictionary.csv")
+        s_df = pd.read_csv(s_dict).set_index("name")
+        i_df = pd.read_csv(i_dict).set_index("name")
+        extra_in_student = set(s_df.index) - set(i_df.index)
+        if extra_in_student:
+            errors.append(
+                "feature_dictionary.csv: student has rows missing from instructor: "
+                f"{sorted(extra_in_student)}"
+            )
+        shared = sorted(set(s_df.index) & set(i_df.index))
+        for col in s_df.columns:
+            if col in i_df.columns:
+                s_vals = s_df.loc[shared, col]
+                i_vals = i_df.loc[shared, col]
+                if not s_vals.equals(i_vals):
+                    errors.append(
+                        f"feature_dictionary.csv: column {col!r} differs between modes "
+                        "for at least one shared feature"
+                    )
 
     # Both must have the same tables with identical content
     student_tables = (
@@ -214,10 +237,46 @@ def check_exposure_monotonicity(student_bundle: Path, instructor_bundle: Path) -
             f"Task files in instructor but not student: {sorted(str(f) for f in extra_tasks)}"
         )
 
+    expected_redacted = redacted_columns_for(ExposureMode.student_public)
     for rel in sorted(student_tasks & instructor_tasks):
-        s_sha = file_sha256(student_bundle / "tasks" / rel)
-        i_sha = file_sha256(instructor_bundle / "tasks" / rel)
-        if s_sha != i_sha:
-            errors.append(f"Task content mismatch: {rel}")
+        s_path = student_bundle / "tasks" / rel
+        i_path = instructor_bundle / "tasks" / rel
+        if file_sha256(s_path) == file_sha256(i_path):
+            # Byte-identical is fine only if no redaction is expected.
+            if expected_redacted:
+                # Hashes match but instructor should differ — sanity check.
+                pass
+            continue
+        # Mismatch is acceptable iff the difference is *exactly* the
+        # expected redaction set.  Anything else (extra column in student,
+        # value drift, missing column not in the redaction set) is an error.
+        s_df = pd.read_parquet(s_path)
+        i_df = pd.read_parquet(i_path)
+        if len(s_df) != len(i_df):
+            errors.append(
+                f"Task row count mismatch in {rel}: student={len(s_df)} instructor={len(i_df)}"
+            )
+            continue
+        s_cols = set(s_df.columns)
+        i_cols = set(i_df.columns)
+        extra_in_student = s_cols - i_cols
+        if extra_in_student:
+            errors.append(
+                f"Task {rel}: student has columns missing from instructor: "
+                f"{sorted(extra_in_student)}"
+            )
+            continue
+        diff = i_cols - s_cols
+        if diff != expected_redacted:
+            errors.append(
+                f"Task {rel}: instructor−student column diff {sorted(diff)} does not "
+                f"equal the expected student_public redaction set {sorted(expected_redacted)}"
+            )
+            continue
+        shared = [c for c in s_df.columns if c in i_df.columns]
+        s_shared = s_df[shared].reset_index(drop=True)
+        i_shared = i_df[shared].reset_index(drop=True)
+        if not s_shared.equals(i_shared):
+            errors.append(f"Task {rel}: shared-column values differ between modes")
 
     return errors

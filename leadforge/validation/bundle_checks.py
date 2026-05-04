@@ -14,9 +14,10 @@ from typing import Any
 import pandas as pd
 import pyarrow.parquet as pq
 
+from leadforge.core.enums import ExposureMode
 from leadforge.core.hashing import file_sha256
 from leadforge.core.serialization import load_json
-from leadforge.schema.features import LEAD_SNAPSHOT_FEATURES
+from leadforge.schema.features import LEAD_SNAPSHOT_FEATURES, redacted_columns_for
 from leadforge.schema.relationships import ALL_CONSTRAINTS
 from leadforge.validation.difficulty import check_difficulty
 from leadforge.validation.realism import check_realism
@@ -45,6 +46,7 @@ def validate_bundle(bundle_root: Path, *, include_realism: bool = True) -> list[
     errors.extend(_check_task_splits(bundle_root, manifest))
     errors.extend(_check_fk_integrity(tables))
     errors.extend(_check_leakage(bundle_root, manifest))
+    errors.extend(_check_exposure_redaction(bundle_root, manifest))
 
     if include_realism:
         errors.extend(check_realism(bundle_root, manifest))
@@ -180,4 +182,81 @@ def _check_leakage(root: Path, manifest: dict[str, Any]) -> list[str]:
                     errors.append(
                         f"Task {task_id}/{split}: unexpected columns (possible leakage): {extra}"
                     )
+    return errors
+
+
+def _check_exposure_redaction(root: Path, manifest: dict[str, Any]) -> list[str]:
+    """Enforce the exposure-mode redaction contract.
+
+    The expected redaction set is derived **directly from
+    LEAD_SNAPSHOT_FEATURES** via :func:`redacted_columns_for`, *not* from
+    the bundle filter the writer used.  That keeps this check independent
+    of the writer's machinery: a future bug in the filter that silently
+    skips a redaction will be caught here, because the validator's
+    expected set still comes from the feature spec.
+
+    Two things are checked:
+
+    1. No expected-redacted column appears in any task split or in the
+       feature dictionary (the actual leakage invariant).
+    2. ``manifest.redacted_columns`` matches the expected set exactly
+       (the bundle is self-describing and accurate).
+    """
+    errors: list[str] = []
+    mode_str = manifest.get("exposure_mode")
+    if not mode_str:
+        return errors
+    try:
+        mode = ExposureMode(mode_str)
+    except ValueError:
+        errors.append(f"Manifest exposure_mode is unknown: {mode_str!r}")
+        return errors
+
+    expected = redacted_columns_for(mode)
+
+    # Cross-check the manifest's self-reported redaction set.
+    declared_raw = manifest.get("redacted_columns")
+    if declared_raw is None:
+        if expected:
+            errors.append(
+                "manifest.redacted_columns is missing; expected "
+                f"{sorted(expected)} for {mode.value}"
+            )
+    elif isinstance(declared_raw, list):
+        declared = set(declared_raw)
+        if declared != set(expected):
+            errors.append(
+                "manifest.redacted_columns disagrees with feature spec for "
+                f"{mode.value}: declared={sorted(declared)} expected={sorted(expected)}"
+            )
+
+    if not expected:
+        return errors
+
+    raw_tasks = manifest.get("tasks", {})
+    if isinstance(raw_tasks, dict):
+        for task_id in raw_tasks:
+            for split in ("train", "valid", "test"):
+                split_path = root / f"tasks/{task_id}/{split}.parquet"
+                if split_path.exists():
+                    actual = set(pq.read_schema(split_path).names)
+                    leaked = sorted(actual & expected)
+                    if leaked:
+                        errors.append(
+                            f"Task {task_id}/{split}: redacted columns present in "
+                            f"{mode.value} bundle: {leaked}"
+                        )
+
+    fd_path = root / "feature_dictionary.csv"
+    if fd_path.exists():
+        fd = pd.read_csv(fd_path)
+        if "name" in fd.columns:
+            present = set(fd["name"].astype(str).tolist())
+            leaked = sorted(present & expected)
+            if leaked:
+                errors.append(
+                    f"feature_dictionary.csv: redacted columns present in "
+                    f"{mode.value} bundle: {leaked}"
+                )
+
     return errors

@@ -23,6 +23,7 @@ from leadforge.render.relational import to_dataframes
 from leadforge.render.snapshots import build_snapshot
 from leadforge.render.tasks import write_task_splits
 from leadforge.schema.dictionaries import write_feature_dictionary
+from leadforge.schema.features import LEAD_SNAPSHOT_FEATURES, redacted_columns_for
 from leadforge.schema.tables import write_parquet
 from leadforge.schema.tasks import task_manifest_for_config
 
@@ -72,6 +73,12 @@ def write_bundle(
 
     # ------------------------------------------------------------------
     # 2. Snapshot + task splits → tasks/
+    #
+    # Apply exposure-mode redaction here (rather than in apply_exposure)
+    # so that the manifest's per-file SHA-256 hashes reflect the published
+    # column set without a post-write rewrite step.  The redacted column
+    # set is derived from the canonical feature spec — the same source
+    # of truth the validator uses to check bundles.
     # ------------------------------------------------------------------
     snapshot = build_snapshot(
         result,
@@ -80,6 +87,13 @@ def write_bundle(
         difficulty_params=config.difficulty_params,
         seed=config.seed,
     )
+    redacted = redacted_columns_for(config.exposure_mode)
+    if redacted:
+        drop_cols = [c for c in redacted if c in snapshot.columns]
+        if drop_cols:
+            snapshot = snapshot.drop(columns=drop_cols)
+    visible_features = tuple(f for f in LEAD_SNAPSHOT_FEATURES if f.name not in redacted)
+
     task = task_manifest_for_config(config.primary_task, config.label_window_days)
     task_row_counts = write_task_splits(snapshot, root / "tasks", seed=config.seed, task=task)
 
@@ -87,9 +101,14 @@ def write_bundle(
     # 3. Dataset card and feature dictionary
     # ------------------------------------------------------------------
     (root / "dataset_card.md").write_text(
-        render_dataset_card(bundle.spec, task_manifest=task, table_counts=table_row_counts)
+        render_dataset_card(
+            bundle.spec,
+            task_manifest=task,
+            table_counts=table_row_counts,
+            features=visible_features,
+        )
     )
-    write_feature_dictionary(root / "feature_dictionary.csv")
+    write_feature_dictionary(root / "feature_dictionary.csv", features=visible_features)
 
     # ------------------------------------------------------------------
     # 4. Exposure metadata (research_instructor only)
@@ -106,5 +125,6 @@ def write_bundle(
         task_row_counts={task.task_id: task_row_counts},
         bundle_root=root,
         generation_timestamp=generation_timestamp,
+        redacted_columns=sorted(redacted),
     )
     write_manifest(manifest, root)

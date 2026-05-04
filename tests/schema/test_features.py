@@ -63,6 +63,71 @@ def test_no_leakage_risk_on_target() -> None:
             assert not f.leakage_risk
 
 
+def test_target_is_published_in_all_modes() -> None:
+    """The label must never be redacted — that would yield an unusable bundle."""
+    from leadforge.core.enums import ExposureMode
+
+    for f in LEAD_SNAPSHOT_FEATURES:
+        if f.is_target:
+            for mode in ExposureMode:
+                assert mode not in f.redact_in_modes, (
+                    f"target {f.name} is marked for redaction in {mode}"
+                )
+
+
+def test_current_stage_is_redacted_in_student_public() -> None:
+    """The label-encoding column must be in the student_public redaction set."""
+    from leadforge.core.enums import ExposureMode
+
+    by_name = {f.name: f for f in LEAD_SNAPSHOT_FEATURES}
+    f = by_name["current_stage"]
+    assert f.leakage_risk
+    assert ExposureMode.student_public in f.redact_in_modes
+
+
+def test_total_touches_all_kept_as_pedagogical_trap() -> None:
+    """The deliberate trap is leakage_risk but not redacted in any mode."""
+    by_name = {f.name: f for f in LEAD_SNAPSHOT_FEATURES}
+    f = by_name["total_touches_all"]
+    assert f.leakage_risk
+    assert f.redact_in_modes == frozenset()
+
+
+def test_redacted_columns_for_student_public() -> None:
+    from leadforge.core.enums import ExposureMode
+    from leadforge.schema.features import redacted_columns_for
+
+    redacted = redacted_columns_for(ExposureMode.student_public)
+    assert "current_stage" in redacted
+    assert "total_touches_all" not in redacted
+    assert "converted_within_90_days" not in redacted
+
+
+def test_redacted_columns_for_research_instructor_is_empty() -> None:
+    from leadforge.core.enums import ExposureMode
+    from leadforge.schema.features import redacted_columns_for
+
+    assert redacted_columns_for(ExposureMode.research_instructor) == frozenset()
+
+
+def test_redacted_columns_for_accepts_custom_features() -> None:
+    """The function is parameterizable — future per-recipe feature sets work."""
+    from leadforge.core.enums import ExposureMode
+    from leadforge.schema.features import FeatureSpec, redacted_columns_for
+
+    custom = (
+        FeatureSpec(
+            "x",
+            "string",
+            "test",
+            "lead_meta",
+            redact_in_modes=frozenset({ExposureMode.student_public}),
+        ),
+        FeatureSpec("y", "string", "test", "lead_meta"),
+    )
+    assert redacted_columns_for(ExposureMode.student_public, features=custom) == frozenset({"x"})
+
+
 # ---------------------------------------------------------------------------
 # feature_dictionary_df
 # ---------------------------------------------------------------------------

@@ -23,6 +23,13 @@ def feature_dictionary_df(
 
     Columns: name, dtype, description, category, is_target, leakage_risk.
 
+    The redaction policy (``FeatureSpec.redact_in_modes``) is intentionally
+    *not* serialised here: it is package-internal state, and which columns
+    a given bundle actually published is observable from the bundle's
+    schema and from ``manifest.redacted_columns``.  Keeping this CSV's
+    column set stable preserves backward compatibility with downstream
+    consumers that parse it strictly.
+
     Args:
         features: Ordered tuple of :class:`~leadforge.schema.features.FeatureSpec`
             objects.  Defaults to the canonical lead snapshot feature list.

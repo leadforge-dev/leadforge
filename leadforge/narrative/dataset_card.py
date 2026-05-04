@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import TYPE_CHECKING
 
-from leadforge.schema.features import LEAD_SNAPSHOT_FEATURES
+from leadforge.schema.features import LEAD_SNAPSHOT_FEATURES, FeatureSpec
 
 if TYPE_CHECKING:
     from leadforge.core.models import WorldSpec
@@ -20,6 +20,7 @@ def render_dataset_card(
     world_spec: WorldSpec,
     task_manifest: TaskManifest | None = None,
     table_counts: dict[str, int] | None = None,
+    features: tuple[FeatureSpec, ...] = LEAD_SNAPSHOT_FEATURES,
 ) -> str:
     """Return a Markdown dataset card string for *world_spec*.
 
@@ -31,6 +32,10 @@ def render_dataset_card(
         table_counts: Optional mapping of table name → row count.  When
             provided, the table inventory section renders actual counts
             instead of a placeholder.
+        features: Feature spec tuple to render in the categories / leakage
+            sections.  Defaults to the canonical list; pass the redacted
+            tuple when rendering an exposure-filtered bundle so the card
+            describes only what is actually present.
 
     Sections:
     - Header (recipe id, version, seed, exposure mode)
@@ -149,18 +154,16 @@ def render_dataset_card(
     # ------------------------------------------------------------------
     lines += ["## Feature categories", ""]
     category_counts: Counter[str] = Counter()
-    for feat in LEAD_SNAPSHOT_FEATURES:
+    for feat in features:
         category_counts[feat.category] += 1
     lines += [
         "| Category | Count | Examples |",
         "|---|---:|---|",
     ]
     for cat, count in category_counts.items():
-        examples = [
-            f.name for f in LEAD_SNAPSHOT_FEATURES if f.category == cat and not f.is_target
-        ][:3]
+        examples = [f.name for f in features if f.category == cat and not f.is_target][:3]
         lines.append(f"| {cat} | {count} | {', '.join(examples)} |")
-    leakage_cols = [f.name for f in LEAD_SNAPSHOT_FEATURES if f.leakage_risk]
+    leakage_cols = [f.name for f in features if f.leakage_risk]
     if leakage_cols:
         lines += [
             "",

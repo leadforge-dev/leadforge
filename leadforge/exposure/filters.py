@@ -4,6 +4,12 @@
 :class:`BundleFilter` that governs which artefacts are written when
 :func:`~leadforge.api.bundle.write_bundle` produces an output bundle.
 
+The per-feature redaction policy lives separately on
+:attr:`leadforge.schema.features.FeatureSpec.redact_in_modes` and is queried
+via :func:`leadforge.schema.features.redacted_columns_for`.  ``BundleFilter``
+deliberately does *not* duplicate that information so that the writer and
+the validator both consult the same source of truth.
+
 Adding a new mode: define its ``BundleFilter`` entry in ``FILTERS``.
 """
 
@@ -16,7 +22,7 @@ from leadforge.core.enums import ExposureMode
 
 @dataclass(frozen=True)
 class BundleFilter:
-    """Rules that govern bundle publication for one :class:`ExposureMode`.
+    """Mode-level publication policy.
 
     Attributes:
         write_metadata: Whether to create ``metadata/`` with hidden-truth
