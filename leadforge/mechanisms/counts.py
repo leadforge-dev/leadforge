@@ -9,9 +9,38 @@ from __future__ import annotations
 
 import math
 import random
+from dataclasses import dataclass, field
 from typing import Any
 
 from leadforge.mechanisms.base import Mechanism, MechanismContext
+
+
+@dataclass(frozen=True)
+class FollowupRampConfig:
+    """Configuration for the follow-up ramp on :class:`LatentDecayIntensity`.
+
+    Groups the four follow-up parameters into a single cohesive unit.
+
+    Attributes:
+        boost_after_day: Day after which latent modulation ramps up.
+        boost_factor: Multiplier applied to ``boost`` at the end of the ramp.
+        ramp_days: Number of days over which the ramp transitions linearly.
+        latent_weights: Optional separate latent weights used after the
+            followup day.
+    """
+
+    boost_after_day: int
+    boost_factor: float = 1.0
+    ramp_days: int = 10
+    latent_weights: dict[str, float] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.boost_after_day < 0:
+            raise ValueError(f"boost_after_day must be non-negative, got {self.boost_after_day}")
+        if self.boost_factor < 1.0:
+            raise ValueError(f"boost_factor must be >= 1.0, got {self.boost_factor}")
+        if self.ramp_days < 1:
+            raise ValueError(f"ramp_days must be >= 1, got {self.ramp_days}")
 
 
 class PoissonIntensity(Mechanism):
@@ -145,8 +174,8 @@ class LatentDecayIntensity(Mechanism):
 
     where ``latent_multiplier = sum(weight_i * latents[key_i])``.
 
-    After ``followup_boost_after_day``, the effective boost ramps linearly from
-    ``boost`` to ``boost * followup_boost_factor`` over ``followup_ramp_days``.
+    After ``followup.boost_after_day``, the effective boost ramps linearly from
+    ``boost`` to ``boost * followup.boost_factor`` over ``followup.ramp_days``.
     This models sales teams increasing follow-up intensity for leads that show
     strong latent signals (engagement, fit, intent) — a causally legitimate
     amplification of the latent → touch pathway.
@@ -159,18 +188,12 @@ class LatentDecayIntensity(Mechanism):
         latent_weights: Mapping of latent-key → weight for the multiplier.
         boost: Scaling factor for the latent multiplier (controls how much
             latent traits amplify touch intensity).
-        followup_boost_after_day: Day after which latent modulation ramps up.
-            Set to ``None`` (default) to disable the ramp.
-        followup_boost_factor: Multiplier applied to ``boost`` at the end of
-            the ramp period.  E.g. ``3.0`` means the effective boost is
-            ``boost * 3.0`` once the ramp completes.
-        followup_ramp_days: Number of days over which the ramp transitions
-            linearly from ``boost`` to ``boost * followup_boost_factor``.
-        followup_latent_weights: Optional separate latent weights used after
-            the followup day.  Models sales teams responding to *different*
-            latent signals during the follow-up period (e.g. prioritizing
-            authority and budget over raw engagement).  Blended with the
-            base weights during the ramp period.
+        followup: Optional :class:`FollowupRampConfig` grouping the ramp
+            parameters. Set to ``None`` (default) to disable the ramp.
+        followup_boost_after_day: **Deprecated** — use ``followup`` instead.
+        followup_boost_factor: **Deprecated** — use ``followup`` instead.
+        followup_ramp_days: **Deprecated** — use ``followup`` instead.
+        followup_latent_weights: **Deprecated** — use ``followup`` instead.
     """
 
     def __init__(
@@ -180,6 +203,8 @@ class LatentDecayIntensity(Mechanism):
         floor_rate: float = 0.01,
         latent_weights: dict[str, float] | None = None,
         boost: float = 0.8,
+        followup: FollowupRampConfig | None = None,
+        # Legacy params — kept for backward compatibility during transition
         followup_boost_after_day: int | None = None,
         followup_boost_factor: float = 1.0,
         followup_ramp_days: int = 10,
@@ -191,25 +216,40 @@ class LatentDecayIntensity(Mechanism):
             raise ValueError(f"decay_factor must be in (0, 1], got {decay_factor}")
         if floor_rate < 0:
             raise ValueError(f"floor_rate must be non-negative, got {floor_rate}")
-        if followup_boost_after_day is not None and followup_boost_after_day < 0:
-            raise ValueError(
-                f"followup_boost_after_day must be non-negative, got {followup_boost_after_day}"
+
+        # Resolve followup config: prefer the dataclass, fall back to legacy params
+        if followup is not None:
+            # Validation is handled by FollowupRampConfig.__post_init__
+            self._followup_after: int | None = followup.boost_after_day
+            self._followup_factor = followup.boost_factor
+            self._followup_ramp = followup.ramp_days
+            self._followup_latent_weights: dict[str, float] | None = (
+                dict(followup.latent_weights) if followup.latent_weights else None
             )
-        if followup_boost_factor < 1.0:
-            raise ValueError(f"followup_boost_factor must be >= 1.0, got {followup_boost_factor}")
-        if followup_ramp_days < 1:
-            raise ValueError(f"followup_ramp_days must be >= 1, got {followup_ramp_days}")
+        else:
+            # Legacy path
+            if followup_boost_after_day is not None and followup_boost_after_day < 0:
+                raise ValueError(
+                    f"followup_boost_after_day must be non-negative, got {followup_boost_after_day}"
+                )
+            if followup_boost_factor < 1.0:
+                raise ValueError(
+                    f"followup_boost_factor must be >= 1.0, got {followup_boost_factor}"
+                )
+            if followup_ramp_days < 1:
+                raise ValueError(f"followup_ramp_days must be >= 1, got {followup_ramp_days}")
+            self._followup_after = followup_boost_after_day
+            self._followup_factor = followup_boost_factor
+            self._followup_ramp = followup_ramp_days
+            self._followup_latent_weights = (
+                dict(followup_latent_weights) if followup_latent_weights else None
+            )
+
         self._base_rate = base_rate
         self._decay = decay_factor
         self._floor = floor_rate
         self._latent_weights: dict[str, float] = dict(latent_weights) if latent_weights else {}
         self._boost = boost
-        self._followup_after: int | None = followup_boost_after_day
-        self._followup_factor = followup_boost_factor
-        self._followup_ramp = followup_ramp_days
-        self._followup_latent_weights: dict[str, float] | None = (
-            dict(followup_latent_weights) if followup_latent_weights else None
-        )
 
     @property
     def name(self) -> str:

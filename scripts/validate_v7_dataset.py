@@ -22,24 +22,30 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import GradientBoostingClassifier
-from sklearn.impute import SimpleImputer
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import (
-    average_precision_score,
-    roc_auc_score,
-)
+from sklearn.metrics import average_precision_score, roc_auc_score
 from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
+
+from leadforge.pipelines.common import BINARY_FEATURES, CAT_FEATURES, TARGET
+from leadforge.pipelines.ml import (
+    LEAKAGE_PREFIX,
+    build_baseline_pipeline,
+    build_preprocessor,
+)
+from leadforge.pipelines.ml import (
+    fit_evaluate as _fit_evaluate,
+)
+from leadforge.pipelines.ml import (
+    get_feature_cols as _get_feature_cols,
+)
+from leadforge.pipelines.ml import (
+    sanitize_categoricals as _sanitize_categoricals,
+)
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-
-TARGET = "converted"
-LEAKAGE_PREFIX = "__leakage__"
 
 BANNED_COLUMNS = {
     "current_stage",
@@ -50,34 +56,6 @@ BANNED_COLUMNS = {
     "lead_created_at",
     "close_outcome",
 }
-
-CAT_FEATURES = [
-    "industry",
-    "region",
-    "company_size",
-    "company_revenue",
-    "contact_role",
-    "seniority",
-    "lead_source",
-    "acquisition_wave",
-]
-
-BINARY_FEATURES = [
-    "opportunity_created",
-    "demo_completed",
-]
-
-NUM_FEATURES = [
-    "expected_acv",
-    "inbound_touches",
-    "outbound_touches",
-    "touches_week_1",
-    "touches_last_7_days",
-    "days_since_first_touch",
-    "web_sessions",
-    "sales_activities",
-    "days_since_last_touch",
-]
 
 # Validation thresholds
 AUC_LOWER = 0.62
@@ -100,89 +78,10 @@ ACV_PILE_UP_WARN = 0.05  # warn if > 5% of values at max
 
 
 # ---------------------------------------------------------------------------
-# ML pipeline builder (canonical)
+# ML pipeline (imported from shared utility)
 # ---------------------------------------------------------------------------
 
-
-def _build_pipeline(
-    num_cols: list[str],
-    cat_cols: list[str],
-) -> Pipeline:
-    """Build the canonical sklearn baseline pipeline."""
-    numeric_transformer = Pipeline(
-        [
-            ("imputer", SimpleImputer(strategy="median")),
-            ("scaler", StandardScaler()),
-        ]
-    )
-    categorical_transformer = Pipeline(
-        [
-            ("imputer", SimpleImputer(strategy="most_frequent")),
-            ("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
-        ]
-    )
-    preprocessor = ColumnTransformer(
-        transformers=[
-            ("num", numeric_transformer, num_cols),
-            ("cat", categorical_transformer, cat_cols),
-        ],
-        remainder="drop",
-    )
-    return Pipeline(
-        [
-            ("preprocessor", preprocessor),
-            ("classifier", LogisticRegression(max_iter=1000, solver="lbfgs", random_state=42)),
-        ]
-    )
-
-
-def _get_feature_cols(
-    df: pd.DataFrame,
-    exclude: set[str] | None = None,
-) -> tuple[list[str], list[str]]:
-    """Partition feature columns into (cat_cols, num_cols)."""
-    exclude = (exclude or set()) | {TARGET}
-    cat_cols = [c for c in CAT_FEATURES if c in df.columns and c not in exclude]
-    num_cols = [c for c in NUM_FEATURES + BINARY_FEATURES if c in df.columns and c not in exclude]
-    # Add any trap columns to numeric if not excluded
-    for c in df.columns:
-        if c.startswith(LEAKAGE_PREFIX) and c not in exclude:
-            num_cols.append(c)
-    return cat_cols, num_cols
-
-
-def _sanitize_categoricals(df: pd.DataFrame, cat_cols: list[str]) -> pd.DataFrame:
-    """Convert pd.NA in categorical columns to None for sklearn compatibility."""
-    df = df.copy()
-    for c in cat_cols:
-        if c in df.columns:
-            df[c] = df[c].astype(object).where(df[c].notna(), None)
-    return df
-
-
-def _fit_evaluate(
-    df: pd.DataFrame,
-    exclude_cols: set[str] | None = None,
-    seed: int = 42,
-    test_size: float = 0.30,
-) -> tuple[float, float, np.ndarray, pd.Series]:
-    """Fit LR on hold-out split, return (AUC, PR-AUC, probs, y_test)."""
-    y = df[TARGET].astype(int)
-    cat_cols, num_cols = _get_feature_cols(df, exclude=exclude_cols)
-    df_clean = _sanitize_categoricals(df, cat_cols)
-    x = df_clean[cat_cols + num_cols]
-
-    x_train, x_test, y_train, y_test = train_test_split(
-        x, y, test_size=test_size, random_state=seed, stratify=y
-    )
-
-    pipe = _build_pipeline(num_cols, cat_cols)
-    pipe.fit(x_train, y_train)
-    probs = pipe.predict_proba(x_test)[:, 1]
-
-    auc = float(roc_auc_score(y_test, probs))
-    pr_auc = float(average_precision_score(y_test, probs))
-    return auc, pr_auc, probs, y_test
+_build_pipeline = build_baseline_pipeline
 
 
 # ---------------------------------------------------------------------------
@@ -307,25 +206,9 @@ def check_tree_improvement(df: pd.DataFrame, label: str) -> tuple[list[str], dic
         lr_auc = roc_auc_score(y_test, lr.predict_proba(x_test)[:, 1])
         lr_aucs.append(lr_auc)
 
-        numeric_transformer = Pipeline(
-            [("imputer", SimpleImputer(strategy="median")), ("scaler", StandardScaler())]
-        )
-        categorical_transformer = Pipeline(
-            [
-                ("imputer", SimpleImputer(strategy="most_frequent")),
-                ("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
-            ]
-        )
-        preprocessor = ColumnTransformer(
-            transformers=[
-                ("num", numeric_transformer, num_cols),
-                ("cat", categorical_transformer, cat_cols),
-            ],
-            remainder="drop",
-        )
         gb = Pipeline(
             [
-                ("preprocessor", preprocessor),
+                ("preprocessor", build_preprocessor(num_cols, cat_cols)),
                 ("classifier", GradientBoostingClassifier(n_estimators=100, random_state=42)),
             ]
         )

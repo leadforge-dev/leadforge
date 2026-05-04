@@ -7,12 +7,23 @@ orchestration (bundle generation, file I/O) lives in
 
 from __future__ import annotations
 
-import warnings
-
 import numpy as np
 import pandas as pd
 
 from leadforge.core.rng import RNGRoot
+from leadforge.pipelines.common import (
+    ACV_CAP,
+    ACV_FLOOR,
+    SUBSAMPLE_N,
+    TARGET_RATE,
+    subsample,
+)
+from leadforge.pipelines.common import (
+    derive_features as _derive_features,
+)
+from leadforge.pipelines.common import (
+    rename_and_select as _rename_and_select_generic,
+)
 
 __all__ = [
     "ACV_CAP",
@@ -38,12 +49,6 @@ __all__ = [
 SEED = 42
 N_LEADS = 5000
 SNAPSHOT_DAY = 10
-SUBSAMPLE_N = 1000
-TARGET_RATE = 0.30
-
-# Narrative-consistent ACV bounds (from narrative.yaml: $18k–$120k).
-ACV_FLOOR = 18_000.0
-ACV_CAP = 120_000.0
 
 # v5 column set: 18 features + 1 target = 19 columns.
 FINAL_COLUMNS = [
@@ -89,10 +94,7 @@ RENAME_MAP = {
 
 def derive_binary_features(df: pd.DataFrame) -> pd.DataFrame:
     """Derive binary features for the v5 column set."""
-    df = df.copy()
-    df["opportunity_created"] = df["opportunity_created"].astype(int)
-    df["demo_completed"] = (df["demo_page_views"] > 0).astype(int)
-    return df
+    return _derive_features(df)
 
 
 def cap_expected_acv(df: pd.DataFrame) -> pd.DataFrame:
@@ -112,56 +114,11 @@ def rename_and_select(
         label_column: Source column for the binary label. Defaults to
             ``"converted_within_90_days"`` for backward compatibility.
     """
-    if label_column not in df.columns:
-        raise ValueError(
-            f"Label column {label_column!r} not found. Available: {sorted(df.columns)}"
-        )
-    if label_column == "converted_within_90_days":
-        rename_map = RENAME_MAP
-    else:
-        rename_map = {k: v for k, v in RENAME_MAP.items() if v != "converted"}
-        rename_map[label_column] = "converted"
-    df = df.rename(columns=rename_map)
-    df["converted"] = df["converted"].astype(int)
-    missing = [c for c in FINAL_COLUMNS if c not in df.columns]
-    if missing:
-        raise ValueError(
-            f"Missing required columns after renaming: {missing}. Available: {sorted(df.columns)}"
-        )
-    return df[FINAL_COLUMNS]
-
-
-def subsample(
-    df: pd.DataFrame,
-    seed: int,
-    n: int = SUBSAMPLE_N,
-    target_rate: float = TARGET_RATE,
-) -> pd.DataFrame:
-    """Stratified subsample to n rows at target_rate conversion."""
-    rng = RNGRoot(seed).numpy_child("subsample")
-    positives = df[df["converted"] == 1]
-    negatives = df[df["converted"] == 0]
-    n_pos = int(n * target_rate)
-    n_neg = n - n_pos
-
-    if len(positives) < n_pos:
-        warnings.warn(
-            f"only {len(positives)} positives available, need {n_pos}",
-            stacklevel=2,
-        )
-        n_pos = len(positives)
-        n_neg = n - n_pos
-    if len(negatives) < n_neg:
-        warnings.warn(
-            f"only {len(negatives)} negatives available, need {n_neg}",
-            stacklevel=2,
-        )
-        n_neg = len(negatives)
-
-    pos_sample = positives.sample(n=n_pos, random_state=rng)
-    neg_sample = negatives.sample(n=n_neg, random_state=rng)
-    return (
-        pd.concat([pos_sample, neg_sample]).sample(frac=1, random_state=rng).reset_index(drop=True)
+    return _rename_and_select_generic(
+        df,
+        rename_map=RENAME_MAP,
+        final_columns=FINAL_COLUMNS,
+        label_column=label_column,
     )
 
 

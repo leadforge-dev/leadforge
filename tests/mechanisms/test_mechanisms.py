@@ -10,6 +10,7 @@ import pytest
 from leadforge.mechanisms.base import MechanismAssignment, MechanismContext, MechanismSummary
 from leadforge.mechanisms.categorical import CHANNEL_QUALITY_SCORES, CategoricalInfluence
 from leadforge.mechanisms.counts import (
+    FollowupRampConfig,
     LatentDecayIntensity,
     PoissonIntensity,
     RecencyDecayIntensity,
@@ -749,3 +750,53 @@ class TestLatentDecayIntensity:
     def test_followup_ramp_days_zero_raises(self) -> None:
         with pytest.raises(ValueError, match="followup_ramp_days must be >= 1"):
             LatentDecayIntensity(base_rate=0.5, followup_ramp_days=0)
+
+    def test_followup_ramp_config_dataclass_equivalent(self) -> None:
+        """FollowupRampConfig path produces identical behavior to legacy kwargs."""
+        latent_w = {"latent_fit": 1.5, "latent_intent": 1.0}
+        followup_w = {"latent_budget": 2.0, "latent_authority": 1.5}
+        latents = {
+            "latent_fit": 0.8,
+            "latent_intent": 0.6,
+            "latent_budget": 0.7,
+            "latent_authority": 0.5,
+        }
+
+        # Legacy path
+        ldi_legacy = LatentDecayIntensity(
+            base_rate=0.5,
+            latent_weights=latent_w,
+            boost=1.2,
+            followup_boost_after_day=20,
+            followup_boost_factor=5.0,
+            followup_ramp_days=10,
+            followup_latent_weights=followup_w,
+        )
+
+        # Dataclass path
+        ldi_new = LatentDecayIntensity(
+            base_rate=0.5,
+            latent_weights=latent_w,
+            boost=1.2,
+            followup=FollowupRampConfig(
+                boost_after_day=20,
+                boost_factor=5.0,
+                ramp_days=10,
+                latent_weights=followup_w,
+            ),
+        )
+
+        # Both must produce identical expected counts at various days
+        for t in [0, 10, 20, 25, 30, 50]:
+            assert ldi_legacy.expected_count(t, latents) == ldi_new.expected_count(t, latents), (
+                f"Mismatch at t={t}"
+            )
+
+    def test_followup_ramp_config_validation(self) -> None:
+        """FollowupRampConfig validates on construction."""
+        with pytest.raises(ValueError, match="boost_after_day must be non-negative"):
+            FollowupRampConfig(boost_after_day=-1)
+        with pytest.raises(ValueError, match="boost_factor must be >= 1.0"):
+            FollowupRampConfig(boost_after_day=10, boost_factor=0.5)
+        with pytest.raises(ValueError, match="ramp_days must be >= 1"):
+            FollowupRampConfig(boost_after_day=10, ramp_days=0)
