@@ -22,6 +22,11 @@ if TYPE_CHECKING:
 # Bump this whenever the bundle layout or manifest schema changes.
 BUNDLE_SCHEMA_VERSION = "2"
 
+# Manifest fields whose value is non-deterministic by design (wall-clock,
+# host metadata, etc.).  Determinism checks must ignore these fields when
+# comparing two bundles produced from the same (recipe, config, seed, version).
+NON_DETERMINISTIC_MANIFEST_FIELDS: tuple[str, ...] = ("generation_timestamp",)
+
 
 def build_manifest(
     config: GenerationConfig,
