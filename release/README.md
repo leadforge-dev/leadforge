@@ -10,7 +10,7 @@ Most public lead scoring datasets are flat CSVs with opaque provenance. This one
 
 2. **Three difficulty tiers.** Same company, same product, same buyer personas -- different difficulty profiles that produce meaningfully different conversion rates, noise levels, and missingness.
 
-3. **Reproducible and leakage-safe.** Deterministic generation from a fixed seed. SHA-256 hashes for every file in `manifest.json`. Leakage-prone columns (`total_touches_all`, `current_stage`) are explicitly flagged in the feature dictionary. All features are anchored at the snapshot date -- no post-cutoff data leaks in.
+3. **Reproducible and leakage-safe.** Deterministic generation from a fixed seed. SHA-256 hashes for every file in `manifest.json`. The label-encoding `current_stage` column is stripped from the public bundles in the exposure layer; the only leakage-flagged column that ships in `student_public` is the deliberately included pedagogical trap `total_touches_all`, marked `is_leakage_trap=True` in the feature dictionary. All features are anchored at the snapshot date -- no post-cutoff data leaks in by accident.
 
 ## What's inside
 
@@ -71,7 +71,7 @@ train = pd.read_parquet("intermediate/tasks/converted_within_90_days/train.parqu
 test = pd.read_parquet("intermediate/tasks/converted_within_90_days/test.parquet")
 ```
 
-**Note:** The Parquet files contain `current_stage` and `total_touches_all`, both flagged as `leakage_risk` in `feature_dictionary.csv`. Exclude them from your feature set. The flat CSV (`lead_scoring.csv`) has these columns pre-removed.
+**Note:** The student-facing Parquet files contain `total_touches_all`, a deliberately included leakage trap (flagged `leakage_risk=True` and `is_leakage_trap=True` in `feature_dictionary.csv`). Exclude it from your feature set unless you're explicitly demonstrating leakage detection. The label-encoding `current_stage` column is *not* present in `student_public` bundles -- it appears only in `intermediate_instructor/`.
 
 ### Option 3: Relational tables (feature engineering)
 
@@ -106,7 +106,8 @@ leadforge generate \
 | Leads | 5,000 | 5,000 | 5,000 |
 | Accounts | 1,500 | 1,500 | 1,500 |
 | Contacts | 4,200 | 4,200 | 4,200 |
-| Columns | 35 (34 features + 1 target) | 35 | 35 |
+| Columns (student_public) | 34 (33 features + 1 target) | 34 | 34 |
+| Columns (instructor) | 35 (34 features + 1 target, +`current_stage`) | -- | -- |
 | Target | `converted_within_90_days` | `converted_within_90_days` | `converted_within_90_days` |
 | Conversion rate (target) | 30-45% | 18-28% | 8-15% |
 | Conversion rate (observed) | 41.5% | 20.1% | 7.9% |
@@ -126,25 +127,23 @@ The sales funnel runs through inbound marketing (45%), SDR outbound (35%), and p
 
 ## Feature dictionary
 
-34 features + 1 target across 6 categories:
+The `student_public` bundles publish 33 features + 1 target across 6 categories. The `intermediate_instructor` companion adds `current_stage` for research / DGP-aware evaluation.
 
-| Category | Count | Examples |
+| Category | Count (student_public) | Examples |
 |---|---|---|
 | Account | 6 | `industry`, `region`, `employee_band`, `estimated_revenue_band` |
 | Contact | 4 | `role_function`, `seniority`, `buyer_role` |
-| Lead metadata | 7 | `lead_source`, `first_touch_channel`, `is_mql`, `is_sql` |
+| Lead metadata | 6 | `lead_source`, `first_touch_channel`, `is_mql`, `is_sql` |
 | Engagement | 11 | `touch_count`, `session_count`, `pricing_page_views`, `touches_week_1` |
 | Sales | 6 | `activity_count`, `opportunity_created`, `expected_acv` |
 | Target | 1 | `converted_within_90_days` |
 
-See `feature_dictionary.csv` in each bundle for full descriptions and dtypes.
+See `feature_dictionary.csv` in each bundle for full descriptions and dtypes. The dictionary now includes an `is_leakage_trap` column flagging deliberately included pedagogical traps.
 
-**Leakage-flagged columns** (marked `leakage_risk=True` in the feature dictionary):
+**Leakage handling**
 
-- `total_touches_all` -- counts touches over the full 90-day window, including post-snapshot events. Can you spot why this leaks?
-- `current_stage` -- at the 90-day horizon, contains terminal stages (`closed_won`/`closed_lost`) that encode the label directly.
-
-Both are dropped from the flat CSV (`lead_scoring.csv`). If you load the Parquet task splits directly, exclude them from your feature set.
+- `current_stage` -- at the 90-day horizon, contains terminal stages (`closed_won`/`closed_lost`) that encode the label directly. **Stripped from `student_public` bundles** by the exposure layer; available in `intermediate_instructor/` for research and DGP-aware evaluation.
+- `total_touches_all` -- counts touches over the full 90-day window, including post-snapshot events. **Deliberately retained** as a pedagogical trap (`is_leakage_trap=True`). Use it as an exercise in leakage detection: train with and without it, compare AUC, then explain the gap.
 
 ## Research companion
 
