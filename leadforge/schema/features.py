@@ -24,7 +24,12 @@ class FeatureSpec:
             ``"lead_meta"``, ``"engagement"``, ``"sales"``, ``"target"``).
         is_target: True for the label column only.
         leakage_risk: True if the column could contain post-snapshot-anchor
-            information and must be excluded from student_public exports.
+            information that materially encodes the label.
+        is_leakage_trap: True for columns that are deliberately included in
+            ``student_public`` exports as a pedagogical leakage trap (e.g.
+            ``total_touches_all``).  Such columns may set ``leakage_risk=True``
+            but are exempt from the exposure-layer redaction that strips
+            other leakage-risk columns from public bundles.
     """
 
     name: str
@@ -33,6 +38,7 @@ class FeatureSpec:
     category: str
     is_target: bool = False
     leakage_risk: bool = False
+    is_leakage_trap: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -243,6 +249,7 @@ LEAD_SNAPSHOT_FEATURES: tuple[FeatureSpec, ...] = (
         "post-snapshot data. Included for pedagogical purposes only.",
         "engagement",
         leakage_risk=True,
+        is_leakage_trap=True,
     ),
     # -- Target --
     FeatureSpec(
@@ -253,4 +260,13 @@ LEAD_SNAPSHOT_FEATURES: tuple[FeatureSpec, ...] = (
         "target",
         is_target=True,
     ),
+)
+
+
+# Columns redacted from ``student_public`` exports: leakage-risk columns that
+# are *not* explicitly flagged as pedagogical traps.  Derived from the canonical
+# feature spec at import time so adding a new ``leakage_risk=True`` feature
+# automatically extends the redaction set.
+STUDENT_PUBLIC_REDACTED_COLUMNS: frozenset[str] = frozenset(
+    f.name for f in LEAD_SNAPSHOT_FEATURES if f.leakage_risk and not f.is_leakage_trap
 )

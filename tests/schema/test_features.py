@@ -63,6 +63,36 @@ def test_no_leakage_risk_on_target() -> None:
             assert not f.leakage_risk
 
 
+def test_leakage_trap_implies_leakage_risk() -> None:
+    """Pedagogical traps must also be leakage_risk — otherwise the redaction
+    rule (drop ``leakage_risk and not is_leakage_trap``) can't tell them apart."""
+    for f in LEAD_SNAPSHOT_FEATURES:
+        if f.is_leakage_trap:
+            assert f.leakage_risk, f"{f.name} is a leakage trap but not flagged leakage_risk"
+
+
+def test_total_touches_all_is_leakage_trap() -> None:
+    by_name = {f.name: f for f in LEAD_SNAPSHOT_FEATURES}
+    f = by_name["total_touches_all"]
+    assert f.leakage_risk
+    assert f.is_leakage_trap
+
+
+def test_current_stage_is_redacted_not_trap() -> None:
+    """``current_stage`` must be redacted from student_public — not a trap."""
+    by_name = {f.name: f for f in LEAD_SNAPSHOT_FEATURES}
+    f = by_name["current_stage"]
+    assert f.leakage_risk
+    assert not f.is_leakage_trap
+
+
+def test_student_public_redacted_set_excludes_traps() -> None:
+    from leadforge.schema.features import STUDENT_PUBLIC_REDACTED_COLUMNS
+
+    assert "current_stage" in STUDENT_PUBLIC_REDACTED_COLUMNS
+    assert "total_touches_all" not in STUDENT_PUBLIC_REDACTED_COLUMNS
+
+
 # ---------------------------------------------------------------------------
 # feature_dictionary_df
 # ---------------------------------------------------------------------------
@@ -80,7 +110,15 @@ def test_feature_dictionary_df_row_count_matches_features() -> None:
 
 def test_feature_dictionary_df_columns() -> None:
     df = feature_dictionary_df()
-    expected = {"name", "dtype", "description", "category", "is_target", "leakage_risk"}
+    expected = {
+        "name",
+        "dtype",
+        "description",
+        "category",
+        "is_target",
+        "leakage_risk",
+        "is_leakage_trap",
+    }
     assert set(df.columns) == expected
 
 

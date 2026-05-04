@@ -12,6 +12,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pandas as pd
+
 from leadforge.core.hashing import file_sha256
 from leadforge.render.manifests import NON_DETERMINISTIC_MANIFEST_FIELDS
 
@@ -144,8 +146,10 @@ def check_exposure_monotonicity(student_bundle: Path, instructor_bundle: Path) -
 
     # Both must have the same core files.
     # manifest.json and dataset_card.md legitimately differ between modes
-    # (exposure_mode field, metadata references), so only check presence.
-    # feature_dictionary.csv should be identical (checked below).
+    # (exposure_mode field, metadata references).  feature_dictionary.csv
+    # legitimately differs too — student_public drops rows for redacted
+    # columns (e.g. ``current_stage``).  Only check presence here; content
+    # is checked below in monotonic-subset form.
     core_files = ["manifest.json", "dataset_card.md", "feature_dictionary.csv"]
     for fname in core_files:
         s_path = student_bundle / fname
@@ -155,12 +159,29 @@ def check_exposure_monotonicity(student_bundle: Path, instructor_bundle: Path) -
         elif not s_path.exists() and i_path.exists():
             errors.append(f"Instructor has {fname} but student does not")
 
-    # feature_dictionary.csv should be identical across modes.
+    # feature_dictionary.csv: student rows must be a subset of instructor rows
+    # (by ``name``).  For names present in both, the metadata must agree.
     s_dict = student_bundle / "feature_dictionary.csv"
     i_dict = instructor_bundle / "feature_dictionary.csv"
     if s_dict.exists() and i_dict.exists():
-        if file_sha256(s_dict) != file_sha256(i_dict):
-            errors.append("Content mismatch in shared file: feature_dictionary.csv")
+        s_df = pd.read_csv(s_dict).set_index("name")
+        i_df = pd.read_csv(i_dict).set_index("name")
+        extra_in_student = set(s_df.index) - set(i_df.index)
+        if extra_in_student:
+            errors.append(
+                "feature_dictionary.csv: student has rows missing from instructor: "
+                f"{sorted(extra_in_student)}"
+            )
+        shared = sorted(set(s_df.index) & set(i_df.index))
+        for col in s_df.columns:
+            if col in i_df.columns:
+                s_vals = s_df.loc[shared, col]
+                i_vals = i_df.loc[shared, col]
+                if not s_vals.equals(i_vals):
+                    errors.append(
+                        f"feature_dictionary.csv: column {col!r} differs between modes "
+                        "for at least one shared feature"
+                    )
 
     # Both must have the same tables with identical content
     student_tables = (
@@ -215,9 +236,29 @@ def check_exposure_monotonicity(student_bundle: Path, instructor_bundle: Path) -
         )
 
     for rel in sorted(student_tasks & instructor_tasks):
-        s_sha = file_sha256(student_bundle / "tasks" / rel)
-        i_sha = file_sha256(instructor_bundle / "tasks" / rel)
-        if s_sha != i_sha:
-            errors.append(f"Task content mismatch: {rel}")
+        s_path = student_bundle / "tasks" / rel
+        i_path = instructor_bundle / "tasks" / rel
+        if file_sha256(s_path) == file_sha256(i_path):
+            continue
+        # Mismatch is acceptable iff the only difference is redacted columns.
+        s_df = pd.read_parquet(s_path)
+        i_df = pd.read_parquet(i_path)
+        if len(s_df) != len(i_df):
+            errors.append(
+                f"Task row count mismatch in {rel}: student={len(s_df)} instructor={len(i_df)}"
+            )
+            continue
+        extra_in_student = set(s_df.columns) - set(i_df.columns)
+        if extra_in_student:
+            errors.append(
+                f"Task {rel}: student has columns missing from instructor: "
+                f"{sorted(extra_in_student)}"
+            )
+            continue
+        shared = [c for c in s_df.columns if c in i_df.columns]
+        s_shared = s_df[shared].reset_index(drop=True)
+        i_shared = i_df[shared].reset_index(drop=True)
+        if not s_shared.equals(i_shared):
+            errors.append(f"Task {rel}: shared-column values differ between modes")
 
     return errors

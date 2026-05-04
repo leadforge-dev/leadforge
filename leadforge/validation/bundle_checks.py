@@ -14,8 +14,10 @@ from typing import Any
 import pandas as pd
 import pyarrow.parquet as pq
 
+from leadforge.core.enums import ExposureMode
 from leadforge.core.hashing import file_sha256
 from leadforge.core.serialization import load_json
+from leadforge.exposure.filters import get_filter
 from leadforge.schema.features import LEAD_SNAPSHOT_FEATURES
 from leadforge.schema.relationships import ALL_CONSTRAINTS
 from leadforge.validation.difficulty import check_difficulty
@@ -45,6 +47,7 @@ def validate_bundle(bundle_root: Path, *, include_realism: bool = True) -> list[
     errors.extend(_check_task_splits(bundle_root, manifest))
     errors.extend(_check_fk_integrity(tables))
     errors.extend(_check_leakage(bundle_root, manifest))
+    errors.extend(_check_exposure_redaction(bundle_root, manifest))
 
     if include_realism:
         errors.extend(check_realism(bundle_root, manifest))
@@ -180,4 +183,56 @@ def _check_leakage(root: Path, manifest: dict[str, Any]) -> list[str]:
                     errors.append(
                         f"Task {task_id}/{split}: unexpected columns (possible leakage): {extra}"
                     )
+    return errors
+
+
+def _check_exposure_redaction(root: Path, manifest: dict[str, Any]) -> list[str]:
+    """Enforce the exposure-mode redaction contract.
+
+    For ``student_public`` bundles, the columns listed in the bundle filter's
+    ``redacted_columns`` must not appear in any task split or in the feature
+    dictionary.  This guards CLAUDE.md invariant #1 ("no post-snapshot
+    features in student_public exports") against accidental regressions in
+    the build pipeline.
+    """
+    errors: list[str] = []
+    mode_str = manifest.get("exposure_mode")
+    if not mode_str:
+        return errors
+    try:
+        mode = ExposureMode(mode_str)
+    except ValueError:
+        errors.append(f"Manifest exposure_mode is unknown: {mode_str!r}")
+        return errors
+
+    redacted = get_filter(mode).redacted_columns
+    if not redacted:
+        return errors
+
+    raw_tasks = manifest.get("tasks", {})
+    if isinstance(raw_tasks, dict):
+        for task_id in raw_tasks:
+            for split in ("train", "valid", "test"):
+                split_path = root / f"tasks/{task_id}/{split}.parquet"
+                if split_path.exists():
+                    actual = set(pq.read_schema(split_path).names)
+                    leaked = sorted(actual & redacted)
+                    if leaked:
+                        errors.append(
+                            f"Task {task_id}/{split}: redacted columns present in "
+                            f"{mode.value} bundle: {leaked}"
+                        )
+
+    fd_path = root / "feature_dictionary.csv"
+    if fd_path.exists():
+        fd = pd.read_csv(fd_path)
+        if "name" in fd.columns:
+            present = set(fd["name"].astype(str).tolist())
+            leaked = sorted(present & redacted)
+            if leaked:
+                errors.append(
+                    f"feature_dictionary.csv: redacted columns present in "
+                    f"{mode.value} bundle: {leaked}"
+                )
+
     return errors
