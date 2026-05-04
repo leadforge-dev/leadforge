@@ -9,9 +9,11 @@ These checks verify structural guarantees that must hold for every bundle:
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from leadforge.core.hashing import file_sha256
+from leadforge.render.manifests import NON_DETERMINISTIC_MANIFEST_FIELDS
 
 
 def check_determinism(bundle_a: Path, bundle_b: Path) -> list[str]:
@@ -56,6 +58,69 @@ def check_determinism(bundle_a: Path, bundle_b: Path) -> list[str]:
             sha_b = file_sha256(dir_b / rel)
             if sha_a != sha_b:
                 errors.append(f"Hash mismatch: {subdir}/{rel}")
+
+    return errors
+
+
+def _manifest_payloads_match_modulo_non_deterministic(a: Path, b: Path) -> bool:
+    """Compare two manifest.json files after stripping non-deterministic fields.
+
+    Re-dumps both payloads with ``sort_keys=True`` so a key reordering still
+    counts as a mismatch.
+    """
+    payload_a = json.loads(a.read_text())
+    payload_b = json.loads(b.read_text())
+    for field in NON_DETERMINISTIC_MANIFEST_FIELDS:
+        payload_a.pop(field, None)
+        payload_b.pop(field, None)
+    return json.dumps(payload_a, sort_keys=True) == json.dumps(payload_b, sort_keys=True)
+
+
+def compare_bundle_trees(bundle_a: Path, bundle_b: Path) -> list[str]:
+    """Full-tree byte-identical comparison of two bundle directories.
+
+    Walks every file under both roots and reports:
+
+    - files present in only one tree (``only in A:`` / ``only in B:``)
+    - files whose SHA-256 differs (``hash mismatch:``)
+
+    The bundle ``manifest.json`` is special-cased: it carries
+    ``generation_timestamp`` (wall-clock UTC, set by ``build_manifest()``),
+    which is expected to differ across runs unless the caller pinned it.
+    For that one file, if the raw hashes differ, the function re-compares the
+    payload with non-deterministic fields stripped (see
+    :data:`NON_DETERMINISTIC_MANIFEST_FIELDS`).  A mismatch *after* stripping
+    is still reported.
+
+    Use this for release-time integration checks; for the fast in-process
+    determinism property used in CI, see :func:`check_determinism`.
+    """
+    errors: list[str] = []
+
+    files_a = {p.relative_to(bundle_a) for p in bundle_a.rglob("*") if p.is_file()}
+    files_b = {p.relative_to(bundle_b) for p in bundle_b.rglob("*") if p.is_file()}
+
+    for rel in sorted(files_a - files_b):
+        errors.append(f"only in A: {rel}")
+    for rel in sorted(files_b - files_a):
+        errors.append(f"only in B: {rel}")
+
+    for rel in sorted(files_a & files_b):
+        path_a = bundle_a / rel
+        path_b = bundle_b / rel
+        if file_sha256(path_a) == file_sha256(path_b):
+            continue
+        if rel.name == "manifest.json" and rel.parent == Path():
+            if _manifest_payloads_match_modulo_non_deterministic(path_a, path_b):
+                continue
+            errors.append(
+                f"manifest payload mismatch (after stripping "
+                f"{list(NON_DETERMINISTIC_MANIFEST_FIELDS)}): {rel}"
+            )
+            continue
+        size_a = path_a.stat().st_size
+        size_b = path_b.stat().st_size
+        errors.append(f"hash mismatch: {rel} (sizes: A={size_a}B, B={size_b}B)")
 
     return errors
 

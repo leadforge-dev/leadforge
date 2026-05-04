@@ -2,7 +2,7 @@
 """Build the public release bundles for Kaggle/HuggingFace.
 
 Usage:
-    python scripts/build_public_release.py [OUTPUT_DIR]
+    python scripts/build_public_release.py [OUTPUT_DIR] [--generation-timestamp ISO8601]
 
 Generates four bundles:
 - intro/          (student_public, intro difficulty)
@@ -14,10 +14,16 @@ Each student_public bundle also gets a flat CSV convenience export
 (lead_scoring.csv) merging train/valid/test with a ``split`` column.
 
 All bundles are validated with ``leadforge validate`` after generation.
+
+The ``--generation-timestamp`` flag pins ``manifest.generation_timestamp`` to a
+caller-supplied ISO-8601 UTC string.  This is the supported way to produce
+byte-reproducible bundles (used by ``scripts/verify_hash_determinism.py``);
+the released bundles always use the wall-clock default.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import shutil
 import sys
@@ -45,6 +51,7 @@ def generate_and_save(
     exposure_mode: str,
     difficulty: str,
     seed: int = SEED,
+    generation_timestamp: str | None = None,
 ) -> None:
     """Generate a bundle and write it to *out_dir*."""
     gen = Generator.from_recipe(
@@ -54,7 +61,7 @@ def generate_and_save(
         difficulty=difficulty,
     )
     bundle = gen.generate()
-    bundle.save(str(out_dir))
+    bundle.save(str(out_dir), generation_timestamp=generation_timestamp)
 
 
 # Columns to drop from the flat CSV convenience export.
@@ -111,7 +118,24 @@ def print_summary(bundle_dir: Path, name: str) -> None:
 
 
 def main() -> None:
-    output_root = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("release")
+    parser = argparse.ArgumentParser(description=__doc__.split("\n", maxsplit=1)[0])
+    parser.add_argument(
+        "output_dir",
+        nargs="?",
+        default="release",
+        help="Output directory (default: release/)",
+    )
+    parser.add_argument(
+        "--generation-timestamp",
+        default=None,
+        help=(
+            "ISO-8601 UTC string to pin manifest.generation_timestamp. "
+            "Default: wall-clock now. Use this for reproducible bundles."
+        ),
+    )
+    args = parser.parse_args()
+
+    output_root = Path(args.output_dir)
     output_root.mkdir(parents=True, exist_ok=True)
 
     # Copy LICENSE
@@ -122,7 +146,12 @@ def main() -> None:
     for dir_name, exposure_mode, difficulty in BUNDLES:
         bundle_dir = output_root / dir_name
         print(f"Generating {dir_name} ({exposure_mode}, {difficulty})...", file=sys.stderr)
-        generate_and_save(bundle_dir, exposure_mode, difficulty)
+        generate_and_save(
+            bundle_dir,
+            exposure_mode,
+            difficulty,
+            generation_timestamp=args.generation_timestamp,
+        )
 
         # Flat CSV for student_public bundles
         if exposure_mode == "student_public":
