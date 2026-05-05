@@ -10,7 +10,7 @@ read by `scripts/validate_release_candidate.py` and by humans before tag.
 
 ## Naming and versioning gate
 
-- **G1.1** Dataset release name: `leadforge-lead-scoring-v1`. Locked in Phase 1.
+- **G1.1** Dataset release name: `leadforge-lead-scoring-v1`. Locked in Phase 1 (PR #61 milestone rename + roadmap edits; reaffirmed in PR 1.1's `docs/release/v1_current_state_audit.md`).
 - **G1.2** Kaggle slug: `leadforge-lead-scoring-v1`.
 - **G1.3** Hugging Face repo: `leadforge-lead-scoring-v1` (public family) and `leadforge-lead-scoring-v1-instructor` (companion).
 - **G1.4** Bundle `package_version` reflects the leadforge package at build time.
