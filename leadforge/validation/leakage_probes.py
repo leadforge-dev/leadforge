@@ -46,7 +46,7 @@ Probe registry
 
 :data:`PROBE_REGISTRY` maps every probe name to its taxonomy and input
 needs.  The orchestrators iterate it; the meta-test
-``test_probe_registry_covers_all_probes`` enforces that any new ``probe_*``
+``test_probe_registry_covers_every_module_level_probe`` enforces that any new ``probe_*``
 function is registered, so a future "I added a probe but forgot to wire it"
 regression fails loudly rather than silently.
 """
@@ -535,7 +535,10 @@ def probe_split_id_overlap(
                 shared = per_split[a] & per_split[b]
                 if not shared:
                     continue
-                sample = sorted(str(s) for s in list(shared)[:5])
+                # Sort the full overlap before slicing — set iteration order
+                # is implementation-defined, so ``list(shared)[:5]`` would
+                # yield non-reproducible sample messages across runs.
+                sample = sorted(str(s) for s in shared)[:5]
                 findings.append(
                     LeakageFinding(
                         channel=CHANNEL_SPLIT_ID_OVERLAP,
@@ -575,9 +578,15 @@ def probe_split_near_duplicates(
     choice.
 
     Skips silently (empty findings) when ``feature_columns`` is empty,
-    every split is empty, or none of the columns are numeric in any
-    split.  Caller-provided columns missing from a split are ignored
-    on a per-split basis.
+    every split is empty, or every requested column is non-numeric or
+    all-NaN after coercion.  Caller-provided columns missing from a
+    split are ignored on a per-split basis.
+
+    Rows whose rounded signature is entirely ``"nan"`` after coercion
+    (e.g. all-non-numeric inputs, or rows with missing values for every
+    requested feature) are excluded from the comparison — they carry no
+    information and would otherwise collide as a single saturating
+    false-positive across splits.
     """
     cols = list(feature_columns)
     if not cols:
@@ -590,11 +599,16 @@ def probe_split_near_duplicates(
         present = [c for c in cols if c in df.columns]
         if not present:
             continue
-        # Coerce to numeric; non-numeric columns become NaN and contribute
-        # ``"nan"`` to the rounded tuple — preserving determinism without
-        # silently dropping the column.
+        # Coerce to numeric; non-numeric columns become NaN.  We then
+        # drop rows whose entire signature is NaN — those carry no
+        # information and would otherwise saturate as a single
+        # collision across splits, which is a false positive (not a
+        # near-duplicate).
         numeric = df[present].apply(pd.to_numeric, errors="coerce").round(decimals)
-        rounded[name] = numeric.astype(str).agg("|".join, axis=1)
+        non_empty = numeric.notna().any(axis=1)
+        if not non_empty.any():
+            continue
+        rounded[name] = numeric.loc[non_empty].astype(str).agg("|".join, axis=1)
 
     findings: list[LeakageFinding] = []
     split_names = list(rounded.keys())
@@ -603,7 +617,10 @@ def probe_split_near_duplicates(
             shared = set(rounded[a]) & set(rounded[b])
             if not shared:
                 continue
-            sample = sorted(list(shared)[:max_findings])
+            # Sort the full overlap before slicing — set iteration order
+            # is implementation-defined, so ``list(shared)[:N]`` would
+            # yield non-reproducible sample messages across runs.
+            sample = sorted(shared)[:max_findings]
             findings.append(
                 LeakageFinding(
                     channel=CHANNEL_SPLIT_NEAR_DUPLICATE,
@@ -1235,7 +1252,7 @@ def _build_relational_features(
 
 
 def _hash_id_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Map opaque ID strings to deterministic 32-bit integers per column.
+    """Map opaque ID strings to deterministic 32-bit hashes (stored as int64) per column.
 
     HistGBM handles integer features natively; one-hot encoding every
     distinct ID would explode dimension and let the model memorise the

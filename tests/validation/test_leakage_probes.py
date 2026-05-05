@@ -771,9 +771,19 @@ def test_probe_id_only_baseline_silent_on_random_splits() -> None:
     assert probe_id_only_baseline(splits, label_col="label", max_auc=0.95) == []
 
 
-def test_probe_id_only_baseline_fires_when_id_encodes_label() -> None:
-    """If lead_ids are constructed so that a deterministic hash separates
-    positives from negatives, the ID-only baseline must catch it."""
+def test_probe_id_only_baseline_runs_cleanly_on_partitioned_ids() -> None:
+    """Wiring smoke test: even when train lead_ids cleanly partition by
+    label, the probe completes without error.
+
+    A "fires" demonstration is structurally impossible from hashed
+    lead_ids alone: each hash is independent, so HistGBM cannot
+    generalise from train hashes to disjoint test hashes — AUC stays
+    near 0.5 by construction.  The positive-fire path for the
+    model-realism family is covered by
+    :func:`test_probe_feature_subset_baseline_fires_when_subset_predicts_label`;
+    here we just assert the probe runs end-to-end with a non-trivial
+    label.
+    """
     pytest.importorskip("sklearn")
     train = pd.DataFrame(
         {
@@ -794,10 +804,6 @@ def test_probe_id_only_baseline_fires_when_id_encodes_label() -> None:
         max_auc=0.6,
         id_columns=("lead_id",),
     )
-    # The HistGBM cannot generalise from train hashes to test hashes
-    # (the hashes are independent), so this *won't* always fire.  But on
-    # the *train* split's holdout (we don't run that here), it would.
-    # The point of this test is the wiring — the probe runs cleanly.
     assert isinstance(findings, list)
 
 
@@ -940,7 +946,7 @@ def test_probe_registry_covers_every_module_level_probe() -> None:
 
 
 def test_probe_registry_taxonomies_are_known() -> None:
-    """Every spec carries one of the four documented taxonomies."""
+    """Every spec carries one of the five documented taxonomies."""
     valid = {"direct", "time_window", "relational", "split", "model_realism"}
     for spec in PROBE_REGISTRY.values():
         assert spec.taxonomy in valid, f"{spec.name} has unknown taxonomy {spec.taxonomy!r}"
