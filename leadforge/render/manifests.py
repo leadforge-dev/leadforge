@@ -28,7 +28,15 @@ if TYPE_CHECKING:
 #         feature list (zero-variance); ``is_sql`` redacted in
 #         ``student_public`` mode (near-deterministic for non-conversion).
 #         ``manifest.redacted_columns`` was already added in PR #56.
-BUNDLE_SCHEMA_VERSION = "3"
+#   "4" — issue #57 sub-item 1: windowed snapshot.  Event-aggregate
+#         features (touch_count, session_count, expected_acv, ...) now
+#         aggregate only events within ``[lead_created_at, lead_created_at
+#         + snapshot_day]``.  Column SET unchanged from v3, but column
+#         VALUES are no longer full-horizon — consumers pinning v3 and
+#         assuming "features computed over full horizon" must update.
+#         ``manifest.snapshot_day`` recorded so the contract is
+#         self-describing (``null`` means full-horizon, legacy behaviour).
+BUNDLE_SCHEMA_VERSION = "4"
 
 # Manifest fields whose value is non-deterministic by design (wall-clock,
 # host metadata, etc.).  Determinism checks must ignore these fields when
@@ -106,6 +114,7 @@ def build_manifest(
         "horizon_days": config.horizon_days,
         "primary_task": config.primary_task,
         "label_window_days": config.label_window_days,
+        "snapshot_day": config.snapshot_day,
         "motif_family": world_graph.motif_family,
         "redacted_columns": redacted_columns_list,
         "tables": tables,

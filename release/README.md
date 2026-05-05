@@ -10,7 +10,7 @@ Most public lead scoring datasets are flat CSVs with opaque provenance. This one
 
 2. **Three difficulty tiers.** Same company, same product, same buyer personas -- different difficulty profiles that produce meaningfully different conversion rates, noise levels, and missingness.
 
-3. **Reproducible and leakage-safe.** Deterministic generation from a fixed seed. SHA-256 hashes for every file in `manifest.json`. The label-encoding `current_stage` column is stripped from the public bundles in the exposure layer; the only leakage-flagged column that ships in `student_public` is the deliberately included pedagogical trap `total_touches_all`, marked `is_leakage_trap=True` in the feature dictionary. All features are anchored at the snapshot date -- no post-cutoff data leaks in by accident.
+3. **Reproducible and leakage-safe.** Deterministic generation from a fixed seed. SHA-256 hashes for every file in `manifest.json`. The label-encoding `current_stage` column is stripped from the public bundles in the exposure layer. Event-aggregate features (`touch_count`, `session_count`, `pricing_page_views`, ...) are computed over a 30-day window — they cannot encode events that happen *after* day 30, even though the label resolves over a 90-day window. The only leakage-flagged column that ships in `student_public` is the deliberately included pedagogical trap `total_touches_all`, which counts the full 90-day touch history and is marked `is_leakage_trap=True` in the feature dictionary.
 
 ## What's inside
 
@@ -71,7 +71,7 @@ train = pd.read_parquet("intermediate/tasks/converted_within_90_days/train.parqu
 test = pd.read_parquet("intermediate/tasks/converted_within_90_days/test.parquet")
 ```
 
-**Note:** The student-facing Parquet files contain `total_touches_all`, a deliberately included leakage trap (flagged `leakage_risk=True` and `is_leakage_trap=True` in `feature_dictionary.csv`). Exclude it from your feature set unless you're explicitly demonstrating leakage detection. The label-encoding `current_stage` column is *not* present in `student_public` bundles -- it appears only in `intermediate_instructor/`.
+**Note:** The label `converted_within_90_days` is evaluated over the full **90 days** from lead creation. Event-aggregate features (`touch_count`, `session_count`, `pricing_page_views`, `expected_acv`, `days_since_last_touch`, ...) observe **only the first 30 days** of that window — so even when a lead converts on day 50, the features are frozen at day 30 and cannot encode the conversion event. The deliberate exception is `total_touches_all`, a leakage trap (flagged `leakage_risk=True` and `is_leakage_trap=True` in `feature_dictionary.csv`) that counts touches over the full 90-day horizon. Exclude it from your feature set unless you're explicitly demonstrating leakage detection. The label-encoding `current_stage` column is *not* present in `student_public` bundles -- it appears only in `intermediate_instructor/`.
 
 ### Option 3: Relational tables (feature engineering)
 
@@ -128,22 +128,21 @@ The sales funnel runs through inbound marketing (45%), SDR outbound (35%), and p
 
 Each bundle contains a `dataset_card.md` and a `feature_dictionary.csv` with the authoritative, auto-generated column list, descriptions, dtypes, and `leakage_risk` flags. Refer to those rather than mirroring counts here, which would drift.
 
-**Leakage handling (bundle schema v3)**
+**Leakage handling (bundle schema v4)**
 
-Redaction in `student_public` bundles applies uniformly to **both** the task splits *and* the relational tables. Joining `tables/leads.parquet` back to your features cannot recover a redacted column.
+Two separate mechanisms keep the published feature set leakage-safe:
+
+1. **Windowed snapshot.** Every event-aggregate feature is computed over a 30-day window (`manifest.snapshot_day == 30`); the label resolves over the full 90 days (`manifest.label_window_days == 90`). Features cannot see touches, sessions, or opportunities that occurred after day 30. The only feature that intentionally crosses this line is `total_touches_all`, the pedagogical trap.
+2. **Column redaction.** A small set of columns that *would* encode the label structurally (`current_stage`, `is_sql`) are stripped from `student_public` bundles entirely — both from `tasks/` splits and from `tables/leads.parquet`, so feature engineering off the relational tables cannot recover them.
 
 | Column | Status in `student_public` | Status in `intermediate_instructor` | Why |
 |---|---|---|---|
 | `current_stage` | redacted (gone from task splits and `tables/leads.parquet`) | retained | At day 90 this contains terminal stages (`closed_won`/`closed_lost`) that encode the label directly. |
 | `is_sql` | redacted | retained | `is_sql=False` predicts non-conversion with very high probability — measured across 5 seeds, P(conv \| is_sql=False) = 0.061 ± 0.026 (intro) / 0.020 ± 0.010 (intermediate) / 0.011 ± 0.004 (advanced). |
 | `is_mql` | removed entirely (no mode has it) | removed entirely | Every lead is initialised at MQL stage in the simulator, so the field was constant `True` and carried no information. |
-| `total_touches_all` | retained | retained | Deliberate pedagogical leakage trap (counts touches over the full 90-day window). Flagged `leakage_risk=True` in `feature_dictionary.csv`. Train with and without it, compare AUC, explain the gap. |
+| `total_touches_all` | retained | retained | Deliberate pedagogical leakage trap. Counts touches over the full 90-day horizon while every other touch feature stops at day 30, so the gap (`total_touches_all - touch_count`) carries real signal. Flagged `leakage_risk=True` in `feature_dictionary.csv`. Train with and without it, compare AUC, explain the gap. |
 
-The `redacted_columns` field in each bundle's `manifest.json` records exactly what was stripped.
-
-**Known caveats** (tracked in [issue #57](https://github.com/leadforge-dev/leadforge/issues/57)):
-
-- All event-aggregate features (`touch_count`, `session_count`, `pricing_page_views`, ...) are computed over the same 90-day window in which the label resolves. They correlate with post-conversion events. The structural fix is a windowed snapshot rebuild — open follow-up.
+The `redacted_columns` and `snapshot_day` fields in each bundle's `manifest.json` record exactly what was stripped and at what window features were computed.
 
 ## Research companion
 

@@ -94,6 +94,7 @@ def write_bundle(
         result,
         population,
         horizon_days=config.horizon_days,
+        snapshot_day=config.snapshot_day,
         difficulty_params=config.difficulty_params,
         seed=config.seed,
     )

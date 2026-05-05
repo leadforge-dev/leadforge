@@ -18,3 +18,6 @@ default_population:
   n_contacts: 4200
   n_leads: 5000
 horizon_days: 90
+# Feature aggregation window in days; see CHANGELOG (bundle schema v4) and
+# release/README.md for the rationale.  Must satisfy snapshot_day <= label_window_days.
+snapshot_day: 30

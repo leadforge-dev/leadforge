@@ -7,6 +7,45 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+### Bundle schema v4
+
+`bundle_schema_version` bumped from `"3"` to `"4"`.  Closes the final
+sub-item of issue #57: event-aggregate features are no longer computed
+over the same 90-day window the label resolves in.
+
+- **Windowed snapshot.**  `GenerationConfig.snapshot_day` (also exposed
+  as a recipe-level field and an explicit kwarg on
+  `Generator.from_recipe()`) now controls the feature aggregation
+  window.  When set, `build_snapshot()` filters touches, sessions,
+  sales activities, and opportunities to events with timestamp
+  ≤ `lead_created_at + snapshot_day`.  The
+  `b2b_saas_procurement_v1` recipe pins `snapshot_day: 30` —
+  measurements at seed 42, n_leads=5000 across all three difficulty
+  tiers showed day 30 keeps LR AUC in [0.85, 0.86] (challenging but
+  modelable) while preserving a meaningful trap gap of ~3 touches
+  with 54–77% of leads showing any divergence between
+  `total_touches_all` (full-horizon) and `touch_count` (windowed).
+- **Conversion rates unchanged.**  The label is event-derived from
+  `label_window_days` in the simulator and is independent of
+  `snapshot_day`, so the published rates stay at 41.5% / 20.1% / 7.9%
+  (intro / intermediate / advanced) — well inside the declared
+  `difficulty_profiles.yaml` ranges.
+- **`manifest.snapshot_day` recorded.**  The published bundle
+  declares its windowing contract; consumers can distinguish
+  full-horizon (legacy v2/v3) bundles from windowed (v4) bundles
+  without inspecting package internals.  Column SET is unchanged
+  from v3, but column VALUES are no longer full-horizon — a contract
+  shift that v3 consumers would not detect from schema alone.
+- **Schema contract test.**  `tests/render/test_bundle_schema_v3_contract.py`
+  renamed to `test_bundle_schema_v4_contract.py` and gains a
+  `snapshot_day == 30` assertion alongside the existing column-set
+  pinning.
+- **Trap invariant guard.**  New `tests/render/test_windowed_bundle_trap.py`
+  asserts `total_touches_all >= touch_count` for every lead and
+  `>` for at least some — guarding against a future refactor that
+  silently widens `touch_count` back to the full horizon and
+  collapses the pedagogical gap.
+
 ### Bundle schema v3
 
 `bundle_schema_version` bumped from `"2"` to `"3"`.  Three structural
@@ -52,14 +91,6 @@ changes follow up on PR #56 (issue #57):
 - `research_instructor/intermediate_instructor`: **34** task split
   columns (down from 35); **11** columns in `tables/leads.parquet`
   (down from 12 — `is_mql` removed).
-
-### Open follow-up
-
-Issue #57 sub-item 1 remains open: event-aggregate features
-(`touch_count`, `session_count`, `pricing_page_views`, ...) are still
-computed over the same 90-day window the label resolves in.  The
-structural fix is a windowed snapshot rebuild and is deferred to its
-own PR.
 
 ---
 
