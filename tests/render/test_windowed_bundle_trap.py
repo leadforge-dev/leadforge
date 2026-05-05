@@ -53,17 +53,26 @@ def test_total_touches_all_dominates_touch_count(windowed_bundle: Path) -> None:
 
 
 def test_trap_gap_is_meaningful(windowed_bundle: Path) -> None:
-    """At ``snapshot_day < horizon_days``, the gap must be non-trivial: some
-    leads must have ``total_touches_all > touch_count``.  If not, the trap is
-    pedagogically dead and the windowed snapshot wiring is broken."""
+    """At ``snapshot_day < horizon_days``, the gap must be non-trivial.
+
+    A bare ``> 0`` check would pass even if the trap collapsed to a single
+    lead.  Measurements at the recipe default (``snapshot_day=30``) show
+    54-77% of leads carry a gap across all three difficulty tiers; the
+    intermediate bundle this test uses sits in that window, so a
+    ``>= 20%`` floor is well below the natural rate yet high enough that
+    a regression collapsing the trap would trip it.
+    """
     train = pd.read_parquet(
         windowed_bundle / "tasks" / "converted_within_90_days" / "train.parquet",
         columns=["touch_count", "total_touches_all"],
     )
     diff = train["total_touches_all"].astype("Float64") - train["touch_count"].astype("Float64")
     n_with_gap = int((diff > 0).sum())
-    assert n_with_gap > 0, (
-        "No lead has total_touches_all > touch_count — the trap gap collapsed.\n"
-        "Either snapshot_day was set to horizon_days (bundle is no longer windowed) "
-        "or the build_snapshot() windowing logic regressed."
+    frac_with_gap = n_with_gap / len(train)
+
+    assert frac_with_gap >= 0.20, (
+        f"Only {frac_with_gap:.1%} of leads carry a gap between total_touches_all "
+        f"and touch_count (n={n_with_gap}/{len(train)}).  Expected >=20%.\n"
+        "Either snapshot_day was set close to horizon_days (bundle is barely "
+        "windowed) or the build_snapshot() windowing logic regressed."
     )

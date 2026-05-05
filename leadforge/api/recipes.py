@@ -111,10 +111,12 @@ class Recipe:
         if raw_sd is not None:
             if isinstance(raw_sd, bool) or not isinstance(raw_sd, int):
                 raise InvalidRecipeError(
-                    f"'snapshot_day' must be a positive int, got {type(raw_sd).__name__!r}"
+                    f"'snapshot_day' must be a positive int or null, got {type(raw_sd).__name__!r}"
                 )
             if raw_sd <= 0:
-                raise InvalidRecipeError(f"'snapshot_day' must be positive, got {raw_sd}")
+                raise InvalidRecipeError(
+                    f"'snapshot_day' must be a positive int or null, got {raw_sd}"
+                )
             snapshot_day = raw_sd
 
         return cls(

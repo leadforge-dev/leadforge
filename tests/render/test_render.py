@@ -375,7 +375,11 @@ class TestBuildManifest:
             "n_contacts",
             "n_leads",
             "horizon_days",
+            "primary_task",
+            "label_window_days",
+            "snapshot_day",
             "motif_family",
+            "redacted_columns",
             "tables",
             "tasks",
         }

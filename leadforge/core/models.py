@@ -95,11 +95,24 @@ class GenerationConfig:
                     f"got {type(self.snapshot_day).__name__!r}"
                 )
             if self.snapshot_day <= 0:
-                raise InvalidConfigError(f"snapshot_day must be positive, got {self.snapshot_day}")
+                raise InvalidConfigError(
+                    f"snapshot_day must be a positive int or None, got {self.snapshot_day}"
+                )
             if self.snapshot_day > self.horizon_days:
                 raise InvalidConfigError(
                     f"snapshot_day ({self.snapshot_day}) must not exceed "
                     f"horizon_days ({self.horizon_days})"
+                )
+            # A snapshot anchored after the label closes would let features
+            # observe events that occur beyond the label-scoring window —
+            # exactly the structural leakage the windowed snapshot is here
+            # to prevent.  Reject at config time.
+            if self.snapshot_day > self.label_window_days:
+                raise InvalidConfigError(
+                    f"snapshot_day ({self.snapshot_day}) must not exceed "
+                    f"label_window_days ({self.label_window_days}); a snapshot "
+                    f"anchored after the label closes would re-introduce "
+                    f"structural leakage."
                 )
         # Coerce string enums supplied as plain strings
         if not isinstance(self.exposure_mode, ExposureMode):

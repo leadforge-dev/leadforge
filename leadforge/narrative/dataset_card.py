@@ -54,6 +54,11 @@ def render_dataset_card(
     # ------------------------------------------------------------------
     # Header
     # ------------------------------------------------------------------
+    snapshot_label = (
+        f"{cfg.snapshot_day} days (windowed)"
+        if cfg.snapshot_day is not None and cfg.snapshot_day < cfg.horizon_days
+        else f"{cfg.horizon_days} days (full horizon)"
+    )
     lines += [
         "# leadforge dataset card",
         "",
@@ -65,6 +70,8 @@ def render_dataset_card(
         f"| Exposure mode | `{cfg.exposure_mode}` |",
         f"| Difficulty | `{cfg.difficulty}` |",
         f"| Horizon | {cfg.horizon_days} days |",
+        f"| Label window | {cfg.label_window_days} days |",
+        f"| Feature snapshot window | {snapshot_label} |",
         "",
     ]
 
@@ -188,14 +195,27 @@ def render_dataset_card(
     # ------------------------------------------------------------------
     # Caveats
     # ------------------------------------------------------------------
+    if cfg.snapshot_day is not None and cfg.snapshot_day < cfg.horizon_days:
+        feature_window_caveat = (
+            f"- Event-aggregate features (e.g. `touch_count`, `session_count`, "
+            f"`expected_acv`) are computed over the first {cfg.snapshot_day} days "
+            f"after lead creation; the label resolves over the next "
+            f"{cfg.label_window_days - cfg.snapshot_day} days. The deliberate "
+            f"exception is `total_touches_all`, which counts touches over the "
+            f"full {cfg.horizon_days}-day horizon as a pedagogical leakage trap."
+        )
+    else:
+        feature_window_caveat = (
+            "- Features are anchored at the snapshot date. No post-anchor data is "
+            "included (leakage-free by construction)."
+        )
     lines += [
         "## Caveats",
         "",
         "- This is **synthetic** data. It does not represent any real company, product, or market.",
         "- The hidden world structure varies by motif family and stochastic rewiring; "
         "no two seeds produce the same DGP.",
-        "- Features are anchored at the snapshot date. No post-anchor data is "
-        "included (leakage-free by construction).",
+        feature_window_caveat,
         "- In `student_public` mode, the latent world graph, mechanism summary, "
         "and full world spec are withheld.",
         "",

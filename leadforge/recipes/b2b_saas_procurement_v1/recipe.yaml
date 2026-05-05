@@ -18,9 +18,6 @@ default_population:
   n_contacts: 4200
   n_leads: 5000
 horizon_days: 90
-# Windowed snapshot: features aggregate only events within
-# [lead_created_at, lead_created_at + snapshot_day].  Anchored before the
-# 90-day label window closes so event-aggregate features (touch_count,
-# session_count, expected_acv, etc.) cannot encode post-conversion data.
-# total_touches_all retains the pedagogical leakage trap (full-horizon counts).
+# Feature aggregation window in days; see CHANGELOG (bundle schema v4) and
+# release/README.md for the rationale.  Must satisfy snapshot_day <= label_window_days.
 snapshot_day: 30
