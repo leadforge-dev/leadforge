@@ -18,17 +18,14 @@ reconstructible from joins (see
 * ``customers`` / ``subscriptions`` (:data:`BANNED_TABLES`): omitted
   entirely from the output dict; they exist only for converted leads,
   so their presence is the leak.
-* ``accounts`` / ``contacts``: passed through unchanged
-  (firmographic/personographic, time-invariant).
+* ``accounts`` / ``contacts``: passed through unchanged (firmographic
+  / personographic, time-invariant).
 
-PR 2.2 will wire this through :mod:`leadforge.api.bundle` and
-:mod:`leadforge.exposure.filters` so ``student_public`` writes go
-through this function while ``research_instructor`` continues to use
-the full-horizon :func:`leadforge.render.relational.to_dataframes`.
-
-The constants below are re-used by
-:mod:`leadforge.validation.relational_leakage` so the writer and the
-validator share one source of truth for what "snapshot-safe" means.
+The ``research_instructor`` mode keeps using
+:func:`leadforge.render.relational.to_dataframes` for the full-horizon
+export.  The contract constants live in
+:mod:`leadforge.validation.relational_leakage` (validator owns the
+definition of "leakage"); this module re-exports them for ergonomics.
 """
 
 from __future__ import annotations
@@ -37,31 +34,20 @@ from collections.abc import Mapping
 
 import pandas as pd
 
-#: Columns dropped from public ``leads.parquet``.
-BANNED_LEAD_COLUMNS: tuple[str, ...] = (
-    "converted_within_90_days",
-    "conversion_timestamp",
+from leadforge.validation.relational_leakage import (
+    BANNED_LEAD_COLUMNS,
+    BANNED_OPP_COLUMNS,
+    BANNED_TABLES,
+    SNAPSHOT_FILTERED_TABLES,
 )
 
-#: Columns dropped from public ``opportunities.parquet``.
-BANNED_OPP_COLUMNS: tuple[str, ...] = (
-    "close_outcome",
-    "closed_at",
-)
-
-#: Tables omitted from public bundles entirely.
-BANNED_TABLES: tuple[str, ...] = ("customers", "subscriptions")
-
-#: Event tables and the timestamp column used for per-lead snapshot
-#: filtering.  ``opportunities`` is treated as an event table here
-#: (filtered by ``created_at``) because its existence is itself an
-#: event in the funnel timeline.
-EVENT_TABLES: tuple[tuple[str, str], ...] = (
-    ("touches", "touch_timestamp"),
-    ("sessions", "session_timestamp"),
-    ("sales_activities", "activity_timestamp"),
-    ("opportunities", "created_at"),
-)
+__all__ = [
+    "BANNED_LEAD_COLUMNS",
+    "BANNED_OPP_COLUMNS",
+    "BANNED_TABLES",
+    "SNAPSHOT_FILTERED_TABLES",
+    "to_dataframes_snapshot_safe",
+]
 
 _ANCHOR_COL = "_lead_anchor_ts"
 
@@ -89,9 +75,9 @@ def to_dataframes_snapshot_safe(
         ``subscriptions`` are absent.
 
     Raises:
-        ValueError: if ``snapshot_day`` is negative, or if ``leads`` is
-            absent from ``dfs``, or if ``leads`` lacks ``lead_id`` /
-            ``lead_created_at``.
+        ValueError: if ``snapshot_day`` is negative, ``leads`` is
+            absent, ``leads`` lacks the anchor columns, or
+            ``leads.lead_id`` is not unique.
     """
     if snapshot_day < 0:
         raise ValueError(f"snapshot_day must be non-negative, got {snapshot_day}")
@@ -109,7 +95,7 @@ def to_dataframes_snapshot_safe(
     anchor = _build_anchor(leads)
     horizon = pd.Timedelta(days=snapshot_day)
 
-    for name, ts_col in EVENT_TABLES:
+    for name, ts_col in SNAPSHOT_FILTERED_TABLES:
         if name not in dfs:
             continue
         df = dfs[name]

@@ -9,7 +9,7 @@ from leadforge.render.relational_snapshot_safe import (
     BANNED_LEAD_COLUMNS,
     BANNED_OPP_COLUMNS,
     BANNED_TABLES,
-    EVENT_TABLES,
+    SNAPSHOT_FILTERED_TABLES,
     to_dataframes_snapshot_safe,
 )
 
@@ -179,7 +179,7 @@ def test_snapshot_window_invariant_holds_per_lead() -> None:
     leads_anchor = out["leads"].set_index("lead_id")["lead_created_at"].apply(pd.Timestamp)
     horizon = pd.Timedelta(days=10)
 
-    for name, ts_col in EVENT_TABLES:
+    for name, ts_col in SNAPSHOT_FILTERED_TABLES:
         df = out[name]
         if df.empty:
             continue

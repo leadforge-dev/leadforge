@@ -2,39 +2,43 @@
 
 The audit in ``docs/release/v1_current_state_audit.md`` enumerates four
 deterministic paths (A-E) by which alpha public bundles reconstruct the
-target via joins.  The structural fix lives in
-:mod:`leadforge.render.relational_snapshot_safe`; this module is the
-matching validator that asserts the fix is in place on any bundle
-claiming to be ``student_public``.
+target via joins.  This module is the validator that asserts the
+snapshot-safe contract — encoded in :data:`BANNED_LEAD_COLUMNS`,
+:data:`BANNED_OPP_COLUMNS`, :data:`BANNED_TABLES`, and
+:data:`SNAPSHOT_FILTERED_TABLES` — is in place on any bundle claiming to
+be ``student_public``.  The matching writer-side enforcement lives in
+:mod:`leadforge.render.relational_snapshot_safe` and imports the same
+constants from this module.
 
-Five probes, each producing zero or more :class:`LeakageFinding`
-instances:
+Five probes, each producing zero or more :class:`LeakageFinding`:
 
 * :func:`probe_banned_columns` — public ``leads`` and ``opportunities``
-  tables must not contain :data:`~leadforge.render.relational_snapshot_safe.BANNED_LEAD_COLUMNS`
-  or :data:`~leadforge.render.relational_snapshot_safe.BANNED_OPP_COLUMNS`
-  respectively.
-* :func:`probe_banned_tables` — public bundles must not include the
-  conversion-conditional tables ``customers`` or ``subscriptions``.
+  must not contain :data:`BANNED_LEAD_COLUMNS` or
+  :data:`BANNED_OPP_COLUMNS` respectively.
+* :func:`probe_banned_tables` — public bundles must not include
+  :data:`BANNED_TABLES`.
 * :func:`probe_deterministic_reconstruction` — paths B / C / D from the
-  audit must produce zero positive predictions.
+  audit must produce zero positive predictions.  **Path A is not
+  checked here** — it is the column-presence violation already covered
+  by :func:`probe_banned_columns`.
 * :func:`probe_snapshot_window` — every event-table row must satisfy
   ``timestamp <= lead_created_at + snapshot_day``.
-* :func:`probe_bonus_model_auc` — optional honest-feature baseline:
-  trains LR + HistGBM on the legitimate aggregates ``n_opps`` / ``max_acv``
-  / ``mean_acv`` (plus ``n_customers`` / ``n_subscriptions`` if present)
-  and asserts CV AUC stays below ``max_auc``.
+* :func:`probe_bonus_model_auc` — *opt-in* honest-feature baseline:
+  trains LR + HistGBM on the legitimate aggregates ``n_opps`` /
+  ``max_acv`` / ``mean_acv`` (plus ``n_customers`` /
+  ``n_subscriptions`` if present) and asserts CV AUC stays below an
+  explicit ``max_auc``.  The orchestrators skip this probe unless the
+  caller passes ``bonus_model_max_auc=...``.
 
-:func:`run_all_probes` is the file-based orchestrator that PR 2.2 will
-call from :func:`leadforge.validation.bundle_checks.validate_bundle`.
+:func:`run_all_probes` is the file-based orchestrator (designed to be
+called from :func:`leadforge.validation.bundle_checks.validate_bundle`).
 :func:`run_all_probes_on_dataframes` is the same orchestrator without
-the disk read, so unit tests can exercise the probes against synthetic
-bundles built in-memory.
+the disk read, for unit tests against in-memory bundles.
 
 The :func:`deterministic_relational_reconstruction` function is the
 single source of truth for the join graph that defines paths A-E.  The
 companion script ``scripts/probe_relational_leakage.py`` re-exports it
-unchanged so the alpha-bundle audit and the validator agree by
+from here so the alpha-bundle audit and the validator agree by
 construction.
 """
 
@@ -47,29 +51,47 @@ from typing import Final
 
 import pandas as pd
 
-from leadforge.render.relational_snapshot_safe import (
-    BANNED_LEAD_COLUMNS,
-    BANNED_OPP_COLUMNS,
-    BANNED_TABLES,
-    EVENT_TABLES,
+from leadforge.core.exceptions import LeadforgeError
+
+# ---------------------------------------------------------------------------
+# Snapshot-safe contract — the single source of truth for "what is leakage".
+# leadforge.render.relational_snapshot_safe imports these so the writer
+# and the validator share one definition.
+# ---------------------------------------------------------------------------
+
+#: Columns dropped from public ``leads.parquet``.
+BANNED_LEAD_COLUMNS: Final[tuple[str, ...]] = (
+    "converted_within_90_days",
+    "conversion_timestamp",
+)
+
+#: Columns dropped from public ``opportunities.parquet``.
+BANNED_OPP_COLUMNS: Final[tuple[str, ...]] = (
+    "close_outcome",
+    "closed_at",
+)
+
+#: Tables omitted from public bundles entirely.
+BANNED_TABLES: Final[tuple[str, ...]] = ("customers", "subscriptions")
+
+#: Tables filtered per-lead by their timestamp column to
+#: ``lead_created_at + snapshot_day``.  ``opportunities`` is included
+#: even though it is an entity table, because its ``created_at``
+#: anchors when the entity becomes observable in the funnel.
+SNAPSHOT_FILTERED_TABLES: Final[tuple[tuple[str, str], ...]] = (
+    ("touches", "touch_timestamp"),
+    ("sessions", "session_timestamp"),
+    ("sales_activities", "activity_timestamp"),
+    ("opportunities", "created_at"),
 )
 
 #: Channel labels carried on :class:`LeakageFinding.channel`.  Constants
-#: rather than an enum because findings serialise straight to JSON in
-#: PR 3.2's reporting layer.
+#: rather than an enum because findings serialise straight to JSON.
 CHANNEL_BANNED_COLUMN: Final[str] = "banned_column"
 CHANNEL_BANNED_TABLE: Final[str] = "banned_table"
-CHANNEL_DETERMINISTIC_PATH: Final[str] = "deterministic_path"
+CHANNEL_JOIN_RECONSTRUCTION: Final[str] = "join_reconstruction"
 CHANNEL_SNAPSHOT_WINDOW: Final[str] = "snapshot_window"
 CHANNEL_BONUS_MODEL: Final[str] = "bonus_model"
-
-#: Default ceiling for the bonus-model AUC probe.  Honest aggregates
-#: (``n_opps`` / ACV) on the v0.1.0-alpha intermediate tier produce a
-#: legitimate signal in the high-0.5s under the post-fix shape, so 0.65
-#: is a conservative placeholder until PR 3.3 calibrates a per-tier
-#: band against measured baselines.
-DEFAULT_MAX_BONUS_AUC: Final[float] = 0.65
-# TODO(PR 3.3): tighten this band against a measured honest-feature baseline.
 
 _PUBLIC_TABLES: Final[tuple[str, ...]] = (
     "accounts",
@@ -107,31 +129,27 @@ class LeakageReport:
             raise RelationalLeakageError(self)
 
 
-class RelationalLeakageError(AssertionError):
+class RelationalLeakageError(LeadforgeError):
     """Raised by :meth:`LeakageReport.raise_if_failing` on any finding.
 
     Carries the originating :class:`LeakageReport` on ``self.report`` so
     callers (e.g. ``leadforge validate``) can render the full set of
-    findings in their output rather than just the first one.
+    findings rather than just the first one.
     """
 
     def __init__(self, report: LeakageReport) -> None:
         self.report = report
-        first_lines = "\n".join(
-            f"  - [{f.channel}] {f.detail}: {f.message}" for f in report.findings
-        )
+        rendered = "\n".join(f"  - [{f.channel}] {f.detail}: {f.message}" for f in report.findings)
         super().__init__(
             f"public bundle leaks `converted_within_90_days` "
-            f"({len(report.findings)} finding(s)):\n{first_lines}"
+            f"({len(report.findings)} finding(s)):\n{rendered}"
         )
 
 
 # ---------------------------------------------------------------------------
 # Deterministic reconstruction — the join graph that defines paths A-E.
-#
-# Lifted verbatim from ``scripts/probe_relational_leakage.py`` (PR 1.1) so
-# the package and the script share one implementation.  The script now
-# re-exports this function from here.
+# Lifted from the PR 1.1 audit script; the script now re-exports this
+# function from here so there is one implementation.
 # ---------------------------------------------------------------------------
 
 
@@ -228,7 +246,13 @@ def deterministic_relational_reconstruction(
 
 
 def probe_banned_columns(tables: Mapping[str, pd.DataFrame]) -> list[LeakageFinding]:
-    """Public ``leads``/``opportunities`` must not carry banned columns."""
+    """Public ``leads``/``opportunities`` must not carry banned columns.
+
+    Detects Path A (label column directly readable from ``leads``) and
+    the ``opportunities.close_outcome`` / ``closed_at`` channels — i.e.
+    leakage that any caller can spot by listing column names, no joins
+    required.
+    """
     findings: list[LeakageFinding] = []
     for table_name, banned in (
         ("leads", BANNED_LEAD_COLUMNS),
@@ -273,12 +297,20 @@ def probe_banned_tables(table_names: Iterable[str]) -> list[LeakageFinding]:
 def probe_deterministic_reconstruction(
     tables: Mapping[str, pd.DataFrame],
 ) -> list[LeakageFinding]:
-    """Paths B / C / D from the audit must produce zero positive predictions.
+    """Audit paths B / C / D must produce zero positive predictions.
 
-    Path A is intentionally not checked here — it is fully covered by
-    :func:`probe_banned_columns` (Path A reads
-    ``leads.converted_within_90_days`` directly, which is a
-    :data:`BANNED_LEAD_COLUMNS` violation).
+    This probe focuses exclusively on the **join-graph** reconstruction:
+
+    * B — at least one opportunity with ``close_outcome == "closed_won"``;
+    * C — a joinable customer row reachable via ``opportunity_id``;
+    * D — a joinable subscription row reachable via ``customer_id``.
+
+    Path A (direct read of ``leads.converted_within_90_days``) is *not*
+    checked here — it is the column-presence violation already raised by
+    :func:`probe_banned_columns`.  Re-emitting it here would double-count
+    one defect across two channels.  Tests assert this delegation
+    explicitly so that future maintainers don't widen the scope by
+    accident.
     """
     leads = tables.get("leads")
     if leads is None or len(leads) == 0:
@@ -309,7 +341,7 @@ def probe_deterministic_reconstruction(
         if positive > 0:
             findings.append(
                 LeakageFinding(
-                    channel=CHANNEL_DETERMINISTIC_PATH,
+                    channel=CHANNEL_JOIN_RECONSTRUCTION,
                     detail=path_col,
                     message=(
                         f"path {label} produced {positive}/{len(paths)} "
@@ -340,7 +372,7 @@ def probe_snapshot_window(
     horizon = pd.Timedelta(days=snapshot_day)
 
     findings: list[LeakageFinding] = []
-    for name, ts_col in EVENT_TABLES:
+    for name, ts_col in SNAPSHOT_FILTERED_TABLES:
         df = tables.get(name)
         if df is None or len(df) == 0 or ts_col not in df.columns:
             continue
@@ -365,20 +397,33 @@ def probe_snapshot_window(
 def probe_bonus_model_auc(
     tables: Mapping[str, pd.DataFrame],
     *,
-    max_auc: float = DEFAULT_MAX_BONUS_AUC,
+    max_auc: float,
     seed: int = 42,
     label: pd.Series | None = None,
 ) -> list[LeakageFinding]:
-    """5-fold CV LR + HistGBM AUC on honest relational aggregates.
+    """Opt-in honest-feature baseline: 5-fold CV LR + HistGBM AUC.
 
-    If the public bundle has been correctly redacted, ``leads`` no longer
-    carries ``converted_within_90_days`` — in that case the caller must
-    supply the held-back ``label`` (typically read from the task split)
-    so we can score against ground truth.  When neither is available the
-    probe is skipped silently (no finding, no error): there is simply no
-    truth to compare against.
+    Trains on per-lead aggregates (``n_opps`` / ``max_acv`` /
+    ``mean_acv``, plus ``n_customers`` / ``n_subscriptions`` if those
+    tables are present) and asserts the mean cross-validated AUC stays
+    below ``max_auc``.
 
-    Skipped (no finding) if scikit-learn is unavailable.
+    Caller responsibilities:
+
+    * ``max_auc`` is required.  PR 2.1 ships this probe with no
+      calibrated threshold; PR 3.3 will land per-tier bands.
+    * ``label`` must be a :class:`pandas.Series` indexed by ``lead_id``
+      (``index.name == "lead_id"``).  This is enforced — a misaligned
+      label would silently skip the probe via the binary-cardinality
+      gate, which defeats the validator's purpose.
+
+    The probe skips silently (no findings, no error) when:
+
+    * scikit-learn is not installed;
+    * ``leads`` is missing or empty;
+    * the label is unavailable (no ``label`` argument and the public
+      bundle has correctly redacted ``converted_within_90_days``);
+    * the label has fewer than two classes after alignment.
     """
     try:
         from sklearn.ensemble import HistGradientBoostingClassifier
@@ -447,16 +492,17 @@ def run_all_probes_on_dataframes(
     tables: Mapping[str, pd.DataFrame],
     *,
     snapshot_day: int,
-    max_auc: float = DEFAULT_MAX_BONUS_AUC,
+    bonus_model_max_auc: float | None = None,
     label: pd.Series | None = None,
 ) -> LeakageReport:
-    """Run every probe against an in-memory tables dict."""
+    """Run every structural probe; run the bonus probe iff ``bonus_model_max_auc`` is set."""
     findings: list[LeakageFinding] = []
     findings += probe_banned_columns(tables)
     findings += probe_banned_tables(tables.keys())
     findings += probe_deterministic_reconstruction(tables)
     findings += probe_snapshot_window(tables, snapshot_day=snapshot_day)
-    findings += probe_bonus_model_auc(tables, max_auc=max_auc, label=label)
+    if bonus_model_max_auc is not None:
+        findings += probe_bonus_model_auc(tables, max_auc=bonus_model_max_auc, label=label)
     return LeakageReport(findings=tuple(findings))
 
 
@@ -464,20 +510,23 @@ def run_all_probes(
     bundle_dir: Path,
     *,
     snapshot_day: int,
-    max_auc: float = DEFAULT_MAX_BONUS_AUC,
+    bonus_model_max_auc: float | None = None,
     label: pd.Series | None = None,
 ) -> LeakageReport:
-    """Run every probe against ``<bundle_dir>/tables/*.parquet``.
+    """Run every structural probe against ``<bundle_dir>/tables/*.parquet``.
 
     Args:
         bundle_dir: Bundle root (must contain ``tables/leads.parquet``).
-        snapshot_day: Snapshot window for the timestamp probe.
-        max_auc: Threshold for the bonus-model probe.
-        label: Optional ground-truth labels to feed the bonus-model
-            probe when ``leads.converted_within_90_days`` has been
-            redacted.  Not loading them automatically (e.g. from the
-            task splits) keeps this module independent of task layout —
-            PR 2.2's wiring layer is the right place for that lookup.
+        snapshot_day: Snapshot window for the timestamp probe.  The
+            caller (typically ``validate_bundle``) is expected to read
+            it from ``manifest.json``.
+        bonus_model_max_auc: Pass a numeric threshold to enable the
+            opt-in :func:`probe_bonus_model_auc`.  ``None`` (default)
+            skips it — the calibrated band ships in PR 3.3.
+        label: Optional ground-truth labels for the bonus probe when
+            ``leads.converted_within_90_days`` has been redacted.  Must
+            be indexed by ``lead_id`` (see :func:`probe_bonus_model_auc`).
+            Ignored when ``bonus_model_max_auc`` is ``None``.
 
     Raises:
         FileNotFoundError: if ``<bundle_dir>/tables/`` is missing or
@@ -495,7 +544,10 @@ def run_all_probes(
         if path.exists():
             tables[name] = pd.read_parquet(path)
     return run_all_probes_on_dataframes(
-        tables, snapshot_day=snapshot_day, max_auc=max_auc, label=label
+        tables,
+        snapshot_day=snapshot_day,
+        bonus_model_max_auc=bonus_model_max_auc,
+        label=label,
     )
 
 
@@ -514,13 +566,18 @@ def _resolve_label(
 ) -> pd.Series | None:
     """Pick a label series to score against, or ``None`` to skip the probe.
 
-    When ``label`` is supplied the caller is responsible for aligning it
-    to ``lead_id`` (either as the index name or in a way that
-    ``Series.reindex(features.index)`` resolves).  When it is not
-    supplied we read ``leads.converted_within_90_days`` directly — this
-    branch is exercised by tampered bundles in tests.
+    A caller-supplied ``label`` must be indexed by ``lead_id``
+    (``index.name == "lead_id"``).  Without that guarantee a misaligned
+    label would silently skip the probe via the binary-cardinality gate
+    downstream — exactly the kind of hidden no-op a leakage validator
+    must not have.
     """
     if label is not None:
+        if label.index.name != "lead_id":
+            raise ValueError(
+                "label must be a pandas.Series indexed by lead_id "
+                f"(got index.name={label.index.name!r})"
+            )
         return label.astype("boolean").fillna(False).astype(int)
     if "converted_within_90_days" in leads.columns:
         return (
@@ -541,8 +598,7 @@ def _build_relational_features(
     Honest features only — no aggregate of ``close_outcome``.  Customers
     and subscriptions counts are included only when the corresponding
     tables exist (i.e. on a tampered bundle); on a clean public bundle
-    they default to 0 and become uninformative columns the model can
-    discard.
+    they default to 0 and the model can discard the column.
     """
     opps = tables.get("opportunities")
     customers = tables.get("customers")
@@ -595,15 +651,18 @@ def _build_relational_features(
 
 
 __all__ = [
+    "BANNED_LEAD_COLUMNS",
+    "BANNED_OPP_COLUMNS",
+    "BANNED_TABLES",
     "CHANNEL_BANNED_COLUMN",
     "CHANNEL_BANNED_TABLE",
     "CHANNEL_BONUS_MODEL",
-    "CHANNEL_DETERMINISTIC_PATH",
+    "CHANNEL_JOIN_RECONSTRUCTION",
     "CHANNEL_SNAPSHOT_WINDOW",
-    "DEFAULT_MAX_BONUS_AUC",
     "LeakageFinding",
     "LeakageReport",
     "RelationalLeakageError",
+    "SNAPSHOT_FILTERED_TABLES",
     "deterministic_relational_reconstruction",
     "probe_banned_columns",
     "probe_banned_tables",

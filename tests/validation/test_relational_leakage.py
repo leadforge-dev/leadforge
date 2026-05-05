@@ -22,7 +22,7 @@ from leadforge.validation.relational_leakage import (
     CHANNEL_BANNED_COLUMN,
     CHANNEL_BANNED_TABLE,
     CHANNEL_BONUS_MODEL,
-    CHANNEL_DETERMINISTIC_PATH,
+    CHANNEL_JOIN_RECONSTRUCTION,
     LeakageFinding,
     LeakageReport,
     RelationalLeakageError,
@@ -49,11 +49,11 @@ def _full_horizon_bundle(*, n_each: int = 25) -> dict[str, pd.DataFrame]:
 
     Both converted (``lead_C_*``) and unconverted (``lead_U_*``) leads
     own a single opportunity; only converted leads own a customer and a
-    subscription.  Mirroring the realistic shape — opportunities for
-    everyone, conversion-conditional only customers/subscriptions —
-    keeps post-redaction honest aggregates (``n_opps``, ``max_acv``,
-    ``mean_acv``) non-discriminative, so the bonus-model probe stays
-    below the default 0.65 ceiling on the clean bundle.
+    subscription.  This mirrors the realistic shape — opportunities for
+    everyone, conversion-conditional only customers/subscriptions — so
+    that the structural probes have something to bite on without
+    accidentally turning ``n_opps`` into a perfect predictor for the
+    opt-in bonus-model probe.
     """
     leads_rows: list[dict] = []
     opps_rows: list[dict] = []
@@ -90,9 +90,9 @@ def _full_horizon_bundle(*, n_each: int = 25) -> dict[str, pd.DataFrame]:
                 "conversion_timestamp": None,
             }
         )
-        # ACV drawn from the same distribution for both classes so the
-        # post-redaction model has no signal beyond label noise — without
-        # this the bonus-model probe trips even on a snapshot-safe bundle.
+        # ACV drawn from the same distribution for both classes — keeps
+        # ``max_acv`` / ``mean_acv`` uninformative for the bonus probe
+        # so its enabled-but-clean test path is stable.
         acv = 30_000 + (i % 10) * 2_000
         opps_rows.append(
             {
@@ -178,9 +178,23 @@ def _label_for(bundle: dict[str, pd.DataFrame]) -> pd.Series:
 
 
 def test_clean_bundle_passes_all_probes() -> None:
+    """Default orchestrator (structural probes only) must report zero findings."""
+    tables = _clean_bundle()
+    report = run_all_probes_on_dataframes(tables, snapshot_day=SNAPSHOT_DAY)
+    assert report.ok, [f"[{f.channel}] {f.detail}: {f.message}" for f in report.findings]
+
+
+def test_clean_bundle_passes_with_bonus_probe_enabled() -> None:
+    """Bonus probe is opt-in; when enabled with a generous threshold, the
+    clean bundle still reports zero findings — exercising the full code
+    path without flaking on synthetic-data noise."""
+    pytest.importorskip("sklearn")
     tables = _clean_bundle()
     report = run_all_probes_on_dataframes(
-        tables, snapshot_day=SNAPSHOT_DAY, label=_label_for(tables)
+        tables,
+        snapshot_day=SNAPSHOT_DAY,
+        bonus_model_max_auc=0.95,
+        label=_label_for(tables),
     )
     assert report.ok, [f"[{f.channel}] {f.detail}: {f.message}" for f in report.findings]
 
@@ -352,6 +366,52 @@ def test_bonus_model_probe_skipped_without_label() -> None:
     assert probe_bonus_model_auc(tables, max_auc=0.65, label=None) == []
 
 
+def test_bonus_model_probe_rejects_misaligned_label() -> None:
+    """A label not indexed by lead_id would silently misalign and skip the
+    probe via the binary-cardinality gate — defeating the validator.
+    The probe must reject it loudly instead."""
+    pytest.importorskip("sklearn")
+    tables = _clean_bundle()
+    src = _full_horizon_bundle()
+    bad_label = src["leads"]["converted_within_90_days"].reset_index(drop=True)
+    assert bad_label.index.name != "lead_id"
+    with pytest.raises(ValueError, match="indexed by lead_id"):
+        probe_bonus_model_auc(tables, max_auc=0.65, label=bad_label)
+
+
+def test_orchestrator_skips_bonus_probe_by_default() -> None:
+    """run_all_probes_on_dataframes(... bonus_model_max_auc=None) must skip
+    the bonus probe even when customers/subscriptions would trigger it.
+    This is the post-PR-2.1 default; PR 3.3 calibrates and turns it on."""
+    pytest.importorskip("sklearn")
+    tables = _clean_bundle()
+    src = _full_horizon_bundle()
+    tables["customers"] = src["customers"]
+    tables["subscriptions"] = src["subscriptions"]
+
+    # The bonus probe would fire here (customers+subs reintroduced), but
+    # the structural probes will fire first regardless.  Filter to bonus-
+    # channel findings to assert the bonus probe is the one that didn't run.
+    report = run_all_probes_on_dataframes(tables, snapshot_day=SNAPSHOT_DAY)
+    assert all(f.channel != CHANNEL_BONUS_MODEL for f in report.findings)
+
+
+def test_orchestrator_runs_bonus_probe_when_enabled() -> None:
+    pytest.importorskip("sklearn")
+    tables = _clean_bundle()
+    src = _full_horizon_bundle()
+    tables["customers"] = src["customers"]
+    tables["subscriptions"] = src["subscriptions"]
+
+    report = run_all_probes_on_dataframes(
+        tables,
+        snapshot_day=SNAPSHOT_DAY,
+        bonus_model_max_auc=0.95,
+        label=_label_for(tables),
+    )
+    assert any(f.channel == CHANNEL_BONUS_MODEL for f in report.findings)
+
+
 # ---------------------------------------------------------------------------
 # Orchestrator + report ergonomics.
 # ---------------------------------------------------------------------------
@@ -369,7 +429,7 @@ def test_orchestrator_aggregates_findings_across_channels() -> None:
     channels = {f.channel for f in report.findings}
     assert CHANNEL_BANNED_COLUMN in channels
     assert CHANNEL_BANNED_TABLE in channels
-    assert CHANNEL_DETERMINISTIC_PATH in channels
+    assert CHANNEL_JOIN_RECONSTRUCTION in channels
 
 
 def test_report_raise_if_failing_carries_report() -> None:
@@ -403,9 +463,7 @@ def _write_bundle_to_disk(tables: dict[str, pd.DataFrame], root: Path) -> Path:
 
 def test_run_all_probes_reads_bundle_from_disk(tmp_path: Path) -> None:
     bundle_dir = _write_bundle_to_disk(_clean_bundle(), tmp_path / "clean")
-    report = run_all_probes(
-        bundle_dir, snapshot_day=SNAPSHOT_DAY, label=_label_for(_clean_bundle())
-    )
+    report = run_all_probes(bundle_dir, snapshot_day=SNAPSHOT_DAY)
     assert report.ok, [f"[{f.channel}] {f.detail}: {f.message}" for f in report.findings]
 
 
@@ -417,7 +475,7 @@ def test_run_all_probes_detects_disk_bundle_leakage(tmp_path: Path) -> None:
     channels = {f.channel for f in report.findings}
     assert CHANNEL_BANNED_COLUMN in channels
     assert CHANNEL_BANNED_TABLE in channels
-    assert CHANNEL_DETERMINISTIC_PATH in channels
+    assert CHANNEL_JOIN_RECONSTRUCTION in channels
 
 
 def test_run_all_probes_missing_tables_dir_raises(tmp_path: Path) -> None:
