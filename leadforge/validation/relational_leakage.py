@@ -332,6 +332,8 @@ def probe_snapshot_window(
         return []
     if "lead_id" not in leads.columns or "lead_created_at" not in leads.columns:
         raise ValueError("leads must contain 'lead_id' and 'lead_created_at' columns")
+    if not leads["lead_id"].is_unique:
+        raise ValueError("leads.lead_id must be unique")
 
     anchor = leads[["lead_id", "lead_created_at"]].copy()
     anchor["lead_created_at"] = pd.to_datetime(anchor["lead_created_at"])

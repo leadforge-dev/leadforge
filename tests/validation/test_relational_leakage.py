@@ -312,6 +312,15 @@ def test_snapshot_window_negative_day_raises() -> None:
         probe_snapshot_window(tables, snapshot_day=-1)
 
 
+def test_snapshot_window_duplicate_lead_id_raises() -> None:
+    """Duplicate lead_ids would broadcast in the merge; matches the
+    same invariant asserted by deterministic_relational_reconstruction."""
+    tables = _clean_bundle()
+    tables["leads"] = pd.concat([tables["leads"], tables["leads"].iloc[[0]]], ignore_index=True)
+    with pytest.raises(ValueError, match="lead_id must be unique"):
+        probe_snapshot_window(tables, snapshot_day=SNAPSHOT_DAY)
+
+
 # ---------------------------------------------------------------------------
 # Bonus-model probe.
 # ---------------------------------------------------------------------------

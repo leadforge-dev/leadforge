@@ -131,6 +131,11 @@ def _build_anchor(leads: pd.DataFrame) -> pd.DataFrame:
     missing = [c for c in ("lead_id", "lead_created_at") if c not in leads.columns]
     if missing:
         raise ValueError(f"leads is missing required columns: {missing}")
+    # Duplicate lead_ids would broadcast in the per-lead merge below and
+    # silently inflate event-table row counts.  Match the same invariant
+    # asserted by ``deterministic_relational_reconstruction``.
+    if not leads["lead_id"].is_unique:
+        raise ValueError("leads.lead_id must be unique")
     anchor = leads[["lead_id", "lead_created_at"]].rename(columns={"lead_created_at": _ANCHOR_COL})
     anchor[_ANCHOR_COL] = pd.to_datetime(anchor[_ANCHOR_COL])
     return anchor

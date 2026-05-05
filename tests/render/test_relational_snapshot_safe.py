@@ -274,3 +274,12 @@ def test_leads_missing_anchor_columns_raises() -> None:
     bad = {"leads": pd.DataFrame([{"lead_id": "lead_1"}])}
     with pytest.raises(ValueError, match="missing required columns"):
         to_dataframes_snapshot_safe(bad, snapshot_day=10)
+
+
+def test_duplicate_lead_id_raises() -> None:
+    """Per-lead snapshot filter would broadcast on duplicates; matches the
+    same invariant asserted by ``deterministic_relational_reconstruction``."""
+    src = _full_horizon_dict()
+    src["leads"] = pd.concat([src["leads"], src["leads"].iloc[[0]]], ignore_index=True)
+    with pytest.raises(ValueError, match="lead_id must be unique"):
+        to_dataframes_snapshot_safe(src, snapshot_day=10)
