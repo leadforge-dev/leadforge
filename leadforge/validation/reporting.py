@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Any
 
 import matplotlib
+import numpy as np
 
 matplotlib.use("Agg")  # headless / deterministic; must precede pyplot import.
 
@@ -297,6 +298,13 @@ def _render_markdown(report: ReleaseQualityReport) -> str:
 
     out.append("---")
     out.append("")
+    out.append("**Gate references** (see `docs/release/v1_acceptance_gates.md`):")
+    out.append("")
+    out.append("- **G6.4** — Cohort/time-shift AUC degradation band.")
+    out.append("- **G7.\\*** — Per-tier ROC-AUC, AP, P@K, lift, calibration bands.")
+    out.append("- **G7.4** — Cross-tier ordering (AP / P@K / GBM−LR / conversion-rate).")
+    out.append("- **G8.1** — Cross-seed stability (per-metric spread within tolerance).")
+    out.append("")
     out.append(f"_Renderer: `leadforge.validation.reporting`. JSON sibling: `{REPORT_JSON}`._")
     return "\n".join(out) + "\n"
 
@@ -338,10 +346,14 @@ def _save(fig: Any, path: Path) -> None:
 def _write_lift_curve(csm: CrossSeedTierMetrics, path: Path) -> None:
     """Cumulative-gains chart at the median seed for one tier.
 
-    The headline-tier picture: x = fraction of leads (sorted by score
-    descending), y = fraction of positives captured.  Diagonal = random
-    baseline.  The lift table in the markdown gives the numbers; the
-    figure gives the shape.
+    Plots the actual ``cumulative_gains`` curve sampled by
+    :func:`leadforge.validation.release_quality._cumulative_gains_curve`.
+    Earlier versions of this function fabricated the curve by
+    interpolating between the three measured ``lift_at_pct`` points
+    (1% / 5% / 10%) and then jumping straight to (100%, 1.0); that lied
+    about model quality between the data points and saturated at 1.0
+    for high-lift models.  The fix is to plot the precomputed curve
+    directly — no interpolation tricks.
     """
     if not csm.per_seed:
         empty_fig, _ = _figure()
@@ -349,18 +361,21 @@ def _write_lift_curve(csm: CrossSeedTierMetrics, path: Path) -> None:
         return
     metrics = csm.per_seed[len(csm.per_seed) // 2]
     fig, ax = _figure(figsize=(6.0, 5.0))
-    # Convert lift@pct (precision/base) into a cumulative-gains-style
-    # coordinate: y = lift × pct/100, capped at 1.0.  Computed only
-    # for the LIFT_PCTS we have; for {20, 50, 100} we fall back to
-    # base-rate diagonal as those points were not measured.
-    measured: dict[float, float] = {}
-    for p in (1.0, 5.0, 10.0):
-        v = metrics.lift_at_pct.get(f"{p:g}")
-        if v is not None and not math.isnan(v):
-            measured[p] = v
-    pcts = sorted(measured)
-    ys = [min(1.0, measured[p] * p / 100.0) for p in pcts]
-    ax.plot([0.0, *pcts, 100.0], [0.0, *ys, 1.0], marker="o", label=f"{csm.tier} (median seed)")
+
+    points: list[tuple[float, float]] = []
+    for key, v in metrics.cumulative_gains.items():
+        try:
+            pct = float(key)
+        except ValueError:
+            continue
+        if v is None or math.isnan(v):
+            continue
+        points.append((pct, v))
+    points.sort()
+    if points:
+        xs = [p for p, _ in points]
+        ys = [v for _, v in points]
+        ax.plot(xs, ys, marker="o", label=f"{csm.tier} (median seed)")
     ax.plot([0, 100], [0, 1], linestyle="--", color="grey", label="random")
     ax.set_xlabel("Top-K% of leads (sorted by predicted P(convert))")
     ax.set_ylabel("Fraction of positives captured")
@@ -413,8 +428,6 @@ def _write_leakage_delta(tiers: Mapping[str, CrossSeedTierMetrics], path: Path) 
     n_groups = len(tier_names)
     n_bars = len(baseline_names)
     bar_w = 0.8 / max(1, n_bars)
-    import numpy as np  # local import so the module top stays sklearn-free
-
     xs = np.arange(n_groups)
     for i, bn in enumerate(baseline_names):
         ys: list[float] = []
@@ -436,8 +449,6 @@ def _write_leakage_delta(tiers: Mapping[str, CrossSeedTierMetrics], path: Path) 
 
 def _write_cohort_shift(cohort: Mapping[str, CohortShiftMetrics], path: Path) -> None:
     """Side-by-side bars: random vs chronological-cohort split AUC per tier."""
-    import numpy as np
-
     fig, ax = _figure(figsize=(7.0, 4.5))
     tier_names = sorted(cohort.keys())
     xs = np.arange(len(tier_names))
@@ -462,8 +473,6 @@ def _write_cohort_shift(cohort: Mapping[str, CohortShiftMetrics], path: Path) ->
 
 def _write_value_capture(tiers: Mapping[str, CrossSeedTierMetrics], path: Path) -> None:
     """ACV captured at K (across the K values in :data:`PRECISION_KS`)."""
-    import numpy as np
-
     fig, ax = _figure(figsize=(7.0, 4.5))
     has_any = False
     for tier_name in sorted(tiers.keys()):

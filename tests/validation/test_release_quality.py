@@ -19,6 +19,9 @@ import pandas as pd
 import pytest
 
 from leadforge.validation.release_quality import (
+    _HEADLINE_FIELDS,
+    CUMULATIVE_GAINS_PCTS,
+    DEFAULT_MODEL_RANDOM_STATE,
     LABEL_COLUMN,
     PRECISION_KS,
     CalibrationBin,
@@ -27,7 +30,9 @@ from leadforge.validation.release_quality import (
     CrossTierOrdering,
     ReleaseQualityReport,
     TierMetrics,
+    _aggregate_cross_seed,
     _calibration_bins,
+    _cumulative_gains_curve,
     _expected_acv_capture,
     _lift_at_pct,
     _precision_at_k,
@@ -122,6 +127,28 @@ class TestMetricPrimitives:
         populated = [b for b in bins if b.n > 0]
         assert len(populated) == 1
 
+    def test_cumulative_gains_perfect_ranker_captures_at_top_k(self) -> None:
+        # 100 leads, 30 positives at top → top-30% captures 100% of positives.
+        probs = np.linspace(1.0, 0.0, 100)
+        y = np.zeros(100, dtype=int)
+        y[:30] = 1
+        out = _cumulative_gains_curve(probs, y, (0.0, 10.0, 30.0, 50.0, 100.0))
+        assert out["0"] == 0.0
+        assert out["100"] == 1.0
+        # Top-30% captures all 30 positives.
+        assert out["30"] == pytest.approx(1.0)
+        # Top-10% captures 10/30.
+        assert out["10"] == pytest.approx(10 / 30, abs=1e-6)
+        # Curve is monotonic non-decreasing.
+        ordered = [out[f"{p:g}"] for p in (0.0, 10.0, 30.0, 50.0, 100.0)]
+        assert ordered == sorted(ordered)
+
+    def test_cumulative_gains_no_positives_returns_nan(self) -> None:
+        out = _cumulative_gains_curve(
+            np.array([0.9, 0.5, 0.1]), np.zeros(3, dtype=int), (0.0, 50.0, 100.0)
+        )
+        assert all(math.isnan(v) for v in out.values())
+
 
 # ---------------------------------------------------------------------------
 # Dataclass plumbing + JSON serialisation.
@@ -142,11 +169,17 @@ def _fixture_tier_metrics(tier: str, seed: int, **overrides: Any) -> TierMetrics
         "gbm_minus_lr_auc": 0.03,
         "lr_average_precision": 0.62,
         "gbm_average_precision": 0.65,
-        "average_precision": 0.62,
         "precision_at_k": {"50": 0.66, "100": 0.55},
         "recall_at_k": {"50": 0.45, "100": 0.78},
         "lift_at_pct": {"1": 3.0, "5": 2.5, "10": 2.0},
         "top_decile_rate": 0.6,
+        "cumulative_gains": {
+            "0": 0.0,
+            "10": 0.4,
+            "20": 0.6,
+            "50": 0.85,
+            "100": 1.0,
+        },
         "expected_acv_capture_at_k": {"50": 0.55, "100": 0.80},
         "brier_score": 0.12,
         "log_loss": 0.34,
@@ -292,14 +325,56 @@ class TestCrossTierOrdering:
         assert o.gbm_minus_lr_positive_in_every_tier
 
     def test_ordering_with_partial_release(self) -> None:
-        # Only intro present — other ordering booleans default to True.
+        # Only intro present — pairs that include a missing tier become
+        # ``None``; the gbm-vs-lr "every tier" still resolves on the
+        # finite intro median (positive in the fixture).  The previous
+        # design defaulted these to ``True``, silently green-lighting
+        # partial releases.
         from leadforge.validation.release_quality import _compute_cross_tier_ordering
 
         partial = _fixture_report(("intro",))
         o = _compute_cross_tier_ordering(partial.tiers)
         assert o.by_average_precision == ["intro"]
-        assert o.average_precision_intro_gt_intermediate is True
-        assert o.gbm_minus_lr_positive_in_every_tier
+        assert o.average_precision_intro_gt_intermediate is None
+        assert o.average_precision_intermediate_gt_advanced is None
+        assert o.gbm_minus_lr_positive_in_every_tier is True
+
+    def test_ordering_returns_none_on_empty_release(self) -> None:
+        from leadforge.validation.release_quality import _compute_cross_tier_ordering
+
+        o = _compute_cross_tier_ordering({})
+        assert o.by_average_precision == []
+        assert o.average_precision_intro_gt_intermediate is None
+        assert o.gbm_minus_lr_positive_in_every_tier is None
+
+
+class TestHeadlineFieldsRegistry:
+    """Drift-guard for ``_HEADLINE_FIELDS``.
+
+    Mirrors the meta-test pattern in ``test_leakage_probes.py`` —
+    catches the failure mode where a new metric is added to
+    :class:`TierMetrics` but the cross-seed aggregator forgets to
+    include it.
+    """
+
+    def test_every_headline_field_is_a_scalar_float_on_tier_metrics(self) -> None:
+        import typing
+
+        # ``from __future__ import annotations`` stores annotations as
+        # strings; ``get_type_hints`` resolves them back to real types.
+        hints = typing.get_type_hints(TierMetrics)
+        scalar_floats = {name for name, t in hints.items() if t is float}
+        unknown = set(_HEADLINE_FIELDS) - scalar_floats
+        assert not unknown, (
+            f"_HEADLINE_FIELDS contains entries that are not scalar floats on "
+            f"TierMetrics: {sorted(unknown)}"
+        )
+
+    def test_aggregator_emits_a_median_and_spread_per_field(self) -> None:
+        per_seed = [_fixture_tier_metrics("intermediate", seed=42)]
+        medians, spreads = _aggregate_cross_seed(per_seed)
+        assert set(_HEADLINE_FIELDS) == set(medians.keys())
+        assert set(_HEADLINE_FIELDS) == set(spreads.keys())
 
 
 # ---------------------------------------------------------------------------
@@ -432,6 +507,15 @@ class TestBundleMeasurement:
         assert "id_only" in m.baselines
         assert m.baselines["id_only"] > 0.3
         assert m.baselines["id_only"] < 0.7
+        # Cumulative gains carries one entry per CUMULATIVE_GAINS_PCTS.
+        assert set(m.cumulative_gains.keys()) == {f"{p:g}" for p in CUMULATIVE_GAINS_PCTS}
+        assert m.cumulative_gains["0"] == 0.0
+        assert m.cumulative_gains["100"] == pytest.approx(1.0)
+        # Curve is monotonic non-decreasing.
+        sorted_pcts = sorted(float(k) for k in m.cumulative_gains)
+        ys = [m.cumulative_gains[f"{p:g}"] for p in sorted_pcts]
+        for prev, cur in zip(ys[:-1], ys[1:], strict=True):
+            assert cur >= prev - 1e-9, f"cumulative gains decreased: {prev} -> {cur}"
 
     def test_measure_tier_raises_when_train_single_class(self, tmp_path: Path) -> None:
         pytest.importorskip("sklearn")
@@ -461,6 +545,29 @@ class TestBundleMeasurement:
         assert not math.isnan(cs.random_split_auc)
         assert math.isnan(cs.cohort_split_auc)
         assert math.isnan(cs.auc_degradation)
+
+    def test_model_random_state_decoupled_from_generation_seed(self, tmp_path: Path) -> None:
+        """``model_random_state`` controls the sklearn ``random_state``;
+        the ``seed`` argument is just the bundle's generation seed
+        recorded for traceability.
+
+        Two ``measure_tier_from_bundle`` calls on the *same* bundle with
+        the same ``model_random_state`` but different ``seed`` arguments
+        must produce identical AUCs (data is identical → model is
+        identical → AUCs are identical).  Earlier versions of this
+        function used ``seed`` for both, so the cross-seed sweep
+        confounded data variance with model-RNG variance — that's the
+        bug this test guards against.
+        """
+        pytest.importorskip("sklearn")
+        bundle = _write_minimal_bundle(tmp_path / "fixed_data", n=400, seed=42)
+        a = measure_tier_from_bundle(bundle, seed=1, model_random_state=DEFAULT_MODEL_RANDOM_STATE)
+        b = measure_tier_from_bundle(bundle, seed=2, model_random_state=DEFAULT_MODEL_RANDOM_STATE)
+        assert a.lr_auc == b.lr_auc
+        assert a.gbm_auc == b.gbm_auc
+        # The traceability seed differs.
+        assert a.seed == 1
+        assert b.seed == 2
 
     def test_cohort_shift_returns_well_formed_auc_pair(self, tmp_path: Path) -> None:
         """Cohort-shift evaluation returns finite AUCs in [0, 1] and a

@@ -54,9 +54,21 @@ from leadforge.schema.features import LEAD_SNAPSHOT_FEATURES
 #: label-resolution path that goes through the bundle manifest).
 LABEL_COLUMN = "converted_within_90_days"
 
-#: Default seed used when the caller doesn't pin one.  Held constant so
-#: the released report is reproducible across re-runs of the driver.
+#: Default generation-seed alias used by the driver when invoking
+#: :func:`measure_tier_from_bundle` directly on a single bundle.  The
+#: seed is the bundle's *generation* seed, NOT the model's
+#: ``random_state`` — see :data:`DEFAULT_MODEL_RANDOM_STATE` for that.
 DEFAULT_SEED: int = 42
+
+#: ``random_state`` used for every sklearn estimator inside this module.
+#: Held constant across the cross-seed sweep so the AUC variance the
+#: report attributes to "data variance" is *only* data variance — not
+#: data-seed × model-seed interaction.  Decoupling this from the
+#: bundle's generation seed is a real correctness concern: with the
+#: previous design, two consecutive seeds happening to align with a
+#: HistGBM tree-split tie-break could masquerade as cross-seed
+#: instability.
+DEFAULT_MODEL_RANDOM_STATE: int = 0
 
 #: K values for ``precision_at_k`` / ``recall_at_k``.  Matches G7.*.6 in
 #: ``v1_acceptance_gates.md`` (P@100 is the headline; P@50 carries the
@@ -66,6 +78,13 @@ PRECISION_KS: tuple[int, ...] = (50, 100)
 #: Lift percentages (top-X% of predictions, by score).  Matches the
 #: design-doc §"Release validation" call for "lift@1/5/10%".
 LIFT_PCTS: tuple[float, ...] = (1.0, 5.0, 10.0)
+
+#: Cumulative-gains curve sampling points (top-X% of leads, by score).
+#: 11 points at 0%, 10%, …, 100% — coarse enough for a deterministic
+#: byte-stable PNG, fine enough that the plotted curve actually traces
+#: the ranking quality (rather than 3 measured points connected by a
+#: straight line, which was misleading).
+CUMULATIVE_GAINS_PCTS: tuple[float, ...] = tuple(float(p) for p in range(0, 101, 10))
 
 #: Number of equal-width bins for the calibration / reliability diagram.
 N_CALIBRATION_BINS: int = 10
@@ -113,21 +132,29 @@ class TierMetrics:
     conversion_rate_test: float
 
     # Headline pair: LR (interpretable) vs HistGBM (sophistication-rewarding).
+    # ``lr_average_precision`` is the canonical "AP" reported in the
+    # dataset card — the previous version of this dataclass also carried
+    # an ``average_precision`` field that was an exact alias; that field
+    # has been removed because two fields with the same value confused
+    # readers and added JSON noise.
     lr_auc: float
     gbm_auc: float
     gbm_minus_lr_auc: float
     lr_average_precision: float
     gbm_average_precision: float
 
-    # Average-precision under the LR model (G7.*.5 reports the LR number
-    # because the LR model is the canonical baseline in the dataset card;
-    # GBM AP is reported for the cross-tier ordering check below).
-    average_precision: float
-
     precision_at_k: dict[str, float]
     recall_at_k: dict[str, float]
     lift_at_pct: dict[str, float]
     top_decile_rate: float
+
+    # Cumulative-gains curve sampled at :data:`CUMULATIVE_GAINS_PCTS`.
+    # Each entry maps ``"<pct>"`` → fraction of positives captured among
+    # the top-pct% of leads (sorted descending by predicted P(convert)).
+    # The renderer plots this directly — earlier versions fabricated the
+    # curve by interpolating between the three lift@pct measurements,
+    # which lied about the shape between data points.
+    cumulative_gains: dict[str, float]
 
     # Value-aware ranking (G7.*.5 / design-doc "expected ACV captured at K").
     expected_acv_capture_at_k: dict[str, float]
@@ -169,19 +196,27 @@ class CohortShiftMetrics:
 
 @dataclass(frozen=True)
 class CrossTierOrdering:
-    """Cross-tier difficulty ordering (G7.4.*)."""
+    """Cross-tier difficulty ordering (G7.4.*).
+
+    Each ``*_gt_*`` boolean is ``True`` / ``False`` when both tiers in
+    the comparison are present in the report, and ``None`` when one or
+    both are missing.  The previous design defaulted these to ``True``
+    on missing data, which silently green-lit partial releases at the
+    PR 3.3 gating layer; ``None`` forces the gating layer to make an
+    explicit decision (skip vs fail) per tier pair.
+    """
 
     by_average_precision: list[str]
     by_precision_at_100: list[str]
     by_gbm_minus_lr: list[str]
     by_conversion_rate: list[str]
-    average_precision_intro_gt_intermediate: bool
-    average_precision_intermediate_gt_advanced: bool
-    precision_at_100_intro_gt_intermediate: bool
-    precision_at_100_intermediate_gt_advanced: bool
-    conversion_rate_intro_gt_intermediate: bool
-    conversion_rate_intermediate_gt_advanced: bool
-    gbm_minus_lr_positive_in_every_tier: bool
+    average_precision_intro_gt_intermediate: bool | None
+    average_precision_intermediate_gt_advanced: bool | None
+    precision_at_100_intro_gt_intermediate: bool | None
+    precision_at_100_intermediate_gt_advanced: bool | None
+    conversion_rate_intro_gt_intermediate: bool | None
+    conversion_rate_intermediate_gt_advanced: bool | None
+    gbm_minus_lr_positive_in_every_tier: bool | None
 
 
 @dataclass(frozen=True)
@@ -245,6 +280,7 @@ def measure_tier_from_bundle(
     *,
     seed: int = DEFAULT_SEED,
     tier_name: str | None = None,
+    model_random_state: int = DEFAULT_MODEL_RANDOM_STATE,
 ) -> TierMetrics:
     """Compute the full :class:`TierMetrics` panel for one bundle.
 
@@ -255,11 +291,17 @@ def measure_tier_from_bundle(
 
     Args:
         bundle_dir: Path to a single-seed bundle root.
-        seed: Random-state seed for the sklearn estimators.  Bundle-level
-            generation seed is read from the manifest separately and is
-            independent of this argument.
+        seed: Bundle's *generation* seed; recorded on the result for
+            traceability and used as the row label in reports.  The
+            sklearn estimator's ``random_state`` is governed by
+            ``model_random_state`` instead — they MUST be independent
+            so the cross-seed sweep measures only data variance, not
+            data-seed × model-seed interaction.
         tier_name: Override the tier label.  Defaults to the bundle's
             declared difficulty.
+        model_random_state: ``random_state`` for every sklearn
+            estimator fitted by this call.  Held constant across the
+            sweep by :func:`measure_release_quality`.
 
     Raises:
         FileNotFoundError: when the manifest or task files are missing.
@@ -298,8 +340,8 @@ def measure_tier_from_bundle(
     x_train = _sanitize_categoricals(train[cat_cols + num_cols], cat_cols)
     x_test = _sanitize_categoricals(test[cat_cols + num_cols], cat_cols)
 
-    lr_pipe = _build_pipeline(num_cols, cat_cols, model="lr", seed=seed, sk=sk)
-    gbm_pipe = _build_pipeline(num_cols, cat_cols, model="gbm", seed=seed, sk=sk)
+    lr_pipe = _build_pipeline(num_cols, cat_cols, model="lr", seed=model_random_state, sk=sk)
+    gbm_pipe = _build_pipeline(num_cols, cat_cols, model="gbm", seed=model_random_state, sk=sk)
 
     lr_pipe.fit(x_train, y_train.values)
     gbm_pipe.fit(x_train, y_train.values)
@@ -318,6 +360,7 @@ def measure_tier_from_bundle(
         r_at_k[str(k)] = _recall_at_k(lr_probs, y_test.values, k)
     lift_at_pct = {f"{p:g}": _lift_at_pct(lr_probs, y_test.values, p) for p in LIFT_PCTS}
     top_decile = _top_decile_rate(lr_probs, y_test.values)
+    cumulative_gains = _cumulative_gains_curve(lr_probs, y_test.values, CUMULATIVE_GAINS_PCTS)
 
     acv_capture: dict[str, float] = {}
     if "expected_acv" in test.columns:
@@ -332,7 +375,12 @@ def measure_tier_from_bundle(
     bins, max_bin_err = _calibration_bins(lr_probs, y_test.values, n_bins=N_CALIBRATION_BINS)
 
     baselines = _compute_baselines(
-        train=train, test=test, y_train=y_train.values, y_test=y_test.values, seed=seed, sk=sk
+        train=train,
+        test=test,
+        y_train=y_train.values,
+        y_test=y_test.values,
+        seed=model_random_state,
+        sk=sk,
     )
 
     return TierMetrics(
@@ -348,11 +396,11 @@ def measure_tier_from_bundle(
         gbm_minus_lr_auc=gbm_auc - lr_auc,
         lr_average_precision=lr_ap,
         gbm_average_precision=gbm_ap,
-        average_precision=lr_ap,
         precision_at_k=p_at_k,
         recall_at_k=r_at_k,
         lift_at_pct=lift_at_pct,
         top_decile_rate=top_decile,
+        cumulative_gains=cumulative_gains,
         expected_acv_capture_at_k=acv_capture,
         brier_score=brier,
         log_loss=log_loss,
@@ -367,6 +415,7 @@ def measure_cohort_shift_from_bundle(
     *,
     seed: int = DEFAULT_SEED,
     tier_name: str | None = None,
+    model_random_state: int = DEFAULT_MODEL_RANDOM_STATE,
 ) -> CohortShiftMetrics:
     """Random-vs-chronological-cohort split AUC degradation (G6.4).
 
@@ -375,6 +424,9 @@ def measure_cohort_shift_from_bundle(
     cohort-split AUC.  HistGBM is used for both — it handles NaN
     natively so we don't have to thread a separate imputation pipeline
     through the chronological resplit.
+
+    See :func:`measure_tier_from_bundle` for the seed / model-seed
+    decoupling rationale.
     """
     sk = _import_sklearn()
     manifest = load_json(bundle_dir / "manifest.json")
@@ -390,7 +442,7 @@ def measure_cohort_shift_from_bundle(
     y_train = train[LABEL_COLUMN].astype("boolean").fillna(False).astype(int).values
     y_test = test[LABEL_COLUMN].astype("boolean").fillna(False).astype(int).values
 
-    rand_pipe = _build_pipeline(num_cols, cat_cols, model="gbm", seed=seed, sk=sk)
+    rand_pipe = _build_pipeline(num_cols, cat_cols, model="gbm", seed=model_random_state, sk=sk)
     rand_pipe.fit(x_train, y_train)
     rand_probs = rand_pipe.predict_proba(x_test)[:, 1]
     random_auc = float(sk.roc_auc_score(y_test, rand_probs))
@@ -417,7 +469,15 @@ def measure_cohort_shift_from_bundle(
     if ts.isna().any():
         return _no_cohort()
 
-    order = np.argsort(ts.values, kind="stable")
+    # Stable primary key = ``lead_created_at``; deterministic
+    # tie-breaker = ``lead_id`` so that bundles with many leads sharing
+    # one timestamp (common with synthetic generators that anchor every
+    # day) split the same way across pandas versions and concat orders.
+    if "lead_id" in pooled.columns:
+        sort_frame = pd.DataFrame({"_ts": ts.values, "_lid": pooled["lead_id"].astype(str).values})
+        order = sort_frame.sort_values(["_ts", "_lid"], kind="stable").index.to_numpy()
+    else:
+        order = np.argsort(ts.values, kind="stable")
     cutoff = int(round(len(pooled) * COHORT_TRAIN_FRAC))
     early_idx = order[:cutoff]
     late_idx = order[cutoff:]
@@ -428,15 +488,12 @@ def measure_cohort_shift_from_bundle(
     late = pooled.iloc[late_idx]
     y_early = early[LABEL_COLUMN].astype("boolean").fillna(False).astype(int).values
     y_late = late[LABEL_COLUMN].astype("boolean").fillna(False).astype(int).values
-    if len(set(y_early)) < 2 or len(set(y_late)) < 2:
+    if np.unique(y_early).size < 2 or np.unique(y_late).size < 2:
         return _no_cohort()
 
     x_early = _sanitize_categoricals(early[cat_cols + num_cols], cat_cols)
     x_late = _sanitize_categoricals(late[cat_cols + num_cols], cat_cols)
-    # Caller-pinned ``seed`` for both fits; keeping the random and cohort
-    # pipelines on the same RNG seed makes the AUC pair comparable across
-    # re-runs of the same bundle (they differ only in train/test split).
-    cohort_pipe = _build_pipeline(num_cols, cat_cols, model="gbm", seed=seed, sk=sk)
+    cohort_pipe = _build_pipeline(num_cols, cat_cols, model="gbm", seed=model_random_state, sk=sk)
     cohort_pipe.fit(x_early, y_early)
     cohort_probs = cohort_pipe.predict_proba(x_late)[:, 1]
     cohort_auc = float(sk.roc_auc_score(y_late, cohort_probs))
@@ -501,6 +558,7 @@ def measure_release_quality(
     release_id: str = "leadforge-lead-scoring-v1",
     package_version: str | None = None,
     generation_timestamp: str | None = None,
+    model_random_state: int = DEFAULT_MODEL_RANDOM_STATE,
 ) -> ReleaseQualityReport:
     """Aggregate per-(tier, seed) measurements into a full report.
 
@@ -529,7 +587,13 @@ def measure_release_quality(
     for tier_name, by_seed in tier_bundles.items():
         seeds = sorted(by_seed.keys())
         per_seed_metrics = [
-            measure_tier_from_bundle(by_seed[s], seed=s, tier_name=tier_name) for s in seeds
+            measure_tier_from_bundle(
+                by_seed[s],
+                seed=s,
+                tier_name=tier_name,
+                model_random_state=model_random_state,
+            )
+            for s in seeds
         ]
         medians, spreads = _aggregate_cross_seed(per_seed_metrics)
         cross_seed[tier_name] = CrossSeedTierMetrics(
@@ -545,7 +609,10 @@ def measure_release_quality(
             else seeds[0]
         )
         cohort[tier_name] = measure_cohort_shift_from_bundle(
-            by_seed[canonical], seed=canonical, tier_name=tier_name
+            by_seed[canonical],
+            seed=canonical,
+            tier_name=tier_name,
+            model_random_state=model_random_state,
         )
 
     ordering = _compute_cross_tier_ordering(cross_seed)
@@ -608,23 +675,32 @@ def _aggregate_cross_seed(
 def _compute_cross_tier_ordering(
     cross_seed: Mapping[str, CrossSeedTierMetrics],
 ) -> CrossTierOrdering:
-    """Derive G7.4.* ordering booleans + descending tier rankings."""
+    """Derive G7.4.* ordering booleans + descending tier rankings.
+
+    Each ``*_gt_*`` boolean is ``None`` when one or both compared tiers
+    are absent from the report (or carry NaN medians).  The previous
+    design defaulted to ``True`` on missing data, which silently
+    green-lit partial releases at the PR 3.3 gating layer; ``None``
+    forces an explicit decision per pair.
+
+    The ``intro`` / ``intermediate`` / ``advanced`` tier names are
+    hardcoded because they are the v1 dataset family (per
+    ``docs/release/v1_release_design.md`` §"Dataset family architecture");
+    this function is therefore not a general N-tier comparator.
+    """
     if not cross_seed:
-        # Empty release → all-True booleans (vacuously satisfied) plus
-        # empty rankings.  PR 3.3's gating layer is the place to assert
-        # presence of all three canonical tiers, not this function.
         return CrossTierOrdering(
             by_average_precision=[],
             by_precision_at_100=[],
             by_gbm_minus_lr=[],
             by_conversion_rate=[],
-            average_precision_intro_gt_intermediate=True,
-            average_precision_intermediate_gt_advanced=True,
-            precision_at_100_intro_gt_intermediate=True,
-            precision_at_100_intermediate_gt_advanced=True,
-            conversion_rate_intro_gt_intermediate=True,
-            conversion_rate_intermediate_gt_advanced=True,
-            gbm_minus_lr_positive_in_every_tier=True,
+            average_precision_intro_gt_intermediate=None,
+            average_precision_intermediate_gt_advanced=None,
+            precision_at_100_intro_gt_intermediate=None,
+            precision_at_100_intermediate_gt_advanced=None,
+            conversion_rate_intro_gt_intermediate=None,
+            conversion_rate_intermediate_gt_advanced=None,
+            gbm_minus_lr_positive_in_every_tier=None,
         )
 
     # Build per-tier representative numbers from the median across seeds.
@@ -648,12 +724,18 @@ def _compute_cross_tier_ordering(
         # NaN sorts last so it doesn't artificially top the ranking.
         return sorted(d, key=lambda k: (math.isnan(d[k]), -d[k] if not math.isnan(d[k]) else 0.0))
 
-    def _gt(d: Mapping[str, float], a: str, b: str) -> bool:
+    def _gt(d: Mapping[str, float], a: str, b: str) -> bool | None:
+        # Missing tier or NaN median → undefined, surface as ``None``.
         if a not in d or b not in d:
-            return True  # tier missing → vacuous
+            return None
         if math.isnan(d[a]) or math.isnan(d[b]):
-            return True
+            return None
         return d[a] > d[b]
+
+    finite_gbm_lr = [v for v in median_gbm_lr.values() if not math.isnan(v)]
+    gbm_minus_lr_positive: bool | None = (
+        all(v > 0 for v in finite_gbm_lr) if finite_gbm_lr else None
+    )
 
     return CrossTierOrdering(
         by_average_precision=_sorted_desc(median_ap),
@@ -666,9 +748,7 @@ def _compute_cross_tier_ordering(
         precision_at_100_intermediate_gt_advanced=_gt(median_p100, "intermediate", "advanced"),
         conversion_rate_intro_gt_intermediate=_gt(median_rate, "intro", "intermediate"),
         conversion_rate_intermediate_gt_advanced=_gt(median_rate, "intermediate", "advanced"),
-        gbm_minus_lr_positive_in_every_tier=all(
-            v > 0 for v in median_gbm_lr.values() if not math.isnan(v)
-        ),
+        gbm_minus_lr_positive_in_every_tier=gbm_minus_lr_positive,
     )
 
 
@@ -724,6 +804,43 @@ def _expected_acv_capture(probs: np.ndarray, y: np.ndarray, acv: np.ndarray, k: 
     if total <= 0:
         return float("nan")
     return captured / total
+
+
+def _cumulative_gains_curve(
+    probs: np.ndarray,
+    y: np.ndarray,
+    pcts: tuple[float, ...],
+) -> dict[str, float]:
+    """Fraction of positives captured at each top-pct% cut-off.
+
+    Stored on :class:`TierMetrics` so the renderer plots the actual
+    ranking-quality curve instead of fabricating one by interpolating
+    between three lift@pct measurements.
+
+    For ``pct == 0`` returns 0.0 (an empty selection captures nothing);
+    for ``pct == 100`` returns 1.0.  When there are no positives in
+    ``y`` the entire curve is NaN — there's no denominator.
+    """
+    n = len(y)
+    n_pos = int(np.sum(y))
+    out: dict[str, float] = {}
+    if n == 0 or n_pos == 0:
+        for p in pcts:
+            out[f"{p:g}"] = float("nan")
+        return out
+    order = np.argsort(-np.asarray(probs), kind="stable")
+    y_sorted = np.asarray(y)[order]
+    cum = np.cumsum(y_sorted)
+    for p in pcts:
+        if p <= 0:
+            out[f"{p:g}"] = 0.0
+            continue
+        if p >= 100:
+            out[f"{p:g}"] = 1.0
+            continue
+        k = max(1, int(round(n * p / 100.0)))
+        out[f"{p:g}"] = float(cum[k - 1] / n_pos)
+    return out
 
 
 def _calibration_bins(
@@ -918,7 +1035,7 @@ def _subset_auc(
     num_in_subset = [c for c in cols if c not in cat_in_subset]
     x_tr = _sanitize_categoricals(train[cols], cat_in_subset)
     x_te = _sanitize_categoricals(test[cols], cat_in_subset)
-    if len(set(y_train)) < 2 or len(set(y_test)) < 2:
+    if np.unique(y_train).size < 2 or np.unique(y_test).size < 2:
         return None
     pipe = _build_pipeline(num_in_subset, cat_in_subset, model="gbm", seed=seed, sk=sk)
     pipe.fit(x_tr, y_train)
@@ -942,7 +1059,7 @@ def _id_only_auc(
     so the leakage-probe baseline and the release-quality baseline
     produce comparable numbers.  Expected ≈ 0.5 + ε on a clean bundle.
     """
-    if len(set(y_train)) < 2 or len(set(y_test)) < 2:
+    if np.unique(y_train).size < 2 or np.unique(y_test).size < 2:
         return None
     x_tr = _hash_id_columns(train[id_cols])
     x_te = _hash_id_columns(test[id_cols])
@@ -1063,6 +1180,8 @@ def report_to_json(report: ReleaseQualityReport, *, indent: int = 2) -> str:
 
 __all__ = [
     "COHORT_TRAIN_FRAC",
+    "CUMULATIVE_GAINS_PCTS",
+    "DEFAULT_MODEL_RANDOM_STATE",
     "DEFAULT_SEED",
     "LABEL_COLUMN",
     "LIFT_PCTS",
