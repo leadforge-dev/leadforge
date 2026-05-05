@@ -61,6 +61,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Any
@@ -100,8 +101,11 @@ def deterministic_relational_reconstruction(
     leads_idx = leads.set_index("lead_id", drop=False)
 
     # Path A — the label itself, if present in public leads.
+    # Plain ``astype(bool)`` would map NaN to True; route through pandas'
+    # nullable boolean dtype so missing values fill cleanly to False without
+    # triggering object-downcast warnings.
     if "converted_within_90_days" in leads.columns:
-        path_a = leads_idx["converted_within_90_days"].astype(bool)
+        path_a = leads_idx["converted_within_90_days"].astype("boolean").fillna(False).astype(bool)
     else:
         path_a = pd.Series(False, index=leads_idx.index, name="converted_within_90_days")
 
@@ -157,7 +161,12 @@ def deterministic_relational_reconstruction(
 
 
 def _binary_metrics(y_true: pd.Series, y_pred: pd.Series) -> dict[str, float]:
-    """Accuracy / precision / recall / F1 / counts for boolean predictions."""
+    """Accuracy / precision / recall / F1 / counts for boolean predictions.
+
+    F1 is ``0.0`` when precision or recall is exactly ``0.0`` (well-defined zero
+    skill, not undefined); ``NaN`` only when precision or recall is itself
+    ``NaN`` (undefined — no positive predictions or no positives to find).
+    """
     tp = int(((y_pred) & (y_true)).sum())
     fp = int(((y_pred) & (~y_true)).sum())
     fn = int(((~y_pred) & (y_true)).sum())
@@ -166,11 +175,18 @@ def _binary_metrics(y_true: pd.Series, y_pred: pd.Series) -> dict[str, float]:
     accuracy = (tp + tn) / n if n else float("nan")
     precision = tp / (tp + fp) if (tp + fp) else float("nan")
     recall = tp / (tp + fn) if (tp + fn) else float("nan")
-    f1 = (
-        (2 * precision * recall) / (precision + recall)
-        if (precision and recall and precision + recall)
-        else float("nan")
-    )
+
+    # F1 logic:
+    #   - either precision or recall is NaN -> F1 is NaN (undefined input)
+    #   - precision + recall == 0 -> F1 = 0 (defined: zero skill)
+    #   - otherwise -> harmonic mean
+    if math.isnan(precision) or math.isnan(recall):
+        f1 = float("nan")
+    elif precision + recall == 0:
+        f1 = 0.0
+    else:
+        f1 = (2 * precision * recall) / (precision + recall)
+
     return {
         "accuracy": accuracy,
         "precision": precision,
@@ -463,11 +479,24 @@ def probe_bundle(bundle_dir: Path) -> dict[str, Any]:
     base["horizon_days"] = horizon_days
     base["g4_4_snapshot_window"] = _g4_4_snapshot_window_probe(leads, tables_dir, horizon_days)
 
+    # Path prediction rates — useful even without ground truth (post-Phase-2,
+    # B/C/D should all be 0.0; non-zero would mean the redaction is incomplete).
+    base["path_prediction_rates"] = {col: float(paths[col].mean()) for col in paths.columns}
+
     if "converted_within_90_days" not in leads.columns:
-        base["error"] = "leads.parquet has no converted_within_90_days column — cannot score paths"
+        base["note"] = (
+            "leads.parquet has no converted_within_90_days column — "
+            "scored metrics (accuracy/precision/recall/F1) skipped; "
+            "path_prediction_rates above is the post-Phase-2 verification view."
+        )
         return base
 
-    y_true = leads.set_index("lead_id")["converted_within_90_days"].astype(bool)
+    y_true = (
+        leads.set_index("lead_id")["converted_within_90_days"]
+        .astype("boolean")
+        .fillna(False)
+        .astype(bool)
+    )
     y_true = y_true.reindex(paths.index)
     base["conversion_rate"] = float(y_true.mean())
 
@@ -505,8 +534,13 @@ def _print_human(result: dict[str, Any]) -> None:
         f"conversion_rate={result.get('conversion_rate', float('nan')):.3f} "
         f"horizon_days={result.get('horizon_days')}"
     )
-    if "error" in result:
-        print(f"  ERROR: {result['error']}")
+    if "path_prediction_rates" in result:
+        print("  Path prediction rates (fraction of leads each path flags positive):")
+        for path, rate in result["path_prediction_rates"].items():
+            print(f"    {path:<32} {rate:>6.3f}")
+
+    if "note" in result:
+        print(f"  {result['note']}")
         return
 
     print("  Deterministic reconstruction (vs converted_within_90_days):")
@@ -591,8 +625,8 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         result = probe_bundle(args.bundle_dir)
-    except FileNotFoundError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+    except (FileNotFoundError, KeyError, ValueError) as exc:
+        print(f"ERROR: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1
 
     if args.json:

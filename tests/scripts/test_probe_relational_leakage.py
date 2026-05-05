@@ -163,6 +163,50 @@ def test_binary_metrics_mixed() -> None:
     assert m["f1"] == 0.5
 
 
+def test_binary_metrics_zero_precision_and_recall_yields_zero_f1() -> None:
+    """Both precision and recall are well-defined zeros (not NaN) — F1 must
+    be 0.0, not NaN. Reproduces the bug the F1 fix addresses: 0 TP, several
+    FP, several FN."""
+    y_true = pd.Series([True, True, False, False])
+    y_pred = pd.Series([False, False, True, True])
+    m = probe_module._binary_metrics(y_true, y_pred)
+    assert m["precision"] == 0.0
+    assert m["recall"] == 0.0
+    assert m["f1"] == 0.0
+
+
+def test_path_a_handles_nan_label_safely() -> None:
+    """``astype(bool)`` on a NaN-bearing label column would map NaN to True.
+    The function must defensively coerce NaN -> False instead."""
+    leads = pd.DataFrame(
+        [
+            {"lead_id": "lead_a", "converted_within_90_days": True},
+            {"lead_id": "lead_b", "converted_within_90_days": None},  # NaN
+            {"lead_id": "lead_c", "converted_within_90_days": False},
+        ]
+    )
+    empty_opps = pd.DataFrame(
+        {
+            "opportunity_id": pd.Series(dtype=str),
+            "lead_id": pd.Series(dtype=str),
+            "close_outcome": pd.Series(dtype=str),
+            "estimated_acv": pd.Series(dtype=float),
+        }
+    )
+    empty_customers = pd.DataFrame(
+        {"customer_id": pd.Series(dtype=str), "opportunity_id": pd.Series(dtype=str)}
+    )
+    empty_subscriptions = pd.DataFrame(
+        {"subscription_id": pd.Series(dtype=str), "customer_id": pd.Series(dtype=str)}
+    )
+    paths = probe_module.deterministic_relational_reconstruction(
+        leads, empty_opps, empty_customers, empty_subscriptions
+    )
+    assert bool(paths.loc["lead_a", "path_a_direct_label"]) is True
+    assert bool(paths.loc["lead_b", "path_a_direct_label"]) is False  # NaN -> False
+    assert bool(paths.loc["lead_c", "path_a_direct_label"]) is False
+
+
 # ---------------------------------------------------------------------------
 # CLI smoke test — runs against the real alpha bundle if present
 # ---------------------------------------------------------------------------
