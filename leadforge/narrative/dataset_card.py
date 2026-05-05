@@ -197,10 +197,10 @@ def render_dataset_card(
     # ------------------------------------------------------------------
     if cfg.snapshot_day is not None and cfg.snapshot_day < cfg.horizon_days:
         feature_window_caveat = (
-            f"- Event-aggregate features (e.g. `touch_count`, `session_count`, "
-            f"`expected_acv`) are computed over the first {cfg.snapshot_day} days "
-            f"after lead creation; the label resolves over the next "
-            f"{cfg.label_window_days - cfg.snapshot_day} days. The deliberate "
+            f"- The label is evaluated over the full {cfg.label_window_days}-day "
+            f"window from lead creation; event-aggregate features (e.g. "
+            f"`touch_count`, `session_count`, `expected_acv`) observe only the "
+            f"first {cfg.snapshot_day} days of that window. The deliberate "
             f"exception is `total_touches_all`, which counts touches over the "
             f"full {cfg.horizon_days}-day horizon as a pedagogical leakage trap."
         )
