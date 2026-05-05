@@ -23,9 +23,17 @@ the markdown report; renaming them is a contract change.
 
 Matplotlib is the only figure dependency; we force the Agg backend
 before importing :mod:`matplotlib.pyplot` so this module is safe in
-headless CI.  Figures are deterministic byte-for-byte under the same
-:class:`ReleaseQualityReport` input — the renderer does no sampling and
-pins every text-source font option.
+headless CI.  Determinism guarantees:
+
+* JSON and markdown outputs are byte-identical across runs of the
+  renderer on the same :class:`ReleaseQualityReport` (UTF-8 encoded;
+  ``json.dumps`` uses ``sort_keys=True``).
+* PNG figures are stable *within an environment* but may drift across
+  matplotlib versions and font caches; we deliberately do not pin
+  rcParams because cross-environment font determinism is fragile in
+  practice (font availability, hinting, antialiasing all vary).  PR
+  3.3's driver should regenerate figures fresh per release rather
+  than relying on hash-based equality.
 """
 
 from __future__ import annotations
@@ -99,12 +107,18 @@ def render_report(report: ReleaseQualityReport, output_dir: Path) -> dict[str, P
 
     written: dict[str, Path] = {}
 
+    # Pin UTF-8 explicitly — Path.write_text otherwise uses
+    # ``locale.getpreferredencoding(False)``, which mojibakes the
+    # markdown's em-dashes / minus signs on non-UTF-8 systems
+    # (notably Windows in legacy ANSI locales).  The renderer claims
+    # byte-identical text artefacts across runs; that promise needs a
+    # pinned encoding to hold.
     json_path = output_dir / REPORT_JSON
-    json_path.write_text(report_to_json(report))
+    json_path.write_text(report_to_json(report), encoding="utf-8")
     written["json"] = json_path
 
     md_path = output_dir / REPORT_MD
-    md_path.write_text(_render_markdown(report))
+    md_path.write_text(_render_markdown(report), encoding="utf-8")
     written["md"] = md_path
 
     for tier_name in _LIFT_CURVE_TIERS:
@@ -267,10 +281,16 @@ def _render_markdown(report: ReleaseQualityReport) -> str:
         out.append(header)
         out.append(sep)
         for tier_name, csm in sorted(report.tiers.items()):
-            for tm in csm.per_seed:
+            # ``per_seed`` is serialised as a plain JSON list, so the
+            # citation must be by list index (``[i]``) rather than the
+            # invented ``[seed=<seed>]`` selector.  Index follows the
+            # same ordering the orchestrator builds — sorted ascending
+            # by seed — which the meta-test ``test_orchestrator...``
+            # asserts.
+            for idx, tm in enumerate(csm.per_seed):
                 cells = [tier_name, str(tm.seed)]
                 for bn in baseline_names:
-                    cell_path = f"$.tiers.{tier_name}.per_seed[seed={tm.seed}].baselines.{bn}"
+                    cell_path = f"$.tiers.{tier_name}.per_seed[{idx}].baselines.{bn}"
                     cells.append(_fmt(tm.baselines.get(bn), cell_path))
                 out.append("| " + " | ".join(cells) + " |")
         out.append("")

@@ -436,11 +436,29 @@ def measure_cohort_shift_from_bundle(
     train = pd.read_parquet(bundle_dir / f"tasks/{primary_task}/train.parquet")
     test = pd.read_parquet(bundle_dir / f"tasks/{primary_task}/test.parquet")
 
+    if LABEL_COLUMN not in train.columns or LABEL_COLUMN not in test.columns:
+        raise ValueError(f"task splits must contain the {LABEL_COLUMN!r} label column")
+
     cat_cols, num_cols = _partition_columns(train, exclude={LABEL_COLUMN})
     x_train = _sanitize_categoricals(train[cat_cols + num_cols], cat_cols)
     x_test = _sanitize_categoricals(test[cat_cols + num_cols], cat_cols)
     y_train = train[LABEL_COLUMN].astype("boolean").fillna(False).astype(int).values
     y_test = test[LABEL_COLUMN].astype("boolean").fillna(False).astype(int).values
+
+    # Match the posture of ``measure_tier_from_bundle`` — surface a
+    # clear ValueError on degenerate task splits rather than letting
+    # sklearn raise from inside ``roc_auc_score`` with a less
+    # informative message.  The unsupported-cohort path below uses
+    # NaN, but that is reserved for *missing inputs* (no timestamp,
+    # unparseable timestamps); a degenerate label is a structural
+    # bundle problem and should fail loudly.
+    if np.unique(y_train).size < 2:
+        raise ValueError(
+            "train split has fewer than two classes; refusing to fit "
+            "(a single-class regime breaks every downstream metric)"
+        )
+    if np.unique(y_test).size < 2:
+        raise ValueError("test split has fewer than two classes; refusing to score")
 
     rand_pipe = _build_pipeline(num_cols, cat_cols, model="gbm", seed=model_random_state, sk=sk)
     rand_pipe.fit(x_train, y_train)

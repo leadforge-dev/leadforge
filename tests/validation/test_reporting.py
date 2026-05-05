@@ -186,6 +186,31 @@ class TestRenderReport:
         # Ordering booleans round-trip as JSON true/false (not Python str).
         assert d["cross_tier_ordering"]["gbm_minus_lr_positive_in_every_tier"] is True
 
+    def test_markdown_baseline_citations_use_list_index(self, tmp_path: Path) -> None:
+        """Per-seed citations must use ``[<i>]`` list-index syntax that
+        matches the actual JSON shape (``per_seed`` is a list); the
+        previous ``[seed=<seed>]`` selector was invented and unverifiable
+        against the JSON."""
+        report = _build_report()
+        out = tmp_path / "v"
+        render_report(report, out)
+        md = (out / REPORT_MD).read_text()
+        assert "$.tiers.intro.per_seed[0].baselines." in md
+        # The invented selector must be gone.
+        assert "[seed=" not in md
+
+    def test_text_outputs_are_utf8_encoded(self, tmp_path: Path) -> None:
+        """Markdown contains em-dashes / minus signs; pinning UTF-8
+        explicitly is the contract the renderer promises."""
+        report = _build_report()
+        out = tmp_path / "v"
+        render_report(report, out)
+        # Decoding as UTF-8 must succeed for both artefacts.
+        (out / REPORT_JSON).read_text(encoding="utf-8")
+        md = (out / REPORT_MD).read_text(encoding="utf-8")
+        # Em-dash in the title section survives.
+        assert "—" in md
+
     def test_markdown_cites_json_paths_for_every_metric_cell(self, tmp_path: Path) -> None:
         """G10.6 — every claim has a backing JSON reference."""
         report = _build_report()

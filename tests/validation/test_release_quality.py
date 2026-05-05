@@ -529,6 +529,20 @@ class TestBundleMeasurement:
         with pytest.raises(ValueError, match="train split has fewer than two classes"):
             measure_tier_from_bundle(bundle, seed=42)
 
+    def test_cohort_shift_raises_on_degenerate_train(self, tmp_path: Path) -> None:
+        """Match ``measure_tier_from_bundle``'s posture — surface a
+        clear ``ValueError`` rather than letting sklearn raise from
+        inside ``roc_auc_score`` with a less informative message.
+        """
+        pytest.importorskip("sklearn")
+        bundle = _write_minimal_bundle(tmp_path / "degenerate", n=200, seed=42)
+        train_path = bundle / "tasks/converted_within_90_days/train.parquet"
+        df = pd.read_parquet(train_path)
+        df[LABEL_COLUMN] = pd.Series([False] * len(df), dtype="boolean")
+        df.to_parquet(train_path, index=False)
+        with pytest.raises(ValueError, match="train split has fewer than two classes"):
+            measure_cohort_shift_from_bundle(bundle, seed=42)
+
     def test_measure_cohort_shift_returns_random_auc_when_no_timestamp(
         self, tmp_path: Path
     ) -> None:
