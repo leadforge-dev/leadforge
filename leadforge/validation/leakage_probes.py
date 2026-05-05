@@ -171,17 +171,10 @@ class RelationalLeakageError(LeadforgeError):
         )
 
 
-# Alias for the new umbrella name; ``RelationalLeakageError`` stays the
-# canonical class so existing call sites and ``except`` clauses keep
-# working without churn.
-LeakageError = RelationalLeakageError
-
-
 # ---------------------------------------------------------------------------
 # Deterministic reconstruction — the join graph that defines paths A-E.
-# Lifted from PR 1.1's ``scripts/probe_relational_leakage.py``; the script
-# now re-exports from here so the audit and the validator agree by
-# construction.
+# ``scripts/probe_relational_leakage.py`` re-exports this function so the
+# alpha-bundle audit and the validator agree by construction.
 # ---------------------------------------------------------------------------
 
 
@@ -1311,7 +1304,6 @@ __all__ = [
     "CHANNEL_SPLIT_LABEL_DRIFT",
     "CHANNEL_SPLIT_NEAR_DUPLICATE",
     "DEFAULT_BANNED_COLUMNS",
-    "LeakageError",
     "LeakageFinding",
     "LeakageReport",
     "PROBE_REGISTRY",
