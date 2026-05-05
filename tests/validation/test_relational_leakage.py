@@ -379,6 +379,58 @@ def test_bonus_model_probe_rejects_misaligned_label() -> None:
         probe_bonus_model_auc(tables, max_auc=0.65, label=bad_label)
 
 
+def test_bonus_model_probe_rejects_partial_label() -> None:
+    """A label that covers only a subset of bundle lead_ids would
+    introduce NaN after reindex; the resulting astype(int) cast used to
+    crash with an opaque error.  The probe must raise a clear
+    ValueError naming the gap instead."""
+    pytest.importorskip("sklearn")
+    tables = _clean_bundle()
+    full_label = _label_for(tables)
+    partial = full_label.iloc[:-5]
+    with pytest.raises(ValueError, match="missing values for"):
+        probe_bonus_model_auc(tables, max_auc=0.65, label=partial)
+
+
+def test_bonus_model_probe_skips_when_class_too_small_for_cv() -> None:
+    """When the smaller class has fewer than 2 members,
+    StratifiedKFold cannot run; the probe must skip silently rather
+    than raise a sklearn-internal error."""
+    pytest.importorskip("sklearn")
+    tables = _clean_bundle()
+    leads = tables["leads"].head(6).copy()
+    tables["leads"] = leads
+    label = pd.Series(
+        [True, True, True, True, True, False],
+        index=leads["lead_id"].to_numpy(),
+        name="converted_within_90_days",
+    )
+    label.index.name = "lead_id"
+    assert probe_bonus_model_auc(tables, max_auc=0.65, label=label) == []
+
+
+def test_bonus_model_probe_uses_smaller_n_splits_when_class_count_lt_5() -> None:
+    """When 2 <= min_class_count < 5, the probe must size n_splits
+    accordingly — exercised by labelling only 3 positives in a 12-lead
+    bundle (n_splits should drop to 3)."""
+    pytest.importorskip("sklearn")
+    tables = _clean_bundle()
+    src = _full_horizon_bundle()
+    leads = tables["leads"].head(12).copy()
+    tables["leads"] = leads
+    tables["customers"] = src["customers"]  # leak signal so AUC saturates
+    tables["subscriptions"] = src["subscriptions"]
+
+    truth = [True, True, True] + [False] * 9
+    label = pd.Series(truth, index=leads["lead_id"].to_numpy(), name="converted_within_90_days")
+    label.index.name = "lead_id"
+    findings = probe_bonus_model_auc(tables, max_auc=0.5, label=label)
+    assert findings, "expected the bonus model to fire — n_splits should adapt to min_class=3"
+    assert all(f.message.startswith("3-fold") for f in findings), (
+        "n_splits must downshift to 3 when the minority class has only 3 members"
+    )
+
+
 def test_orchestrator_skips_bonus_probe_by_default() -> None:
     """run_all_probes_on_dataframes(... bonus_model_max_auc=None) must skip
     the bonus probe even when customers/subscriptions would trigger it.

@@ -413,9 +413,10 @@ def probe_bonus_model_auc(
     * ``max_auc`` is required.  PR 2.1 ships this probe with no
       calibrated threshold; PR 3.3 will land per-tier bands.
     * ``label`` must be a :class:`pandas.Series` indexed by ``lead_id``
-      (``index.name == "lead_id"``).  This is enforced — a misaligned
-      label would silently skip the probe via the binary-cardinality
-      gate, which defeats the validator's purpose.
+      (``index.name == "lead_id"``) **and** cover every lead in the
+      bundle.  Both are enforced — a misaligned or partial label would
+      silently neutralise the probe (via the binary-cardinality gate
+      or NaN folds), which defeats the validator's purpose.
 
     The probe skips silently (no findings, no error) when:
 
@@ -423,7 +424,9 @@ def probe_bonus_model_auc(
     * ``leads`` is missing or empty;
     * the label is unavailable (no ``label`` argument and the public
       bundle has correctly redacted ``converted_within_90_days``);
-    * the label has fewer than two classes after alignment.
+    * the label has fewer than two classes after alignment;
+    * the smaller class has fewer members than the minimum needed for
+      stratified CV (``n_splits >= 2``).
     """
     try:
         from sklearn.ensemble import HistGradientBoostingClassifier
@@ -446,8 +449,24 @@ def probe_bonus_model_auc(
     features = _build_relational_features(leads, tables)
     if features.empty or len(features.columns) == 0:
         return []
-    y = y_series.reindex(features.index).astype(int)
+
+    aligned = y_series.reindex(features.index)
+    if aligned.isna().any():
+        missing = int(aligned.isna().sum())
+        raise ValueError(
+            f"label is missing values for {missing} lead_id(s) present in the "
+            "bundle; supply a complete label or omit it to read from leads"
+        )
+    y = aligned.astype(int)
     if y.nunique(dropna=True) < 2:
+        return []
+
+    # Stratified CV needs at least n_splits members in each class.  If the
+    # smaller class is below that, the probe can't run — skip silently
+    # (this is a sample-size constraint, not a leakage finding).
+    min_class = int(y.value_counts().min())
+    n_splits = min(5, min_class)
+    if n_splits < 2:
         return []
 
     models: dict[str, Pipeline] = {
@@ -456,7 +475,7 @@ def probe_bonus_model_auc(
         ),
         "hist_gbm": Pipeline([("clf", HistGradientBoostingClassifier(random_state=seed))]),
     }
-    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
+    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
 
     findings: list[LeakageFinding] = []
     for name, pipe in models.items():
@@ -474,9 +493,9 @@ def probe_bonus_model_auc(
                     channel=CHANNEL_BONUS_MODEL,
                     detail=name,
                     message=(
-                        f"5-fold CV AUC {auc_mean:.3f} on join-derived features "
-                        f"exceeds max_auc={max_auc:.3f}; honest aggregates "
-                        "carry stronger signal than the band allows"
+                        f"{n_splits}-fold CV AUC {auc_mean:.3f} on join-derived "
+                        f"features exceeds max_auc={max_auc:.3f}; honest "
+                        "aggregates carry stronger signal than the band allows"
                     ),
                 )
             )
