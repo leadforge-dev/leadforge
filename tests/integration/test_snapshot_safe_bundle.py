@@ -36,7 +36,7 @@ import pytest
 
 from leadforge.api.generator import Generator
 from leadforge.validation.bundle_checks import validate_bundle
-from leadforge.validation.relational_leakage import (
+from leadforge.validation.leakage_probes import (
     BANNED_LEAD_COLUMNS,
     BANNED_OPP_COLUMNS,
     BANNED_TABLES,

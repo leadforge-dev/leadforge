@@ -32,11 +32,11 @@ class BundleFilter:
             must be projected onto the snapshot-safe shape before being
             written.  When ``True``, the bundle writer routes through
             :func:`leadforge.render.relational_snapshot_safe.to_dataframes_snapshot_safe`,
-            which strips :data:`leadforge.validation.relational_leakage.BANNED_LEAD_COLUMNS`
-            from ``leads``, :data:`~leadforge.validation.relational_leakage.BANNED_OPP_COLUMNS`
+            which strips :data:`leadforge.validation.leakage_probes.BANNED_LEAD_COLUMNS`
+            from ``leads``, :data:`~leadforge.validation.leakage_probes.BANNED_OPP_COLUMNS`
             from ``opportunities``, filters event tables per-lead by
             ``lead_created_at + snapshot_day``, and omits
-            :data:`~leadforge.validation.relational_leakage.BANNED_TABLES`
+            :data:`~leadforge.validation.leakage_probes.BANNED_TABLES`
             (``customers`` / ``subscriptions``) entirely.  When ``False``,
             the writer emits the full-horizon export.
     """

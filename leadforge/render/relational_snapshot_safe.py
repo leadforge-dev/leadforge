@@ -24,7 +24,7 @@ reconstructible from joins (see
 The ``research_instructor`` mode keeps using
 :func:`leadforge.render.relational.to_dataframes` for the full-horizon
 export.  The contract constants live in
-:mod:`leadforge.validation.relational_leakage` (validator owns the
+:mod:`leadforge.validation.leakage_probes` (validator owns the
 definition of "leakage"); this module re-exports them for ergonomics.
 """
 
@@ -34,7 +34,7 @@ from collections.abc import Mapping
 
 import pandas as pd
 
-from leadforge.validation.relational_leakage import (
+from leadforge.validation.leakage_probes import (
     BANNED_LEAD_COLUMNS,
     BANNED_OPP_COLUMNS,
     BANNED_TABLES,

@@ -18,7 +18,7 @@ from leadforge.core.enums import ExposureMode
 from leadforge.core.hashing import file_sha256
 from leadforge.render.manifests import NON_DETERMINISTIC_MANIFEST_FIELDS
 from leadforge.schema.features import redacted_columns_for
-from leadforge.validation.relational_leakage import (
+from leadforge.validation.leakage_probes import (
     BANNED_LEAD_COLUMNS,
     BANNED_OPP_COLUMNS,
     BANNED_TABLES,

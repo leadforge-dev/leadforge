@@ -1,6 +1,18 @@
-"""Tests for ``leadforge/validation/relational_leakage.py``.
+"""Tests for ``leadforge/validation/leakage_probes.py``.
 
-Each probe is exercised against two synthetic minimal bundles:
+Covers every probe family in the unified leakage taxonomy:
+
+* relational / time-window / direct (lifted from PR 2.1's
+  ``test_relational_leakage.py``);
+* split — ID-overlap, near-duplicate row collisions, label drift;
+* model-realism — opt-in calibrated baselines (``probe_id_only_baseline``,
+  ``probe_feature_subset_baseline``, ``probe_bonus_model_auc``);
+* meta — every ``probe_*`` function in the module is registered in
+  :data:`leadforge.validation.leakage_probes.PROBE_REGISTRY` so a
+  future "I added a probe but forgot to wire it" regression fails
+  loudly here.
+
+For the structural probes each is exercised against two configurations:
 
 * a *clean* bundle, produced by running the same source frames through
   :func:`leadforge.render.relational_snapshot_safe.to_dataframes_snapshot_safe`,
@@ -12,17 +24,25 @@ Each probe is exercised against two synthetic minimal bundles:
 
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 
 import pandas as pd
 import pytest
 
 from leadforge.render.relational_snapshot_safe import to_dataframes_snapshot_safe
-from leadforge.validation.relational_leakage import (
+from leadforge.validation import leakage_probes
+from leadforge.validation.leakage_probes import (
     CHANNEL_BANNED_COLUMN,
     CHANNEL_BANNED_TABLE,
     CHANNEL_BONUS_MODEL,
+    CHANNEL_FEATURE_SUBSET_BASELINE,
+    CHANNEL_ID_ONLY_BASELINE,
     CHANNEL_JOIN_RECONSTRUCTION,
+    CHANNEL_SPLIT_ID_OVERLAP,
+    CHANNEL_SPLIT_LABEL_DRIFT,
+    CHANNEL_SPLIT_NEAR_DUPLICATE,
+    PROBE_REGISTRY,
     LeakageFinding,
     LeakageReport,
     RelationalLeakageError,
@@ -31,9 +51,15 @@ from leadforge.validation.relational_leakage import (
     probe_banned_tables,
     probe_bonus_model_auc,
     probe_deterministic_reconstruction,
+    probe_feature_subset_baseline,
+    probe_id_only_baseline,
     probe_snapshot_window,
+    probe_split_id_overlap,
+    probe_split_label_drift,
+    probe_split_near_duplicates,
     run_all_probes,
     run_all_probes_on_dataframes,
+    run_split_probes,
 )
 
 ANCHOR = pd.Timestamp("2026-01-01")
@@ -592,3 +618,340 @@ def test_deterministic_function_matches_script_export() -> None:
         src["leads"], src["opportunities"], src["customers"], src["subscriptions"]
     )
     pd.testing.assert_frame_equal(a, b)
+
+
+# ---------------------------------------------------------------------------
+# §8.1 Direct — caller-supplied banned sets.
+# ---------------------------------------------------------------------------
+
+
+def test_probe_banned_columns_accepts_custom_banned_set() -> None:
+    """A non-relational caller (e.g. flat-CSV exporter) can ban its own
+    column list without depending on the snapshot-safe defaults."""
+    tables = _clean_bundle()
+    tables["leads"] = tables["leads"].assign(secret_score=0.5)
+    custom = {"leads": ("secret_score",)}
+    findings = probe_banned_columns(tables, banned=custom)
+    assert any(f.detail == "leads.secret_score" for f in findings)
+    # Default ban list is unaffected.
+    assert probe_banned_columns(tables) == []
+
+
+def test_probe_banned_tables_accepts_custom_banned_set() -> None:
+    """Same generalisation for banned tables — caller can declare an
+    arbitrary blocklist (e.g. ``raw_telemetry``)."""
+    tables = _clean_bundle()
+    tables["raw_telemetry"] = pd.DataFrame({"x": [1]})
+    findings = probe_banned_tables(tables.keys(), banned=("raw_telemetry",))
+    assert any(f.detail == "raw_telemetry" for f in findings)
+    # Default ban list is unaffected.
+    assert probe_banned_tables(tables.keys()) == []
+
+
+# ---------------------------------------------------------------------------
+# §8.4 Split — ID overlap / near-duplicates / label drift.
+# ---------------------------------------------------------------------------
+
+
+def _split_frames() -> dict[str, pd.DataFrame]:
+    """Three disjoint splits with shared schema, no contamination."""
+    train = pd.DataFrame(
+        {
+            "lead_id": [f"l_{i:03d}" for i in range(20)],
+            "account_id": [f"a_{i:03d}" for i in range(20)],
+            "f1": [float(i) for i in range(20)],
+            "f2": [i * 0.5 for i in range(20)],
+            "label": [True] * 5 + [False] * 15,
+        }
+    )
+    valid = pd.DataFrame(
+        {
+            "lead_id": [f"l_{i:03d}" for i in range(20, 25)],
+            "account_id": [f"a_{i:03d}" for i in range(20, 25)],
+            "f1": [float(i) for i in range(20, 25)],
+            "f2": [i * 0.5 for i in range(20, 25)],
+            "label": [True, False, True, False, False],
+        }
+    )
+    test = pd.DataFrame(
+        {
+            "lead_id": [f"l_{i:03d}" for i in range(25, 30)],
+            "account_id": [f"a_{i:03d}" for i in range(25, 30)],
+            "f1": [float(i) for i in range(25, 30)],
+            "f2": [i * 0.5 for i in range(25, 30)],
+            "label": [True, False, False, False, True],
+        }
+    )
+    return {"train": train, "valid": valid, "test": test}
+
+
+def test_split_id_overlap_silent_on_clean_splits() -> None:
+    assert probe_split_id_overlap(_split_frames()) == []
+
+
+def test_split_id_overlap_fires_when_lead_id_shared() -> None:
+    splits = _split_frames()
+    # Force a leak: copy first train row into test.
+    splits["test"] = pd.concat([splits["test"], splits["train"].head(1)], ignore_index=True)
+    findings = probe_split_id_overlap(splits)
+    assert any(f.channel == CHANNEL_SPLIT_ID_OVERLAP for f in findings)
+    assert any("lead_id" in f.detail for f in findings)
+
+
+def test_split_id_overlap_audits_account_id_when_requested() -> None:
+    splits = _split_frames()
+    # Same account_id appears in train and valid by design.
+    shared = splits["train"]["account_id"].head(5).values
+    splits["valid"] = splits["valid"].assign(account_id=shared)
+    findings = probe_split_id_overlap(splits, id_columns=("account_id",))
+    assert any(f.detail.startswith("account_id:") for f in findings)
+
+
+def test_split_id_overlap_skips_missing_columns() -> None:
+    """Splits without an audited id column are silently skipped per-split,
+    not a probe-level error.  Allows the probe to be wired generically
+    over heterogeneous task schemas."""
+    splits = _split_frames()
+    splits["valid"] = splits["valid"].drop(columns=["account_id"])
+    # account_id audit: train+test still overlap-free, valid skipped — no findings.
+    assert probe_split_id_overlap(splits, id_columns=("account_id",)) == []
+
+
+def test_split_near_duplicates_silent_on_clean_splits() -> None:
+    splits = _split_frames()
+    findings = probe_split_near_duplicates(splits, feature_columns=("f1", "f2"), decimals=4)
+    assert findings == []
+
+
+def test_split_near_duplicates_fires_on_rounded_match() -> None:
+    splits = _split_frames()
+    # Inject a row in test whose features round to a train row's features.
+    leak_row = splits["train"].iloc[[0]].copy()
+    leak_row["lead_id"] = "leak_001"  # different ID, near-duplicate features
+    splits["test"] = pd.concat([splits["test"], leak_row], ignore_index=True)
+    findings = probe_split_near_duplicates(splits, feature_columns=("f1", "f2"))
+    assert any(f.channel == CHANNEL_SPLIT_NEAR_DUPLICATE for f in findings)
+
+
+def test_split_near_duplicates_skipped_when_no_columns() -> None:
+    assert probe_split_near_duplicates(_split_frames(), feature_columns=()) == []
+
+
+def test_split_label_drift_skipped_below_threshold() -> None:
+    splits = _split_frames()
+    # Rates are 0.25, 0.4, 0.4 — drift = 0.15.  Pass a threshold above that.
+    assert probe_split_label_drift(splits, label_col="label", max_drift=0.5) == []
+
+
+def test_split_label_drift_fires_when_drift_exceeds_threshold() -> None:
+    splits = _split_frames()
+    # Force a drift: relabel everything in test to True.
+    splits["test"] = splits["test"].assign(label=[True] * len(splits["test"]))
+    findings = probe_split_label_drift(splits, label_col="label", max_drift=0.1)
+    assert any(f.channel == CHANNEL_SPLIT_LABEL_DRIFT for f in findings)
+
+
+def test_split_label_drift_negative_threshold_raises() -> None:
+    with pytest.raises(ValueError, match="non-negative"):
+        probe_split_label_drift(_split_frames(), label_col="label", max_drift=-0.1)
+
+
+# ---------------------------------------------------------------------------
+# §8.5 Model realism — opt-in calibrated baselines.
+# ---------------------------------------------------------------------------
+
+
+def test_probe_id_only_baseline_silent_on_random_splits() -> None:
+    """Hashed IDs alone must not predict the label on a clean random split."""
+    pytest.importorskip("sklearn")
+    splits = _split_frames()
+    # max_auc=0.95 is generous: on this 20+5+5 random split a HistGBM
+    # trained on hashed IDs should hover near 0.5.  We're not testing
+    # the literal AUC, only that the probe doesn't fire spuriously.
+    assert probe_id_only_baseline(splits, label_col="label", max_auc=0.95) == []
+
+
+def test_probe_id_only_baseline_runs_cleanly_on_partitioned_ids() -> None:
+    """Wiring smoke test: even when train lead_ids cleanly partition by
+    label, the probe completes without error.
+
+    A "fires" demonstration is structurally impossible from hashed
+    lead_ids alone: each hash is independent, so HistGBM cannot
+    generalise from train hashes to disjoint test hashes — AUC stays
+    near 0.5 by construction.  The positive-fire path for the
+    model-realism family is covered by
+    :func:`test_probe_feature_subset_baseline_fires_when_subset_predicts_label`;
+    here we just assert the probe runs end-to-end with a non-trivial
+    label.
+    """
+    pytest.importorskip("sklearn")
+    train = pd.DataFrame(
+        {
+            "lead_id": [f"POS_{i:03d}" for i in range(40)] + [f"NEG_{i:03d}" for i in range(40)],
+            "label": [True] * 40 + [False] * 40,
+        }
+    )
+    test = pd.DataFrame(
+        {
+            "lead_id": [f"POS_{i:03d}" for i in range(40, 50)]
+            + [f"NEG_{i:03d}" for i in range(40, 50)],
+            "label": [True] * 10 + [False] * 10,
+        }
+    )
+    findings = probe_id_only_baseline(
+        {"train": train, "test": test},
+        label_col="label",
+        max_auc=0.6,
+        id_columns=("lead_id",),
+    )
+    assert isinstance(findings, list)
+
+
+def test_probe_id_only_baseline_skips_without_train() -> None:
+    pytest.importorskip("sklearn")
+    splits = _split_frames()
+    del splits["train"]
+    assert probe_id_only_baseline(splits, label_col="label", max_auc=0.6) == []
+
+
+def test_probe_feature_subset_baseline_silent_when_features_uninformative() -> None:
+    """Numeric features that carry no signal must not exceed even a
+    tight band — confirms the wiring runs without spuriously firing."""
+    pytest.importorskip("sklearn")
+    splits = _split_frames()
+    findings = probe_feature_subset_baseline(
+        splits,
+        feature_columns=("f1", "f2"),
+        label_col="label",
+        max_auc=0.99,
+        name="numeric_only",
+    )
+    assert findings == []
+
+
+def test_probe_feature_subset_baseline_fires_when_subset_predicts_label() -> None:
+    """A leakage-equivalent feature in the subset must trip the baseline.
+
+    Build a train+test where ``leak`` is monotonic in the label;
+    HistGBM should saturate AUC and exceed any sane band.
+    """
+    pytest.importorskip("sklearn")
+    rng_pos = pd.Series(range(40), name="leak").astype(float) + 100.0
+    rng_neg = pd.Series(range(40), name="leak").astype(float)
+    train = pd.DataFrame(
+        {
+            "lead_id": [f"l_{i}" for i in range(80)],
+            "leak": pd.concat([rng_pos, rng_neg], ignore_index=True),
+            "label": [True] * 40 + [False] * 40,
+        }
+    )
+    test = pd.DataFrame(
+        {
+            "lead_id": [f"t_{i}" for i in range(20)],
+            "leak": [200.0] * 10 + [0.0] * 10,
+            "label": [True] * 10 + [False] * 10,
+        }
+    )
+    findings = probe_feature_subset_baseline(
+        {"train": train, "test": test},
+        feature_columns=("leak",),
+        label_col="label",
+        max_auc=0.6,
+        name="leak_subset",
+    )
+    assert findings, "expected the leakage-equivalent feature subset to exceed max_auc"
+    assert all(f.channel == CHANNEL_FEATURE_SUBSET_BASELINE for f in findings)
+
+
+def test_probe_feature_subset_baseline_skips_when_no_columns_present() -> None:
+    pytest.importorskip("sklearn")
+    splits = _split_frames()
+    assert (
+        probe_feature_subset_baseline(
+            splits,
+            feature_columns=("nonexistent",),
+            label_col="label",
+            max_auc=0.6,
+            name="ghost",
+        )
+        == []
+    )
+
+
+# ---------------------------------------------------------------------------
+# Split-orchestrator wiring.
+# ---------------------------------------------------------------------------
+
+
+def test_run_split_probes_runs_id_overlap_by_default() -> None:
+    splits = _split_frames()
+    splits["test"] = pd.concat([splits["test"], splits["train"].head(1)], ignore_index=True)
+    report = run_split_probes(splits)
+    assert any(f.channel == CHANNEL_SPLIT_ID_OVERLAP for f in report.findings)
+
+
+def test_run_split_probes_skips_opt_in_probes_by_default() -> None:
+    """Without explicit thresholds, the orchestrator must not run the
+    label-drift, ID-only, or feature-subset probes — calibrated bands
+    are PR 3.3's job."""
+    pytest.importorskip("sklearn")
+    splits = _split_frames()
+    report = run_split_probes(splits)
+    channels = {f.channel for f in report.findings}
+    assert CHANNEL_SPLIT_LABEL_DRIFT not in channels
+    assert CHANNEL_ID_ONLY_BASELINE not in channels
+    assert CHANNEL_FEATURE_SUBSET_BASELINE not in channels
+
+
+def test_run_split_probes_runs_all_when_enabled() -> None:
+    pytest.importorskip("sklearn")
+    splits = _split_frames()
+    # Force drift so the label-drift probe has something to surface.
+    splits["test"] = splits["test"].assign(label=[True] * len(splits["test"]))
+    report = run_split_probes(
+        splits,
+        label_col="label",
+        near_duplicate_columns=("f1", "f2"),
+        label_drift_max=0.05,
+        id_only_max_auc=0.95,
+        feature_subsets={"numeric_only": (0.95, ("f1", "f2"))},
+    )
+    # At minimum, label-drift must fire.  ID-only / feature-subset may
+    # or may not fire on this synthetic data; assertion focuses on the
+    # opt-in probes' wiring, not their statistical behaviour.
+    channels = {f.channel for f in report.findings}
+    assert CHANNEL_SPLIT_LABEL_DRIFT in channels
+
+
+# ---------------------------------------------------------------------------
+# Meta — every probe is registered.
+# ---------------------------------------------------------------------------
+
+
+def test_probe_registry_covers_every_module_level_probe() -> None:
+    """Any function named ``probe_*`` in :mod:`leakage_probes` must be
+    listed in :data:`PROBE_REGISTRY`.  Guards against the
+    "I-added-a-probe-but-forgot-to-register-it" regression so the
+    orchestrators stay authoritative."""
+    module_probes = {
+        name
+        for name, obj in inspect.getmembers(leakage_probes, inspect.isfunction)
+        if name.startswith("probe_") and obj.__module__ == leakage_probes.__name__
+    }
+    registered = {f"probe_{spec.name}" for spec in PROBE_REGISTRY.values()}
+    missing = module_probes - registered
+    extra = registered - module_probes
+    assert not missing, f"probes defined but not registered: {sorted(missing)}"
+    assert not extra, f"registered probes that don't exist: {sorted(extra)}"
+
+
+def test_probe_registry_taxonomies_are_known() -> None:
+    """Every spec carries one of the five documented taxonomies."""
+    valid = {"direct", "time_window", "relational", "split", "model_realism"}
+    for spec in PROBE_REGISTRY.values():
+        assert spec.taxonomy in valid, f"{spec.name} has unknown taxonomy {spec.taxonomy!r}"
+
+
+def test_probe_registry_callables_are_callable() -> None:
+    for spec in PROBE_REGISTRY.values():
+        assert callable(spec.callable), f"{spec.name}.callable is not callable"
