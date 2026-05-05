@@ -335,6 +335,30 @@ def test_snapshot_window_duplicate_lead_id_raises() -> None:
         probe_snapshot_window(tables, snapshot_day=SNAPSHOT_DAY)
 
 
+def test_snapshot_window_nat_lead_created_at_raises() -> None:
+    """NaT in the anchor propagates to NaT cutoffs, masking violations
+    via the fillna(False) in the count expression.  The probe must
+    refuse to operate on a malformed anchor."""
+    tables = _clean_bundle()
+    tables["leads"] = tables["leads"].copy()
+    tables["leads"].loc[0, "lead_created_at"] = None
+    with pytest.raises(ValueError, match="unparseable / null"):
+        probe_snapshot_window(tables, snapshot_day=SNAPSHOT_DAY)
+
+
+def test_snapshot_window_orphan_event_raises() -> None:
+    """An event row whose lead_id is absent from leads gets a NaT cutoff
+    after the left-merge; the count would silently miss it.  Treat
+    orphan events as a structural violation and raise."""
+    tables = _clean_bundle()
+    orphan = pd.DataFrame(
+        [{"touch_id": "t_orphan", "lead_id": "lead_does_not_exist", "touch_timestamp": _ts(2)}]
+    )
+    tables["touches"] = pd.concat([tables["touches"], orphan], ignore_index=True)
+    with pytest.raises(ValueError, match="touches.parquet has 1 row.*absent from leads"):
+        probe_snapshot_window(tables, snapshot_day=SNAPSHOT_DAY)
+
+
 # ---------------------------------------------------------------------------
 # Bonus-model probe.
 # ---------------------------------------------------------------------------

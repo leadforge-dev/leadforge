@@ -368,7 +368,19 @@ def probe_snapshot_window(
         raise ValueError("leads.lead_id must be unique")
 
     anchor = leads[["lead_id", "lead_created_at"]].copy()
-    anchor["lead_created_at"] = pd.to_datetime(anchor["lead_created_at"])
+    anchor["lead_created_at"] = pd.to_datetime(anchor["lead_created_at"], errors="coerce")
+    # NaT in the anchor would propagate to NaT cutoffs, then ``ts > NaT``
+    # is NaN, and the violation count's ``fillna(False)`` would silently
+    # drop those rows — masking a data-quality bug in the bundle.  Refuse
+    # to operate on a malformed anchor, same posture as the duplicate-
+    # lead_id check above.
+    nat_mask = anchor["lead_created_at"].isna()
+    if nat_mask.any():
+        sample = anchor.loc[nat_mask, "lead_id"].head(5).tolist()
+        raise ValueError(
+            f"leads.lead_created_at has {int(nat_mask.sum())} unparseable / null "
+            f"value(s); offending lead_id sample: {sample}"
+        )
     horizon = pd.Timedelta(days=snapshot_day)
 
     findings: list[LeakageFinding] = []
@@ -377,6 +389,20 @@ def probe_snapshot_window(
         if df is None or len(df) == 0 or ts_col not in df.columns:
             continue
         merged = df[["lead_id", ts_col]].merge(anchor, on="lead_id", how="left")
+        # An event row whose lead_id has no match in leads gets NaT for
+        # ``lead_created_at`` after the left-merge; that row's cutoff is
+        # NaT and the violation count would silently miss it.  An orphan
+        # event row is a structural FK violation (and a leakage attack
+        # surface — a tampered bundle could insert post-snapshot events
+        # tied to lead_ids absent from the public leads table).  Refuse
+        # to bless it.
+        orphan_mask = merged["lead_created_at"].isna()
+        if orphan_mask.any():
+            sample = merged.loc[orphan_mask, "lead_id"].head(5).tolist()
+            raise ValueError(
+                f"{name}.parquet has {int(orphan_mask.sum())} row(s) referencing "
+                f"lead_id(s) absent from leads; sample: {sample}"
+            )
         ts = pd.to_datetime(merged[ts_col])
         cutoff = merged["lead_created_at"] + horizon
         violations = int((ts > cutoff).fillna(False).sum())

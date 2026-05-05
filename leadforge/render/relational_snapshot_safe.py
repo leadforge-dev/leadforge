@@ -123,7 +123,18 @@ def _build_anchor(leads: pd.DataFrame) -> pd.DataFrame:
     if not leads["lead_id"].is_unique:
         raise ValueError("leads.lead_id must be unique")
     anchor = leads[["lead_id", "lead_created_at"]].rename(columns={"lead_created_at": _ANCHOR_COL})
-    anchor[_ANCHOR_COL] = pd.to_datetime(anchor[_ANCHOR_COL])
+    anchor[_ANCHOR_COL] = pd.to_datetime(anchor[_ANCHOR_COL], errors="coerce")
+    # NaT here would silently drop every event for the affected leads via
+    # the ``ts <= NaT`` -> NaN -> fillna(False) path downstream — exactly
+    # the kind of silent data-quality erosion a public-bundle exporter
+    # must refuse to ship.
+    nat_mask = anchor[_ANCHOR_COL].isna()
+    if nat_mask.any():
+        sample = anchor.loc[nat_mask, "lead_id"].head(5).tolist()
+        raise ValueError(
+            f"leads.lead_created_at has {int(nat_mask.sum())} unparseable / null "
+            f"value(s); offending lead_id sample: {sample}"
+        )
     return anchor
 
 

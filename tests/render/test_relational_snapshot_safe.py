@@ -283,3 +283,22 @@ def test_duplicate_lead_id_raises() -> None:
     src["leads"] = pd.concat([src["leads"], src["leads"].iloc[[0]]], ignore_index=True)
     with pytest.raises(ValueError, match="lead_id must be unique"):
         to_dataframes_snapshot_safe(src, snapshot_day=10)
+
+
+def test_nat_lead_created_at_raises() -> None:
+    """A NaT/null anchor would silently drop every event for the affected
+    lead via ``ts <= NaT`` -> NaN -> fillna(False).  Must raise instead."""
+    src = _full_horizon_dict()
+    src["leads"] = src["leads"].copy()
+    src["leads"].loc[0, "lead_created_at"] = None
+    with pytest.raises(ValueError, match="unparseable / null"):
+        to_dataframes_snapshot_safe(src, snapshot_day=10)
+
+
+def test_unparseable_lead_created_at_raises() -> None:
+    """Garbage anchor strings would coerce to NaT and silently misbehave."""
+    src = _full_horizon_dict()
+    src["leads"] = src["leads"].copy()
+    src["leads"].loc[0, "lead_created_at"] = "not-a-date"
+    with pytest.raises(ValueError, match="unparseable / null"):
+        to_dataframes_snapshot_safe(src, snapshot_day=10)
