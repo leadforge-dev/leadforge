@@ -22,7 +22,7 @@ a coordinated bump of the framework that is not actually planned.
 **Implication for releases:**
 - Kaggle dataset slug: `leadforge-lead-scoring-v1` (or `<owner>/leadforge-lead-scoring-v1`).
 - Hugging Face repo: `<owner>/leadforge-lead-scoring-v1`.
-- GitHub release tag: `dataset/v1` or similar, distinct from package tags.
+- GitHub release tag and Release name: `leadforge-lead-scoring-v1`. Distinct from any package tags.
 
 ## Dataset family architecture
 
@@ -34,7 +34,7 @@ The release is a *family*, not a single CSV.
 - **advanced** — hardest tier (~7.9% conversion; AUC ~0.87).
 
 Each tier is a complete bundle:
-- Flat task splits: `train.csv`, `validation.csv`, `test.csv`, plus a single joined `lead_scoring.csv`.
+- Flat task splits as Parquet at `tasks/<task_id>/{train,valid,test}.parquet` (current alpha contract) plus a single joined `lead_scoring.csv` with a `split` column. Phase 5 platform packaging will additionally emit `{train,valid,test}.csv` exports for Kaggle/HF consumers who prefer flat CSV; filenames mirror the parquet split names (i.e. `valid.csv`, not `validation.csv`, to keep one canonical name).
 - **Snapshot-safe relational tables** (see below): `accounts.parquet`, `contacts.parquet`, `leads.parquet`, `touches.parquet`, `sessions.parquet`, `sales_activities.parquet`, `opportunities.parquet`. **No `customers` or `subscriptions` tables in public bundles.**
 - `manifest.json`, `feature_dictionary.csv`, `dataset_card.md`.
 
@@ -67,7 +67,7 @@ Verified in a 500-lead `student_public` smoke bundle by ChatGPT v2 reviewer (cha
 ### Decision
 A new module `leadforge/render/relational_snapshot_safe.py` produces a **snapshot-safe** relational export for `student_public` bundles. Properties:
 
-1. **Event tables** (`touches`, `sessions`, `sales_activities`) are filtered to `event_timestamp <= lead_created_at + snapshot_day`. The same temporal boundary used for flat-CSV features.
+1. **Event tables** are filtered per-table to their snapshot-relative timestamp column: `touches.touch_timestamp`, `sessions.session_timestamp`, `sales_activities.activity_timestamp` — each must satisfy `<= lead_created_at + snapshot_day`. Same temporal boundary used for flat-CSV features.
 2. **`leads.parquet`** drops `converted_within_90_days` and `conversion_timestamp`. The label only lives in the task splits, where it is the explicit y-column.
 3. **`opportunities.parquet`** is filtered to `created_at <= lead_created_at + snapshot_day` and drops `close_outcome` and `closed_at`.
 4. **`customers.parquet` and `subscriptions.parquet`** are omitted from public bundles entirely.

@@ -36,7 +36,7 @@ This is the gate that motivates the v1 release. Failures here are blockers.
 - **G4.1** Public `tables/leads.parquet` does **not** contain `converted_within_90_days` or `conversion_timestamp`.
 - **G4.2** Public `tables/opportunities.parquet` does **not** contain `close_outcome` or `closed_at`.
 - **G4.3** Public bundles do **not** contain `tables/customers.parquet` or `tables/subscriptions.parquet`.
-- **G4.4** Public event tables (`touches`, `sessions`, `sales_activities`) contain no rows where `event_timestamp > lead_created_at + snapshot_day`.
+- **G4.4** Public event tables contain no rows past the snapshot: no `touches` row with `touch_timestamp > lead_created_at + snapshot_day`, no `sessions` row with `session_timestamp > lead_created_at + snapshot_day`, no `sales_activities` row with `activity_timestamp > lead_created_at + snapshot_day`. Public `opportunities` rows must satisfy `created_at <= lead_created_at + snapshot_day`.
 - **G4.5** Probabilistic relational reconstruction probe: a model trained using only public relational features (joined on `lead_id`/`account_id`/`contact_id`) achieves AUC ≤ TBD-G4.5 against `converted_within_90_days`. Threshold derived during Phase 3 from honest-feature baseline.
 - **G4.6** Manifest field `relational_snapshot_safe == true` for `student_public` bundles; `false` for `research_instructor`.
 

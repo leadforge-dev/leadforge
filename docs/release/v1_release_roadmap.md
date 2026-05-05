@@ -46,7 +46,7 @@ A release candidate is v1-ready when **all** of the following hold. Concrete ban
 | 6 | Notebook sequence + adversarial framing | M-L | 3 | 5 | not started |
 | 7 | LLM critique + publish | M | 2 | 6 | not started |
 
-**Total: 14 PRs.** Each PR follows the `CLAUDE.md` workflow: branch → commit → update `.agent-plan.md` → PR with type+layer labels → milestone assignment (`v1.1.0 — Curated dataset v1 release`). PR-level decomposition is in the **PR breakdown** section immediately below.
+**Total: 14 PRs.** Each PR follows the `CLAUDE.md` workflow: branch → commit → update `.agent-plan.md` → PR with type+layer labels → milestone assignment (`dataset: leadforge-lead-scoring-v1`). PR-level decomposition is in the **PR breakdown** section immediately below.
 
 ## PR breakdown
 
@@ -178,7 +178,7 @@ First-cut decomposition of the 7 phases into ~14 PRs. The numbering `phase.seq` 
 
 - **14 PRs** across 7 phases.
 - Estimated total LoC: ~6,500 (excluding regenerated parquet bundles and notebook JSON).
-- All 14 PRs target the `v1.1.0 — Curated dataset v1 release` GitHub milestone.
+- All 14 PRs target the `dataset: leadforge-lead-scoring-v1` GitHub milestone.
 - Calendar duration is not committed; depends on iteration cadence and review feedback.
 
 ---
@@ -199,7 +199,7 @@ First-cut decomposition of the 7 phases into ~14 PRs. The numbering `phase.seq` 
 - Dataset release name is committed.
 
 **PR labels:** `type: docs`.
-**Milestone:** create new `v1.1.0 — Curated dataset v1 release` (or similar).
+**Milestone:** create new `dataset: leadforge-lead-scoring-v1` (or similar).
 
 ---
 
