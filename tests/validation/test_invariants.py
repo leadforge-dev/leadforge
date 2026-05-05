@@ -112,6 +112,218 @@ class TestExposureMonotonicity:
         assert any("missing metadata" in e for e in errors)
 
 
+# ---------------------------------------------------------------------------
+# check_exposure_monotonicity — focused unit tests for the v5 (PR 2.2)
+# snapshot-safe branches.  These build minimal synthetic bundles so the
+# table-comparison logic is exercised independently of generation.
+# ---------------------------------------------------------------------------
+
+
+class TestExposureMonotonicitySnapshotSafe:
+    """Exercise the table-comparison branches added in PR 2.2:
+    omitted ``BANNED_TABLES``, dropped ``BANNED_LEAD_COLUMNS`` /
+    ``BANNED_OPP_COLUMNS``, and PK-based row-subset on
+    ``SNAPSHOT_FILTERED_TABLES``."""
+
+    @staticmethod
+    def _shell(root: Path, *, has_metadata: bool) -> Path:
+        """Write the minimum scaffolding ``check_exposure_monotonicity`` requires
+        before it reaches the table-comparison logic.  Feature dictionary is
+        written empty so the subset check trivially passes."""
+        import pandas as pd
+
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "manifest.json").write_text("{}")
+        (root / "dataset_card.md").write_text("")
+        # Identical empty FD on both sides → subset check trivially passes.
+        pd.DataFrame({"name": [], "dtype": []}).to_csv(root / "feature_dictionary.csv", index=False)
+        if has_metadata:
+            (root / "metadata").mkdir()
+        (root / "tables").mkdir()
+        return root
+
+    @staticmethod
+    def _write_parquet(root: Path, name: str, df) -> None:
+        df.to_parquet(root / "tables" / f"{name}.parquet", index=False)
+
+    @pytest.fixture
+    def student_root(self, tmp_path: Path) -> Path:
+        return self._shell(tmp_path / "student", has_metadata=False)
+
+    @pytest.fixture
+    def instructor_root(self, tmp_path: Path) -> Path:
+        return self._shell(tmp_path / "instructor", has_metadata=True)
+
+    def test_omitted_banned_tables_pass(self, student_root: Path, instructor_root: Path) -> None:
+        """``customers`` / ``subscriptions`` in instructor only is the
+        expected snapshot-safe contract — must NOT raise an error."""
+        import pandas as pd
+
+        for root in (student_root, instructor_root):
+            self._write_parquet(root, "accounts", pd.DataFrame({"account_id": ["a1"]}))
+        self._write_parquet(
+            instructor_root,
+            "customers",
+            pd.DataFrame({"customer_id": ["c1"], "opportunity_id": ["o1"]}),
+        )
+        self._write_parquet(
+            instructor_root,
+            "subscriptions",
+            pd.DataFrame({"subscription_id": ["s1"], "customer_id": ["c1"]}),
+        )
+        errors = check_exposure_monotonicity(student_root, instructor_root)
+        assert errors == [], errors
+
+    def test_unexpected_extra_instructor_table_fails(
+        self, student_root: Path, instructor_root: Path
+    ) -> None:
+        """A NON-banned extra table on instructor must still be flagged —
+        snapshot-safe doesn't license arbitrary instructor-only tables."""
+        import pandas as pd
+
+        for root in (student_root, instructor_root):
+            self._write_parquet(root, "accounts", pd.DataFrame({"account_id": ["a1"]}))
+        self._write_parquet(instructor_root, "rogue", pd.DataFrame({"x": [1]}))
+        errors = check_exposure_monotonicity(student_root, instructor_root)
+        assert any("rogue.parquet" in e and "instructor but not student" in e for e in errors)
+
+    def test_dropped_banned_lead_columns_pass(
+        self, student_root: Path, instructor_root: Path
+    ) -> None:
+        """Public ``leads`` drops ``converted_within_90_days`` /
+        ``conversion_timestamp`` — must NOT raise."""
+        import pandas as pd
+
+        student_leads = pd.DataFrame({"lead_id": ["l1"], "lead_created_at": ["2024-01-01"]})
+        instructor_leads = pd.DataFrame(
+            {
+                "lead_id": ["l1"],
+                "lead_created_at": ["2024-01-01"],
+                "converted_within_90_days": [True],
+                "conversion_timestamp": ["2024-02-01"],
+            }
+        )
+        self._write_parquet(student_root, "leads", student_leads)
+        self._write_parquet(instructor_root, "leads", instructor_leads)
+        errors = check_exposure_monotonicity(student_root, instructor_root)
+        assert errors == [], errors
+
+    def test_dropped_banned_opp_columns_pass(
+        self, student_root: Path, instructor_root: Path
+    ) -> None:
+        """Public ``opportunities`` drops ``close_outcome`` / ``closed_at`` —
+        must NOT raise (and must still respect row-equality on shared
+        columns since the table size is below the snapshot-filter threshold
+        in this synthetic case)."""
+        import pandas as pd
+
+        student_opps = pd.DataFrame(
+            {
+                "opportunity_id": ["o1"],
+                "lead_id": ["l1"],
+                "created_at": ["2024-01-01"],
+            }
+        )
+        instructor_opps = pd.DataFrame(
+            {
+                "opportunity_id": ["o1"],
+                "lead_id": ["l1"],
+                "created_at": ["2024-01-01"],
+                "close_outcome": ["closed_won"],
+                "closed_at": ["2024-02-01"],
+            }
+        )
+        self._write_parquet(student_root, "opportunities", student_opps)
+        self._write_parquet(instructor_root, "opportunities", instructor_opps)
+        errors = check_exposure_monotonicity(student_root, instructor_root)
+        assert errors == [], errors
+
+    def test_unexpected_extra_instructor_lead_column_fails(
+        self, student_root: Path, instructor_root: Path
+    ) -> None:
+        """A non-banned, non-redacted extra column on instructor's leads
+        must still trip the column-diff check."""
+        import pandas as pd
+
+        student_leads = pd.DataFrame({"lead_id": ["l1"]})
+        instructor_leads = pd.DataFrame({"lead_id": ["l1"], "rogue_col": [42]})
+        self._write_parquet(student_root, "leads", student_leads)
+        self._write_parquet(instructor_root, "leads", instructor_leads)
+        errors = check_exposure_monotonicity(student_root, instructor_root)
+        assert any("leads.parquet" in e and "rogue_col" in e for e in errors)
+
+    def test_pk_row_subset_pass(self, student_root: Path, instructor_root: Path) -> None:
+        """Student touches PK ⊂ instructor touches PK — must NOT raise."""
+        import pandas as pd
+
+        instructor_touches = pd.DataFrame(
+            {
+                "touch_id": ["t1", "t2", "t3", "t4"],
+                "lead_id": ["l1", "l1", "l1", "l1"],
+            }
+        )
+        # Student has a snapshot-window subset (rows for t1, t2 only).
+        student_touches = instructor_touches.iloc[:2].reset_index(drop=True)
+        self._write_parquet(student_root, "touches", student_touches)
+        self._write_parquet(instructor_root, "touches", instructor_touches)
+        errors = check_exposure_monotonicity(student_root, instructor_root)
+        assert errors == [], errors
+
+    def test_pk_orphan_row_fails(self, student_root: Path, instructor_root: Path) -> None:
+        """Student touch_id not present in instructor — must raise.  The PK
+        branch fires when row counts differ; instructor strictly larger
+        with student carrying an orphan PK is the regression case."""
+        import pandas as pd
+
+        instructor_touches = pd.DataFrame(
+            {"touch_id": ["t1", "t2", "t3"], "lead_id": ["l1", "l1", "l1"]}
+        )
+        student_touches = pd.DataFrame(
+            {"touch_id": ["t1", "t99"], "lead_id": ["l1", "l1"]}  # t99 is the orphan
+        )
+        self._write_parquet(student_root, "touches", student_touches)
+        self._write_parquet(instructor_root, "touches", instructor_touches)
+        errors = check_exposure_monotonicity(student_root, instructor_root)
+        assert any("touches.parquet" in e and "absent from instructor" in e for e in errors), (
+            f"expected PK-orphan error; got: {errors}"
+        )
+
+    def test_student_has_more_rows_than_instructor_fails(
+        self, student_root: Path, instructor_root: Path
+    ) -> None:
+        """Snapshot-safe must be a row-subset; student strictly larger means
+        the writer leaked extra rows somewhere — must raise."""
+        import pandas as pd
+
+        instructor_touches = pd.DataFrame({"touch_id": ["t1"], "lead_id": ["l1"]})
+        student_touches = pd.DataFrame(
+            {"touch_id": ["t1", "t2", "t3"], "lead_id": ["l1", "l1", "l1"]}
+        )
+        self._write_parquet(student_root, "touches", student_touches)
+        self._write_parquet(instructor_root, "touches", instructor_touches)
+        errors = check_exposure_monotonicity(student_root, instructor_root)
+        assert any("touches.parquet" in e and "more rows than instructor" in e for e in errors)
+
+    def test_missing_pk_column_surfaces_an_error(
+        self, student_root: Path, instructor_root: Path
+    ) -> None:
+        """Student dropping ``touch_id`` is structurally invalid — the
+        column-diff check catches it (``touch_id`` is not in the
+        snapshot-safe allowlist for ``touches``), surfacing it as a
+        non-redacted-column error before the PK-set comparison runs."""
+        import pandas as pd
+
+        instructor_touches = pd.DataFrame({"touch_id": ["t1", "t2"], "lead_id": ["l1", "l1"]})
+        student_touches = pd.DataFrame({"lead_id": ["l1"]})
+        self._write_parquet(student_root, "touches", student_touches)
+        self._write_parquet(instructor_root, "touches", instructor_touches)
+        errors = check_exposure_monotonicity(student_root, instructor_root)
+        assert any(
+            "touches.parquet" in e and "touch_id" in e and "non-redacted columns" in e
+            for e in errors
+        ), f"expected column-diff error naming touch_id; got: {errors}"
+
+
 def _make_synthetic_bundle(
     root: Path,
     files: dict[str, str | bytes],

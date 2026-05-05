@@ -148,10 +148,23 @@ def _check_fk_integrity(tables: dict[str, pd.DataFrame], manifest: dict[str, Any
     # are intentionally absent — emitting "FK check skipped" for them
     # would be a false positive.  The expected-absent set is the same
     # ``BANNED_TABLES`` constant the writer omits.
-    snapshot_safe = bool(manifest.get("relational_snapshot_safe", False))
+    #
+    # Strict bool check: ``bool(...)`` would coerce malformed manifest
+    # values (the JSON string ``"false"`` is truthy; the int ``1`` would
+    # masquerade as snapshot-safe) and silently suppress real FK errors.
+    # Surface the bad value instead.
+    errors: list[str] = []
+    raw_flag = manifest.get("relational_snapshot_safe", False)
+    if not isinstance(raw_flag, bool):
+        errors.append(
+            f"manifest.relational_snapshot_safe must be a JSON boolean, got "
+            f"{type(raw_flag).__name__}={raw_flag!r}"
+        )
+        snapshot_safe = False
+    else:
+        snapshot_safe = raw_flag
     expected_absent = set(BANNED_TABLES) if snapshot_safe else set()
 
-    errors: list[str] = []
     for fk in ALL_CONSTRAINTS:
         child_df = tables.get(fk.child_table)
         parent_df = tables.get(fk.parent_table)
