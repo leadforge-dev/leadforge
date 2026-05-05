@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from leadforge.core.hashing import file_sha256
-from leadforge.validation.relational_leakage import (
+from leadforge.validation.leakage_probes import (
     BANNED_LEAD_COLUMNS,
     BANNED_OPP_COLUMNS,
     BANNED_TABLES,

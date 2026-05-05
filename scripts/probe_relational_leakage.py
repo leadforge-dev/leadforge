@@ -38,9 +38,10 @@ The script reports four orthogonal pieces of evidence:
    with ``timestamp > lead_created_at + horizon_days``. If horizon_days
    isn't readable from the manifest, falls back to 90.
 
-The deterministic reconstruction is exposed as
-:func:`deterministic_relational_reconstruction` so PR 3.1 can lift it
-verbatim into ``leadforge/validation/leakage_probes.py``.
+The deterministic reconstruction is the same one used by
+:mod:`leadforge.validation.leakage_probes` — this script re-exports it
+unchanged so the alpha-bundle audit and the validator agree by
+construction.
 
 Exit codes:
 
@@ -69,10 +70,13 @@ from typing import Any
 import pandas as pd
 
 # Re-export from the canonical package location.  PR 2.1 lifted this
-# function into ``leadforge/validation/relational_leakage.py``; the
-# script keeps it accessible at ``probe_module.deterministic_relational_reconstruction``
+# function into the leakage-probe module (then named
+# ``leadforge/validation/relational_leakage.py``; PR 3.1 consolidated
+# every leakage-taxonomy probe under
+# ``leadforge/validation/leakage_probes.py``).  The script keeps it
+# accessible at ``probe_module.deterministic_relational_reconstruction``
 # (and at the CLI level) so callers and existing tests remain stable.
-from leadforge.validation.relational_leakage import (
+from leadforge.validation.leakage_probes import (
     deterministic_relational_reconstruction,
 )
 

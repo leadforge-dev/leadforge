@@ -40,7 +40,7 @@ from leadforge.api.generator import Generator
 # Pinned column / table sets for bundle schema v5.  Update *together*
 # with ``BUNDLE_SCHEMA_VERSION``, ``LEAD_SNAPSHOT_FEATURES``, and the
 # snapshot-safe contract constants in
-# ``leadforge.validation.relational_leakage``.
+# ``leadforge.validation.leakage_probes``.
 
 V5_TASK_COLUMNS_STUDENT_PUBLIC: frozenset[str] = frozenset(
     {

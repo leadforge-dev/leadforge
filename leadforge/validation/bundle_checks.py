@@ -21,8 +21,7 @@ from leadforge.core.serialization import load_json
 from leadforge.schema.features import LEAD_SNAPSHOT_FEATURES, redacted_columns_for
 from leadforge.schema.relationships import ALL_CONSTRAINTS
 from leadforge.validation.difficulty import check_difficulty
-from leadforge.validation.realism import check_realism
-from leadforge.validation.relational_leakage import (
+from leadforge.validation.leakage_probes import (
     BANNED_TABLES,
     LeakageReport,
     probe_banned_columns,
@@ -30,6 +29,7 @@ from leadforge.validation.relational_leakage import (
     probe_deterministic_reconstruction,
     run_all_probes,
 )
+from leadforge.validation.realism import check_realism
 
 
 def validate_bundle(bundle_root: Path, *, include_realism: bool = True) -> list[str]:
@@ -311,7 +311,7 @@ def _check_relational_leakage(root: Path, manifest: dict[str, Any]) -> list[str]
     when ``snapshot_day`` is unavailable, with an explicit error
     surfaced so the gap is visible.
 
-    Each :class:`~leadforge.validation.relational_leakage.LeakageFinding`
+    Each :class:`~leadforge.validation.leakage_probes.LeakageFinding`
     is rendered as one error string, keeping the existing
     ``validate_bundle`` contract (return list of strings, empty = pass).
     """
@@ -354,10 +354,10 @@ def _read_relational_tables(root: Path) -> dict[str, pd.DataFrame]:
     """Read every public + banned-table parquet under ``<root>/tables/``.
 
     Mirrors the read logic in
-    :func:`leadforge.validation.relational_leakage.run_all_probes` but
+    :func:`leadforge.validation.leakage_probes.run_all_probes` but
     is reusable for the snapshot_day-missing path above.
     """
-    from leadforge.validation.relational_leakage import (
+    from leadforge.validation.leakage_probes import (
         BANNED_TABLES as _BANNED,
     )
 
