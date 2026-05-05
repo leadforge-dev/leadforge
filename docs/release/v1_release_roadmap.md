@@ -36,17 +36,150 @@ A release candidate is v1-ready when **all** of the following hold. Concrete ban
 
 ## Phase summary
 
-| Phase | Title | Size | Depends on | Status |
-|---|---|---|---|---|
-| 1 | Audit and naming | S | — | not started |
-| 2 | Snapshot-safe relational export | M | 1 | not started |
-| 3 | Release validation hardening | L | 2 | not started |
-| 4 | Channel-signal audit + dataset card | M-S | 3 | not started |
-| 5 | Platform packaging | M | 4 | not started |
-| 6 | Notebook sequence + adversarial framing | M-L | 5 | not started |
-| 7 | LLM critique + publish | M | 6 | not started |
+| Phase | Title | Size | PRs | Depends on | Status |
+|---|---|---|---:|---|---|
+| 1 | Audit and naming | S | 1 | — | not started |
+| 2 | Snapshot-safe relational export | M | 2 | 1 | not started |
+| 3 | Release validation hardening | L | 3 | 2 | not started |
+| 4 | Channel-signal audit + dataset card | M-S | 1 | 3 | not started |
+| 5 | Platform packaging | M | 2 | 4 | not started |
+| 6 | Notebook sequence + adversarial framing | M-L | 3 | 5 | not started |
+| 7 | LLM critique + publish | M | 2 | 6 | not started |
 
-Each phase = one PR (or a small cluster of PRs against a feature branch). PRs follow `CLAUDE.md` workflow: branch → commit → update `.agent-plan.md` → PR with type+layer labels → milestone assignment.
+**Total: 14 PRs.** Each PR follows the `CLAUDE.md` workflow: branch → commit → update `.agent-plan.md` → PR with type+layer labels → milestone assignment (`v1.1.0 — Curated dataset v1 release`). PR-level decomposition is in the **PR breakdown** section immediately below.
+
+## PR breakdown
+
+First-cut decomposition of the 7 phases into ~14 PRs. The numbering `phase.seq` is a planning ID, not a GitHub PR number. Sizes are estimates; we may merge or split during implementation. Within a phase, PRs are typically sequential (later sub-PRs depend on earlier ones); cross-phase dependencies follow the phase summary above.
+
+### Phase 1 — Audit and naming (1 PR)
+
+- **PR 1.1** — `docs: Phase 1 audit + dataset name decision`
+  - `docs/release/v1_current_state_audit.md` (the reproduction of the relational-leakage finding)
+  - `scripts/probe_relational_leakage.py` (small probe script; also seeds the Phase 3 leakage_probes module)
+  - Updates `v1_acceptance_gates.md` to lock G1.1 (dataset name `leadforge-lead-scoring-v1`)
+  - Labels: `type: docs`
+  - Size: S (~300 lines)
+
+### Phase 2 — Snapshot-safe relational export (2 PRs)
+
+- **PR 2.1** — `feat(render): snapshot-safe relational export + leakage validator`
+  - `leadforge/render/relational_snapshot_safe.py` (new)
+  - `leadforge/validation/relational_leakage.py` (new)
+  - `tests/render/test_relational_snapshot_safe.py`, `tests/validation/test_relational_leakage.py`
+  - Labels: `type: feature`, `layer: render`, `layer: validation`
+  - Size: M (~600 lines)
+
+- **PR 2.2** — `feat(exposure): route student_public through snapshot-safe export; bundle schema v5`
+  - Wire `relational_snapshot_safe` into `leadforge/exposure/filters.py`, `leadforge/api/bundle.py`
+  - `BUNDLE_SCHEMA_VERSION` 4 → 5; manifest field `relational_snapshot_safe`
+  - `leadforge/validation/bundle_checks.py` calls relational-leakage probes
+  - Regenerate alpha bundles under `release/` with pinned timestamp; hash-determinism check
+  - Labels: `type: feature`, `layer: exposure`, `layer: render`
+  - Size: M (~500 lines + regenerated parquet bundles)
+  - Depends on PR 2.1
+
+### Phase 3 — Release validation hardening (3 PRs)
+
+- **PR 3.1** — `feat(validation): leakage_probes module`
+  - `leadforge/validation/leakage_probes.py` — direct + time-window + relational + split + model-realism probes (per Guid §8 taxonomy)
+  - Tests with synthetic minimal bundles
+  - Labels: `type: feature`, `layer: validation`
+  - Size: M (~600 lines)
+
+- **PR 3.2** — `feat(validation): release_quality + reporting modules`
+  - `leadforge/validation/release_quality.py` — calibration, lift, P@K, value capture, model-family deltas, cross-seed bands
+  - `leadforge/validation/reporting.py` — JSON+MD report rendering + matplotlib figures
+  - Tests
+  - Labels: `type: feature`, `layer: validation`
+  - Size: L (~900 lines)
+
+- **PR 3.3** — `feat(scripts): validate_release_candidate driver + acceptance bands resolved`
+  - `scripts/validate_release_candidate.py` (the driver)
+  - Update `leadforge/validation/difficulty.py` with new band checks (AP, P@K, GBM-vs-LR delta, calibration)
+  - Resolve `TBD-*` bands in `v1_acceptance_gates.md` using baseline measurements
+  - Generate first `release/validation/validation_report.{json,md}` + figures
+  - Labels: `type: feature`, `layer: validation`, `layer: cli`
+  - Size: M (~500 lines)
+  - Depends on PR 3.1, PR 3.2
+
+### Phase 4 — Channel-signal audit + dataset card hardening (1 PR)
+
+- **PR 4.1** — `docs/feat: channel-signal audit + release-grade dataset card`
+  - `scripts/audit_channel_signal.py` (analysis script)
+  - `docs/release/channel_signal_audit.md` (audit results vs gemini_v2 industry benchmarks)
+  - `docs/release/generation_method.md` (standalone DGP summary for external readers)
+  - `docs/release/feature_dictionary.md` (narrative companion to feature dict CSV)
+  - `release/README.md` rewrite (release-grade dataset card; macro-framing paragraph; simulation-simplifications section)
+  - Labels: `type: docs`
+  - Size: M-S (~700 lines, mostly prose)
+
+### Phase 5 — Platform packaging (2 PRs)
+
+- **PR 5.1** — `feat(scripts): Kaggle release packager + cover image`
+  - `scripts/package_kaggle_release.py` — generates and validates `release/kaggle/dataset-metadata.json`
+  - `release/dataset-cover-image.png` (≥560×280; design TBD per roadmap open question)
+  - `release/kaggle/dataset-metadata.json` (generated)
+  - Kaggle dry-run package validation
+  - Labels: `type: feature`, `layer: cli`
+  - Size: M (~500 lines)
+
+- **PR 5.2** — `feat(scripts): HF release packager + load_dataset smoke test`
+  - `scripts/package_hf_release.py` — generates `release/huggingface/README.md` with full YAML metadata
+  - Local `load_dataset()` smoke test for every config
+  - Companion repo packaging stub for `leadforge-lead-scoring-v1-instructor`
+  - Labels: `type: feature`, `layer: cli`
+  - Size: M (~500 lines)
+
+### Phase 6 — Notebook sequence + adversarial framing (3 PRs)
+
+- **PR 6.1** — `notebooks: 01 baseline (refresh) + 02 relational feature engineering`
+  - Update `release/notebooks/01_baseline_lead_scoring.ipynb` to reproduce Phase 3 validation report metrics within tolerance
+  - New `release/notebooks/02_relational_feature_engineering.ipynb` — uses snapshot-safe relational tables; demonstrates legal joins
+  - Labels: `type: feature`, `layer: recipes`
+  - Size: M (~400 lines committed JSON; conceptually large)
+
+- **PR 6.2** — `notebooks: 03 leakage + 04 lift/calibration/value`
+  - New `release/notebooks/03_leakage_and_time_windows.ipynb` — leakage trap demo + walkthrough
+  - New `release/notebooks/04_lift_calibration_value_ranking.ipynb` — value-aware ranking + calibration + cohort-shift evaluation
+  - Labels: `type: feature`, `layer: recipes`
+  - Size: M (~400 lines committed JSON; conceptually large)
+
+- **PR 6.3** — `docs/feat(github): adversarial framing — issue templates + break-me guide`
+  - `.github/ISSUE_TEMPLATE/dataset_breakage_report.yml`
+  - `.github/ISSUE_TEMPLATE/realism_feedback.yml`
+  - `docs/release/break_me_guide.md`
+  - `docs/release/v2_decision_log.md` (empty stub)
+  - `release/README.md` updated to link to the break-me guide
+  - Labels: `type: docs`
+  - Size: S (~300 lines)
+
+### Phase 7 — LLM critique + publish (2 PRs)
+
+- **PR 7.1** — `feat(validation): llm_critique module + prompt + driver`
+  - `leadforge/validation/llm_critique.py` — single-provider, env-var creds, skip-cleanly without
+  - `docs/release/llm_critique_prompt.md` — the rubric document
+  - `scripts/run_llm_critique.py` — driver script
+  - First critique run committed to `release/validation/llm_critique_*.{json,md}`
+  - Adjudicate any high-severity findings (resolve in code in this or a follow-up PR; or document in `v2_decision_log.md`)
+  - Labels: `type: feature`, `layer: validation`
+  - Size: M (~500 lines)
+
+- **PR 7.2** — `feat(scripts): publish_kaggle + publish_hf + tag v1 release`
+  - `scripts/publish_kaggle.py`
+  - `scripts/publish_hf.py`
+  - `docs/release/v1_release_notes.md`
+  - Dry-run → private/draft → public publish (manual step performed by maintainer with credentials, within the PR or as a follow-up release tag)
+  - Tag `leadforge-lead-scoring-v1`
+  - Labels: `type: feature`, `layer: cli`
+  - Size: S (~300 lines code + manual publish step)
+
+## PR breakdown — totals
+
+- **14 PRs** across 7 phases.
+- Estimated total LoC: ~6,500 (excluding regenerated parquet bundles and notebook JSON).
+- All 14 PRs target the `v1.1.0 — Curated dataset v1 release` GitHub milestone.
+- Calendar duration is not committed; depends on iteration cadence and review feedback.
 
 ---
 
