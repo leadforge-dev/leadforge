@@ -68,96 +68,16 @@ from typing import Any
 
 import pandas as pd
 
+# Re-export from the canonical package location.  PR 2.1 lifted this
+# function into ``leadforge/validation/relational_leakage.py``; the
+# script keeps it accessible at ``probe_module.deterministic_relational_reconstruction``
+# (and at the CLI level) so callers and existing tests remain stable.
+from leadforge.validation.relational_leakage import (
+    deterministic_relational_reconstruction,
+)
+
 REQUIRED_TABLES = ("leads", "opportunities")
 DEFAULT_HORIZON_DAYS = 90
-
-
-def deterministic_relational_reconstruction(
-    leads: pd.DataFrame,
-    opportunities: pd.DataFrame,
-    customers: pd.DataFrame,
-    subscriptions: pd.DataFrame,
-) -> pd.DataFrame:
-    """Reconstruct ``converted_within_90_days`` from public relational joins.
-
-    Returns a DataFrame indexed by ``lead_id`` with five boolean columns,
-    one per reconstruction path (A-E). Path E is the union of B, C, D and
-    is the headline relational-leakage prediction.
-
-    No hidden state, no model fit — pure joins. Designed to be lifted into
-    ``leadforge/validation/leakage_probes.py`` (PR 3.1) as the relational
-    leakage probe.
-
-    Empty ``customers``/``subscriptions`` frames are accepted (Phase 2
-    success state); the corresponding paths simply return all-False.
-
-    Raises:
-        ValueError: if ``leads.lead_id`` contains duplicates. A validator
-            cannot operate safely on non-unique keys.
-    """
-    if not leads["lead_id"].is_unique:
-        raise ValueError("leads.lead_id must be unique")
-
-    leads_idx = leads.set_index("lead_id", drop=False)
-
-    # Path A — the label itself, if present in public leads.
-    # Plain ``astype(bool)`` would map NaN to True; route through pandas'
-    # nullable boolean dtype so missing values fill cleanly to False without
-    # triggering object-downcast warnings.
-    if "converted_within_90_days" in leads.columns:
-        path_a = leads_idx["converted_within_90_days"].astype("boolean").fillna(False).astype(bool)
-    else:
-        path_a = pd.Series(False, index=leads_idx.index, name="converted_within_90_days")
-
-    # Path B — any opportunity with close_outcome == "closed_won".
-    if "close_outcome" in opportunities.columns and len(opportunities) > 0:
-        won_leads = set(
-            opportunities.loc[opportunities["close_outcome"] == "closed_won", "lead_id"]
-        )
-    else:
-        won_leads = set()
-    path_b = leads_idx["lead_id"].isin(won_leads)
-
-    # Path C — lead has any joined customer (via opportunity_id -> opportunity.lead_id).
-    if len(opportunities) > 0:
-        opp_to_lead = dict(
-            zip(opportunities["opportunity_id"], opportunities["lead_id"], strict=False)
-        )
-    else:
-        opp_to_lead = {}
-    customer_leads = {
-        opp_to_lead[opp_id] for opp_id in customers["opportunity_id"] if opp_id in opp_to_lead
-    }
-    path_c = leads_idx["lead_id"].isin(customer_leads)
-
-    # Path D — lead has any joined subscription (sub -> customer -> opportunity -> lead).
-    if len(customers) > 0:
-        cust_to_opp = dict(zip(customers["customer_id"], customers["opportunity_id"], strict=False))
-    else:
-        cust_to_opp = {}
-    sub_leads: set[str] = set()
-    for cust_id in subscriptions["customer_id"]:
-        opp_id = cust_to_opp.get(cust_id)
-        if opp_id is None:
-            continue
-        lead_id = opp_to_lead.get(opp_id)
-        if lead_id is not None:
-            sub_leads.add(lead_id)
-    path_d = leads_idx["lead_id"].isin(sub_leads)
-
-    # Path E — deterministic OR of B, C, D (the headline join-only path).
-    path_e = path_b | path_c | path_d
-
-    return pd.DataFrame(
-        {
-            "path_a_direct_label": path_a.values,
-            "path_b_opportunity_won": path_b.values,
-            "path_c_customer_exists": path_c.values,
-            "path_d_subscription_exists": path_d.values,
-            "path_e_or_b_c_d": path_e.values,
-        },
-        index=leads_idx.index,
-    )
 
 
 def _binary_metrics(y_true: pd.Series, y_pred: pd.Series) -> dict[str, float]:
