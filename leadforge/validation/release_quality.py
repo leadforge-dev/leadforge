@@ -76,10 +76,6 @@ N_CALIBRATION_BINS: int = 10
 #: (15%) so the two splits are roughly comparable in test size.
 COHORT_TRAIN_FRAC: float = 0.85
 
-#: Random-state seed used inside the cohort-shift HistGBM so the
-#: random-vs-cohort comparison shares one source of randomness.
-COHORT_SEED: int = 42
-
 
 # ---------------------------------------------------------------------------
 # Result dataclasses
@@ -383,6 +379,7 @@ def measure_cohort_shift_from_bundle(
     sk = _import_sklearn()
     manifest = load_json(bundle_dir / "manifest.json")
     primary_task = str(manifest.get("primary_task", "converted_within_90_days"))
+    label = tier_name or str(manifest.get("difficulty", bundle_dir.name))
 
     train = pd.read_parquet(bundle_dir / f"tasks/{primary_task}/train.parquet")
     test = pd.read_parquet(bundle_dir / f"tasks/{primary_task}/test.parquet")
@@ -398,67 +395,54 @@ def measure_cohort_shift_from_bundle(
     rand_probs = rand_pipe.predict_proba(x_test)[:, 1]
     random_auc = float(sk.roc_auc_score(y_test, rand_probs))
 
-    if "lead_created_at" not in train.columns:
-        # Without a timestamp column, "cohort" has no meaning; emit a
-        # NaN degradation so PR 3.3 can see this is unsupported on the
-        # bundle rather than silently report 0.
+    def _no_cohort() -> CohortShiftMetrics:
+        # Surface NaN rather than inventing a value when chronological
+        # resplit is unsupported (no timestamp column / unparseable
+        # timestamps / single-class early or late half / empty late
+        # half).  PR 3.3's gating layer can then treat NaN as "skip"
+        # rather than silently scoring 0.
         return CohortShiftMetrics(
-            tier=tier_name or str(manifest.get("difficulty", bundle_dir.name)),
+            tier=label,
             seed=seed,
             random_split_auc=random_auc,
             cohort_split_auc=float("nan"),
             auc_degradation=float("nan"),
         )
 
+    if "lead_created_at" not in train.columns:
+        return _no_cohort()
+
     pooled = pd.concat([train, test], ignore_index=True)
     ts = pd.to_datetime(pooled["lead_created_at"], errors="coerce")
     if ts.isna().any():
-        # Same posture as ``probe_snapshot_window`` — a malformed anchor
-        # would mask the cohort split.  Surface it as NaN rather than
-        # invent a value.
-        return CohortShiftMetrics(
-            tier=tier_name or str(manifest.get("difficulty", bundle_dir.name)),
-            seed=seed,
-            random_split_auc=random_auc,
-            cohort_split_auc=float("nan"),
-            auc_degradation=float("nan"),
-        )
+        return _no_cohort()
 
     order = np.argsort(ts.values, kind="stable")
     cutoff = int(round(len(pooled) * COHORT_TRAIN_FRAC))
     early_idx = order[:cutoff]
     late_idx = order[cutoff:]
     if len(late_idx) == 0:
-        return CohortShiftMetrics(
-            tier=tier_name or str(manifest.get("difficulty", bundle_dir.name)),
-            seed=seed,
-            random_split_auc=random_auc,
-            cohort_split_auc=float("nan"),
-            auc_degradation=float("nan"),
-        )
+        return _no_cohort()
 
     early = pooled.iloc[early_idx]
     late = pooled.iloc[late_idx]
     y_early = early[LABEL_COLUMN].astype("boolean").fillna(False).astype(int).values
     y_late = late[LABEL_COLUMN].astype("boolean").fillna(False).astype(int).values
     if len(set(y_early)) < 2 or len(set(y_late)) < 2:
-        return CohortShiftMetrics(
-            tier=tier_name or str(manifest.get("difficulty", bundle_dir.name)),
-            seed=seed,
-            random_split_auc=random_auc,
-            cohort_split_auc=float("nan"),
-            auc_degradation=float("nan"),
-        )
+        return _no_cohort()
 
     x_early = _sanitize_categoricals(early[cat_cols + num_cols], cat_cols)
     x_late = _sanitize_categoricals(late[cat_cols + num_cols], cat_cols)
-    cohort_pipe = _build_pipeline(num_cols, cat_cols, model="gbm", seed=COHORT_SEED, sk=sk)
+    # Caller-pinned ``seed`` for both fits; keeping the random and cohort
+    # pipelines on the same RNG seed makes the AUC pair comparable across
+    # re-runs of the same bundle (they differ only in train/test split).
+    cohort_pipe = _build_pipeline(num_cols, cat_cols, model="gbm", seed=seed, sk=sk)
     cohort_pipe.fit(x_early, y_early)
     cohort_probs = cohort_pipe.predict_proba(x_late)[:, 1]
     cohort_auc = float(sk.roc_auc_score(y_late, cohort_probs))
 
     return CohortShiftMetrics(
-        tier=tier_name or str(manifest.get("difficulty", bundle_dir.name)),
+        tier=label,
         seed=seed,
         random_split_auc=random_auc,
         cohort_split_auc=cohort_auc,
