@@ -208,6 +208,27 @@ def test_manifest_records_relational_snapshot_safe(
     )
 
 
+def test_manifest_records_structural_redactions(
+    student_bundle: Path, instructor_bundle: Path
+) -> None:
+    """v5 contract: ``manifest.structural_redactions`` enumerates the table-level
+    drops (columns + omitted tables) so the bundle is self-describing."""
+    student = json.loads((student_bundle / "manifest.json").read_text())
+    assert student["structural_redactions"] == {
+        "columns": {
+            "leads": ["conversion_timestamp", "converted_within_90_days"],
+            "opportunities": ["close_outcome", "closed_at"],
+        },
+        "omitted_tables": ["customers", "subscriptions"],
+    }, "student_public must record the snapshot-safe drops in manifest.structural_redactions"
+
+    instructor = json.loads((instructor_bundle / "manifest.json").read_text())
+    assert instructor["structural_redactions"] == {
+        "columns": {},
+        "omitted_tables": [],
+    }, "research_instructor must record an empty structural_redactions"
+
+
 def test_student_public_task_columns_match_v5_contract(student_bundle: Path) -> None:
     actual = _task_cols(student_bundle)
     assert actual == V5_TASK_COLUMNS_STUDENT_PUBLIC, (

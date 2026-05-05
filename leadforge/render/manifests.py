@@ -14,6 +14,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from leadforge.core.hashing import file_sha256
+from leadforge.validation.relational_leakage import (
+    BANNED_LEAD_COLUMNS,
+    BANNED_OPP_COLUMNS,
+    BANNED_TABLES,
+)
 
 if TYPE_CHECKING:
     from leadforge.core.models import GenerationConfig
@@ -138,8 +143,31 @@ def build_manifest(
         "motif_family": world_graph.motif_family,
         "redacted_columns": redacted_columns_list,
         "relational_snapshot_safe": bool(relational_snapshot_safe),
+        "structural_redactions": _build_structural_redactions(bool(relational_snapshot_safe)),
         "tables": tables,
         "tasks": tasks,
+    }
+
+
+def _build_structural_redactions(relational_snapshot_safe: bool) -> dict[str, Any]:
+    """Self-describing record of the table-level redactions applied at write.
+
+    For snapshot-safe (public) bundles this enumerates every column the
+    snapshot-safe export drops from ``leads`` / ``opportunities`` and the
+    tables it omits entirely.  For full-horizon (instructor) bundles
+    every list is empty.  Together with ``manifest.redacted_columns``
+    (the snapshot-feature redactions) and ``manifest.relational_snapshot_safe``
+    (the contract flag) the manifest fully describes what the writer
+    dropped without the consumer needing to consult package internals.
+    """
+    if not relational_snapshot_safe:
+        return {"columns": {}, "omitted_tables": []}
+    return {
+        "columns": {
+            "leads": sorted(BANNED_LEAD_COLUMNS),
+            "opportunities": sorted(BANNED_OPP_COLUMNS),
+        },
+        "omitted_tables": sorted(BANNED_TABLES),
     }
 
 

@@ -211,6 +211,18 @@ def check_exposure_monotonicity(student_bundle: Path, instructor_bundle: Path) -
         "leads": set(BANNED_LEAD_COLUMNS),
         "opportunities": set(BANNED_OPP_COLUMNS),
     }
+    # Per-snapshot-filtered-table primary key.  Used to verify the
+    # row-subset relationship cheaply and correctly under NaN: a left
+    # merge over all shared columns is fragile (NaN doesn't equal NaN
+    # in pandas, even on the same float), and the natural PK is enough
+    # to assert ``student.rows ⊆ instructor.rows`` since student rows
+    # were derived directly from instructor by row-filtering.
+    snapshot_filtered_pks: dict[str, str] = {
+        "touches": "touch_id",
+        "sessions": "session_id",
+        "sales_activities": "activity_id",
+        "opportunities": "opportunity_id",
+    }
 
     student_tables = (
         {p.name for p in (student_bundle / "tables").glob("*.parquet")}
@@ -273,18 +285,26 @@ def check_exposure_monotonicity(student_bundle: Path, instructor_bundle: Path) -
             continue
         shared = [c for c in s_df.columns if c in i_df.columns]
         if is_snapshot_filtered and len(s_df) != len(i_df):
-            # Student is a row-subset; verify each student row appears
-            # verbatim in instructor (joined by the natural primary key
-            # of the table when one is available, else by full-row
-            # equality on the shared columns).
-            s_view = s_df[shared].reset_index(drop=True)
-            i_view = i_df[shared].reset_index(drop=True)
-            merged = s_view.merge(i_view, how="left", indicator=True)
-            unmatched = int((merged["_merge"] != "both").sum())
-            if unmatched:
+            # Row-subset by primary key.  Each student row was derived
+            # from instructor by row-filtering, so the PK relationship
+            # is the strongest invariant we can assert without
+            # depending on column-by-column equality (which is fragile
+            # under NaN).
+            pk = snapshot_filtered_pks.get(table_name)
+            if pk is None or pk not in s_df.columns or pk not in i_df.columns:
                 errors.append(
-                    f"Table {table}: {unmatched} student row(s) not present in instructor "
-                    "(snapshot-safe export must keep instructor's row content verbatim)"
+                    f"Table {table}: snapshot-filtered table missing expected "
+                    f"primary key {pk!r}; cannot verify row-subset"
+                )
+                continue
+            student_pks = set(s_df[pk].tolist())
+            instructor_pks = set(i_df[pk].tolist())
+            orphans = student_pks - instructor_pks
+            if orphans:
+                sample = sorted(orphans)[:3]
+                errors.append(
+                    f"Table {table}: {len(orphans)} student {pk}(s) absent from instructor, "
+                    f"e.g. {sample} (snapshot-safe export must be a row-subset)"
                 )
         else:
             s_shared = s_df[shared].reset_index(drop=True)

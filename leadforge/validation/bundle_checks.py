@@ -25,6 +25,9 @@ from leadforge.validation.realism import check_realism
 from leadforge.validation.relational_leakage import (
     BANNED_TABLES,
     LeakageReport,
+    probe_banned_columns,
+    probe_banned_tables,
+    probe_deterministic_reconstruction,
     run_all_probes,
 )
 
@@ -279,16 +282,24 @@ def _check_exposure_redaction(root: Path, manifest: dict[str, Any]) -> list[str]
 
 
 def _check_relational_leakage(root: Path, manifest: dict[str, Any]) -> list[str]:
-    """Run :func:`run_all_probes` on snapshot-safe (public) bundles.
+    """Run the relational-leakage probes on snapshot-safe (public) bundles.
 
     Skips ``research_instructor`` bundles entirely — they retain the
     full hidden truth (label column, customers, subscriptions,
-    ``close_outcome``) by design, so the leakage probes would be a
-    false positive there.  The bonus-model probe stays off (PR 3.3
-    will calibrate per-tier bands).
+    ``close_outcome``) by design, so the probes would be a false
+    positive there.  The bonus-model probe stays off (PR 3.3 will
+    calibrate per-tier bands).
+
+    The structural probes (banned columns, banned tables, deterministic
+    join reconstruction) do not depend on ``snapshot_day``.  They run
+    even if the manifest is missing or has a malformed ``snapshot_day``
+    — those are exactly the cases where users *most* need leakage
+    detection, not least.  Only the snapshot-window probe is skipped
+    when ``snapshot_day`` is unavailable, with an explicit error
+    surfaced so the gap is visible.
 
     Each :class:`~leadforge.validation.relational_leakage.LeakageFinding`
-    is rendered as one error string keeping the existing
+    is rendered as one error string, keeping the existing
     ``validate_bundle`` contract (return list of strings, empty = pass).
     """
     mode_str = manifest.get("exposure_mode")
@@ -296,18 +307,63 @@ def _check_relational_leakage(root: Path, manifest: dict[str, Any]) -> list[str]
         return []
 
     snapshot_day = manifest.get("snapshot_day")
-    if snapshot_day is None:
-        return [
-            "Cannot run relational-leakage probes: manifest.snapshot_day is null "
-            "but exposure_mode is student_public (snapshot-safe contract requires "
-            "a windowed snapshot)."
-        ]
-    if not isinstance(snapshot_day, int) or isinstance(snapshot_day, bool):
-        return [f"Manifest snapshot_day must be an int, got {type(snapshot_day).__name__}"]
+    snapshot_day_usable = (
+        isinstance(snapshot_day, int) and not isinstance(snapshot_day, bool) and snapshot_day >= 0
+    )
 
+    errors: list[str] = []
     try:
-        report: LeakageReport = run_all_probes(root, snapshot_day=snapshot_day)
+        if snapshot_day_usable and isinstance(snapshot_day, int):
+            report: LeakageReport = run_all_probes(root, snapshot_day=snapshot_day)
+        else:
+            # Run the structural subset that does not need ``snapshot_day``.
+            tables = _read_relational_tables(root)
+            findings = list(probe_banned_columns(tables))
+            findings += list(probe_banned_tables(tables.keys()))
+            findings += list(probe_deterministic_reconstruction(tables))
+            report = LeakageReport(findings=tuple(findings))
+            errors.append(
+                "Relational leakage [snapshot_window] manifest.snapshot_day is "
+                f"missing or malformed ({snapshot_day!r}); skipping the snapshot-"
+                "window probe.  Structural probes (banned columns / tables / "
+                "join reconstruction) ran normally."
+            )
     except (FileNotFoundError, ValueError, LeadforgeError) as exc:
-        return [f"Relational-leakage probe failed: {type(exc).__name__}: {exc}"]
+        return errors + [f"Relational-leakage probe failed: {type(exc).__name__}: {exc}"]
 
-    return [f"Relational leakage [{f.channel}] {f.detail}: {f.message}" for f in report.findings]
+    errors.extend(
+        f"Relational leakage [{f.channel}] {f.detail}: {f.message}" for f in report.findings
+    )
+    return errors
+
+
+def _read_relational_tables(root: Path) -> dict[str, pd.DataFrame]:
+    """Read every public + banned-table parquet under ``<root>/tables/``.
+
+    Mirrors the read logic in
+    :func:`leadforge.validation.relational_leakage.run_all_probes` but
+    is reusable for the snapshot_day-missing path above.
+    """
+    from leadforge.validation.relational_leakage import (
+        BANNED_TABLES as _BANNED,
+    )
+
+    tables_dir = root / "tables"
+    if not tables_dir.is_dir() or not (tables_dir / "leads.parquet").exists():
+        raise FileNotFoundError(f"missing tables/leads.parquet under {root}")
+
+    public_tables = (
+        "accounts",
+        "contacts",
+        "leads",
+        "touches",
+        "sessions",
+        "sales_activities",
+        "opportunities",
+    )
+    out: dict[str, pd.DataFrame] = {}
+    for name in (*public_tables, *_BANNED):
+        path = tables_dir / f"{name}.parquet"
+        if path.exists():
+            out[name] = pd.read_parquet(path)
+    return out
