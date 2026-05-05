@@ -7,6 +7,22 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+### CLI surfaces v4 fields
+
+- `leadforge inspect` now prints `Primary task`, `Label window`,
+  `Snapshot day`, and `Redactions` for v3+ bundles, immediately after
+  `Schema ver`.  Lines are omitted entirely on older v2 bundles —
+  no `?` placeholders.  Snapshot day prints `(full horizon, no
+  windowing)` only when the manifest stores `null`; numeric values
+  (including `snapshot_day == horizon_days`) are printed verbatim.
+- `leadforge inspect --json` / `-j` emits the parsed `manifest.json`
+  to stdout — the output is byte-equivalent JSON to the on-disk
+  manifest, suitable for `jq` pipelines.
+- `leadforge generate` adds `--snapshot-day`, `--primary-task`, and
+  `--label-window-days` flags, threading directly to existing
+  `Generator.from_recipe()` kwargs.  Recipe defaults still apply when
+  the flags are omitted.
+
 ### Bundle schema v4
 
 `bundle_schema_version` bumped from `"3"` to `"4"`.  Closes the final

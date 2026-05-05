@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,12 @@ from leadforge.core.serialization import load_json
 
 def inspect(
     bundle_path: str = typer.Argument(..., help="Path to a generated bundle directory."),
+    json_output: bool = typer.Option(  # noqa: FBT001
+        False,
+        "--json",
+        "-j",
+        help="Emit the parsed manifest as JSON to stdout (pipe-friendly).",
+    ),
 ) -> None:
     """Inspect a generated dataset bundle and print a summary."""
     root = Path(bundle_path)
@@ -39,6 +46,10 @@ def inspect(
         typer.echo("Error: manifest.json is not a JSON object", err=True)
         raise typer.Exit(1)
 
+    if json_output:
+        typer.echo(json.dumps(manifest, indent=2))
+        return
+
     typer.echo(f"Bundle: {root}")
     typer.echo(f"  Recipe:        {manifest.get('recipe_id', '?')}")
     typer.echo(f"  Seed:          {manifest.get('seed', '?')}")
@@ -48,6 +59,29 @@ def inspect(
     typer.echo(f"  Generated at:  {manifest.get('generation_timestamp', '?')}")
     typer.echo(f"  Package:       leadforge {manifest.get('package_version', '?')}")
     typer.echo(f"  Schema ver:    {manifest.get('bundle_schema_version', '?')}")
+
+    # v3+ fields — only print rows for keys actually present in the manifest,
+    # so older (v2) bundles render cleanly without "?" placeholders.
+    if "primary_task" in manifest:
+        typer.echo(f"  Primary task:  {manifest['primary_task']}")
+    if "label_window_days" in manifest:
+        typer.echo(f"  Label window:  {manifest['label_window_days']} days")
+    if "snapshot_day" in manifest:
+        snapshot_day = manifest["snapshot_day"]
+        if snapshot_day is None:
+            typer.echo("  Snapshot day:  (full horizon, no windowing)")
+        else:
+            typer.echo(f"  Snapshot day:  {snapshot_day} days")
+    if "redacted_columns" in manifest:
+        cols = manifest["redacted_columns"] or []
+        if cols:
+            noun = "column" if len(cols) == 1 else "columns"
+            if len(cols) <= 4:
+                names = ", ".join(cols)
+            else:
+                names = ", ".join(cols[:3]) + ", ..."
+            typer.echo(f"  Redactions:    {len(cols)} {noun} [{names}]")
+
     typer.echo(f"  Motif family:  {manifest.get('motif_family', '?')}")
 
     typer.echo("")

@@ -23,11 +23,32 @@ def generate(
         "--difficulty",
         help="Difficulty profile: intro, intermediate, or advanced.",
     ),
-    n_accounts: int | None = typer.Option(None, "--n-accounts", help="Number of accounts."),
-    n_contacts: int | None = typer.Option(None, "--n-contacts", help="Number of contacts."),
-    n_leads: int | None = typer.Option(None, "--n-leads", help="Number of leads."),
+    n_accounts: int | None = typer.Option(
+        None, "--n-accounts", help="Override recipe default account count."
+    ),
+    n_contacts: int | None = typer.Option(
+        None, "--n-contacts", help="Override recipe default contact count."
+    ),
+    n_leads: int | None = typer.Option(
+        None, "--n-leads", help="Override recipe default lead count."
+    ),
     horizon_days: int | None = typer.Option(
-        None, "--horizon-days", help="Simulation horizon in days."
+        None, "--horizon-days", help="Override recipe default simulation horizon in days."
+    ),
+    primary_task: str | None = typer.Option(
+        None,
+        "--primary-task",
+        help="Override recipe default task identifier (e.g. converted_within_60_days).",
+    ),
+    label_window_days: int | None = typer.Option(
+        None,
+        "--label-window-days",
+        help="Override recipe default label observation window in days.",
+    ),
+    snapshot_day: int | None = typer.Option(
+        None,
+        "--snapshot-day",
+        help="Override recipe default snapshot day for windowed feature aggregation.",
     ),
     override: str | None = typer.Option(
         None, "--override", help="Path to a YAML config override file."
@@ -66,6 +87,9 @@ def generate(
             n_contacts=n_contacts,
             n_leads=n_leads,
             horizon_days=horizon_days,
+            primary_task=primary_task,
+            label_window_days=label_window_days,
+            snapshot_day=snapshot_day,
             override=override_dict,
         )
     except (LeadforgeError, ValueError) as exc:
