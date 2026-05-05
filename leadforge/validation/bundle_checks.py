@@ -15,12 +15,18 @@ import pandas as pd
 import pyarrow.parquet as pq
 
 from leadforge.core.enums import ExposureMode
+from leadforge.core.exceptions import LeadforgeError
 from leadforge.core.hashing import file_sha256
 from leadforge.core.serialization import load_json
 from leadforge.schema.features import LEAD_SNAPSHOT_FEATURES, redacted_columns_for
 from leadforge.schema.relationships import ALL_CONSTRAINTS
 from leadforge.validation.difficulty import check_difficulty
 from leadforge.validation.realism import check_realism
+from leadforge.validation.relational_leakage import (
+    BANNED_TABLES,
+    LeakageReport,
+    run_all_probes,
+)
 
 
 def validate_bundle(bundle_root: Path, *, include_realism: bool = True) -> list[str]:
@@ -44,9 +50,10 @@ def validate_bundle(bundle_root: Path, *, include_realism: bool = True) -> list[
     tables, table_errors = _check_tables(bundle_root, manifest)
     errors.extend(table_errors)
     errors.extend(_check_task_splits(bundle_root, manifest))
-    errors.extend(_check_fk_integrity(tables))
+    errors.extend(_check_fk_integrity(tables, manifest))
     errors.extend(_check_leakage(bundle_root, manifest))
     errors.extend(_check_exposure_redaction(bundle_root, manifest))
+    errors.extend(_check_relational_leakage(bundle_root, manifest))
 
     if include_realism:
         errors.extend(check_realism(bundle_root, manifest))
@@ -133,13 +140,22 @@ def _check_task_splits(root: Path, manifest: dict[str, Any]) -> list[str]:
     return errors
 
 
-def _check_fk_integrity(tables: dict[str, pd.DataFrame]) -> list[str]:
+def _check_fk_integrity(tables: dict[str, pd.DataFrame], manifest: dict[str, Any]) -> list[str]:
+    # In snapshot-safe (public) bundles ``customers`` / ``subscriptions``
+    # are intentionally absent — emitting "FK check skipped" for them
+    # would be a false positive.  The expected-absent set is the same
+    # ``BANNED_TABLES`` constant the writer omits.
+    snapshot_safe = bool(manifest.get("relational_snapshot_safe", False))
+    expected_absent = set(BANNED_TABLES) if snapshot_safe else set()
+
     errors: list[str] = []
     for fk in ALL_CONSTRAINTS:
         child_df = tables.get(fk.child_table)
         parent_df = tables.get(fk.parent_table)
         if child_df is None or parent_df is None:
             missing = fk.child_table if child_df is None else fk.parent_table
+            if missing in expected_absent:
+                continue
             errors.append(
                 f"FK check skipped: {fk.child_table}.{fk.child_column} → "
                 f"{fk.parent_table}.{fk.parent_column} "
@@ -260,3 +276,38 @@ def _check_exposure_redaction(root: Path, manifest: dict[str, Any]) -> list[str]
                 )
 
     return errors
+
+
+def _check_relational_leakage(root: Path, manifest: dict[str, Any]) -> list[str]:
+    """Run :func:`run_all_probes` on snapshot-safe (public) bundles.
+
+    Skips ``research_instructor`` bundles entirely — they retain the
+    full hidden truth (label column, customers, subscriptions,
+    ``close_outcome``) by design, so the leakage probes would be a
+    false positive there.  The bonus-model probe stays off (PR 3.3
+    will calibrate per-tier bands).
+
+    Each :class:`~leadforge.validation.relational_leakage.LeakageFinding`
+    is rendered as one error string keeping the existing
+    ``validate_bundle`` contract (return list of strings, empty = pass).
+    """
+    mode_str = manifest.get("exposure_mode")
+    if mode_str != ExposureMode.student_public.value:
+        return []
+
+    snapshot_day = manifest.get("snapshot_day")
+    if snapshot_day is None:
+        return [
+            "Cannot run relational-leakage probes: manifest.snapshot_day is null "
+            "but exposure_mode is student_public (snapshot-safe contract requires "
+            "a windowed snapshot)."
+        ]
+    if not isinstance(snapshot_day, int) or isinstance(snapshot_day, bool):
+        return [f"Manifest snapshot_day must be an int, got {type(snapshot_day).__name__}"]
+
+    try:
+        report: LeakageReport = run_all_probes(root, snapshot_day=snapshot_day)
+    except (FileNotFoundError, ValueError, LeadforgeError) as exc:
+        return [f"Relational-leakage probe failed: {type(exc).__name__}: {exc}"]
+
+    return [f"Relational leakage [{f.channel}] {f.detail}: {f.message}" for f in report.findings]

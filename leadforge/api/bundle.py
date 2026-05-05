@@ -3,7 +3,8 @@
 :func:`write_bundle` is called by :meth:`WorldBundle.save` and orchestrates
 all rendering steps:
 
-1. Write relational Parquet tables (``tables/``).
+1. Project the relational dict (snapshot-safe for ``student_public``,
+   full-horizon for ``research_instructor``) and write ``tables/``.
 2. Build the lead snapshot and write task splits (``tasks/``).
 3. Write ``dataset_card.md`` and ``feature_dictionary.csv``.
 4. Apply exposure filtering — write ``metadata/`` for ``research_instructor``
@@ -16,10 +17,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from leadforge.exposure.filters import get_filter
 from leadforge.exposure.modes import apply_exposure
 from leadforge.narrative.dataset_card import render_dataset_card
 from leadforge.render.manifests import build_manifest, write_manifest
 from leadforge.render.relational import to_dataframes
+from leadforge.render.relational_snapshot_safe import to_dataframes_snapshot_safe
 from leadforge.render.snapshots import build_snapshot
 from leadforge.render.tasks import write_task_splits
 from leadforge.schema.dictionaries import write_feature_dictionary
@@ -66,14 +69,36 @@ def write_bundle(
     # README's "Option 3") cannot trivially reintroduce a redacted
     # column by joining ``tables/leads.parquet`` to their feature set.
     redacted = redacted_columns_for(config.exposure_mode)
+    bundle_filter = get_filter(config.exposure_mode)
 
     # ------------------------------------------------------------------
     # 1. Relational tables → tables/
+    #
+    # For ``student_public`` (``relational_snapshot_safe = True``) we
+    # project the full-horizon dict onto the snapshot-safe shape:
+    # ``BANNED_LEAD_COLUMNS`` / ``BANNED_OPP_COLUMNS`` are dropped, event
+    # tables are filtered per-lead to ``lead_created_at + snapshot_day``,
+    # and ``BANNED_TABLES`` (``customers`` / ``subscriptions``) are
+    # omitted entirely.  The feature-level redaction below still applies
+    # on top — the two policies operate on disjoint columns
+    # (snapshot-safe owns the structural reconstruction surface;
+    # ``redacted_columns_for`` owns near-deterministic snapshot
+    # features), so they neither double-emit nor overlap.
     # ------------------------------------------------------------------
     tables_dir = root / "tables"
     tables_dir.mkdir(exist_ok=True)
 
     dfs = to_dataframes(result, population)
+    if bundle_filter.relational_snapshot_safe:
+        if config.snapshot_day is None:
+            raise ValueError(
+                f"exposure_mode={config.exposure_mode.value!r} requires "
+                "config.snapshot_day to be set (the snapshot-safe relational "
+                "export filters event tables to lead_created_at + snapshot_day); "
+                "got snapshot_day=None.  Pin a snapshot_day on the recipe or "
+                "pass it explicitly."
+            )
+        dfs = to_dataframes_snapshot_safe(dfs, snapshot_day=config.snapshot_day)
     table_row_counts: dict[str, int] = {}
     for table_name, df in dfs.items():
         if redacted:
@@ -136,5 +161,6 @@ def write_bundle(
         bundle_root=root,
         generation_timestamp=generation_timestamp,
         redacted_columns=sorted(redacted),
+        relational_snapshot_safe=bundle_filter.relational_snapshot_safe,
     )
     write_manifest(manifest, root)

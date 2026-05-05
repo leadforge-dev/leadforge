@@ -36,7 +36,19 @@ if TYPE_CHECKING:
 #         assuming "features computed over full horizon" must update.
 #         ``manifest.snapshot_day`` recorded so the contract is
 #         self-describing (``null`` means full-horizon, legacy behaviour).
-BUNDLE_SCHEMA_VERSION = "4"
+#   "5" — PR 2.2: ``student_public`` bundles route through the
+#         snapshot-safe relational export (
+#         :mod:`leadforge.render.relational_snapshot_safe`).  Public
+#         ``leads`` drops ``converted_within_90_days`` /
+#         ``conversion_timestamp``; public ``opportunities`` drops
+#         ``close_outcome`` / ``closed_at``; public bundles omit
+#         ``customers`` / ``subscriptions``; event tables filtered
+#         per-lead to ``lead_created_at + snapshot_day``.
+#         ``manifest.relational_snapshot_safe`` records the contract so
+#         consumers / validators can tell from the bundle alone whether
+#         the tables are snapshot-safe.  ``research_instructor`` bundles
+#         keep the full-horizon export (``relational_snapshot_safe = false``).
+BUNDLE_SCHEMA_VERSION = "5"
 
 # Manifest fields whose value is non-deterministic by design (wall-clock,
 # host metadata, etc.).  Determinism checks must ignore these fields when
@@ -52,6 +64,7 @@ def build_manifest(
     bundle_root: Path,
     generation_timestamp: str | None = None,
     redacted_columns: list[str] | None = None,
+    relational_snapshot_safe: bool = False,
 ) -> dict[str, Any]:
     """Build the bundle manifest dict.
 
@@ -71,6 +84,13 @@ def build_manifest(
             this exposure mode.  Recorded in the manifest so consumers
             (and the validator) can audit redaction without inspecting
             package internals.  Defaults to ``[]`` (nothing redacted).
+        relational_snapshot_safe: ``True`` if the relational ``tables/``
+            were projected through
+            :func:`leadforge.render.relational_snapshot_safe.to_dataframes_snapshot_safe`
+            before being written.  Recorded in the manifest so a tool
+            reading a v5+ bundle can tell from the manifest alone whether
+            ``tables/`` is the snapshot-safe (public) shape or the
+            full-horizon (instructor) shape.  Defaults to ``False``.
 
     Returns:
         A JSON-serialisable dict ready to be written as ``manifest.json``.
@@ -117,6 +137,7 @@ def build_manifest(
         "snapshot_day": config.snapshot_day,
         "motif_family": world_graph.motif_family,
         "redacted_columns": redacted_columns_list,
+        "relational_snapshot_safe": bool(relational_snapshot_safe),
         "tables": tables,
         "tasks": tasks,
     }

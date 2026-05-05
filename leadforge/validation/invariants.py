@@ -18,6 +18,12 @@ from leadforge.core.enums import ExposureMode
 from leadforge.core.hashing import file_sha256
 from leadforge.render.manifests import NON_DETERMINISTIC_MANIFEST_FIELDS
 from leadforge.schema.features import redacted_columns_for
+from leadforge.validation.relational_leakage import (
+    BANNED_LEAD_COLUMNS,
+    BANNED_OPP_COLUMNS,
+    BANNED_TABLES,
+    SNAPSHOT_FILTERED_TABLES,
+)
 
 
 def check_determinism(bundle_a: Path, bundle_b: Path) -> list[str]:
@@ -185,7 +191,27 @@ def check_exposure_monotonicity(student_bundle: Path, instructor_bundle: Path) -
                         "for at least one shared feature"
                     )
 
-    # Both must have the same tables with identical content
+    # Both must have the same tables with identical content, modulo the
+    # snapshot-safe export contract (PR 2.2 / bundle schema v5):
+    #
+    # * Student is allowed to omit ``BANNED_TABLES`` (``customers`` /
+    #   ``subscriptions``) — these are conversion-conditional and thus
+    #   leak the label.
+    # * Student's ``leads`` is allowed to drop ``BANNED_LEAD_COLUMNS``;
+    #   ``opportunities`` is allowed to drop ``BANNED_OPP_COLUMNS``.
+    # * Student's event tables in ``SNAPSHOT_FILTERED_TABLES`` are
+    #   allowed to be a *row-subset* of instructor (filtered to
+    #   ``lead_created_at + snapshot_day``).
+    #
+    # In all cases, student is still a subset of instructor on every
+    # column / row that survives the contract.
+    expected_redacted = redacted_columns_for(ExposureMode.student_public)
+    snapshot_filtered_table_names = {name for name, _ in SNAPSHOT_FILTERED_TABLES}
+    extra_columns_allowed_per_table: dict[str, set[str]] = {
+        "leads": set(BANNED_LEAD_COLUMNS),
+        "opportunities": set(BANNED_OPP_COLUMNS),
+    }
+
     student_tables = (
         {p.name for p in (student_bundle / "tables").glob("*.parquet")}
         if (student_bundle / "tables").exists()
@@ -199,23 +225,33 @@ def check_exposure_monotonicity(student_bundle: Path, instructor_bundle: Path) -
     missing_from_instructor = student_tables - instructor_tables
     if missing_from_instructor:
         errors.append(f"Tables in student but not instructor: {sorted(missing_from_instructor)}")
-    extra_in_instructor = instructor_tables - student_tables
+    expected_only_in_instructor = {f"{name}.parquet" for name in BANNED_TABLES}
+    extra_in_instructor = instructor_tables - student_tables - expected_only_in_instructor
     if extra_in_instructor:
         errors.append(f"Tables in instructor but not student: {sorted(extra_in_instructor)}")
 
-    expected_redacted = redacted_columns_for(ExposureMode.student_public)
     for table in sorted(student_tables & instructor_tables):
         s_path = student_bundle / "tables" / table
         i_path = instructor_bundle / "tables" / table
         if file_sha256(s_path) == file_sha256(i_path):
             continue
-        # Mismatch is acceptable iff the only difference is redacted
-        # columns (same logic as for task splits below).
         s_df = pd.read_parquet(s_path)
         i_df = pd.read_parquet(i_path)
-        if len(s_df) != len(i_df):
+
+        table_name = table[: -len(".parquet")]
+        # Row counts can differ for snapshot-filtered event tables; the
+        # contract is "student rows ⊆ instructor rows", checked below by
+        # comparing shared columns on the inner join.
+        is_snapshot_filtered = table_name in snapshot_filtered_table_names
+        if not is_snapshot_filtered and len(s_df) != len(i_df):
             errors.append(
                 f"Table {table}: row count mismatch student={len(s_df)} instructor={len(i_df)}"
+            )
+            continue
+        if is_snapshot_filtered and len(s_df) > len(i_df):
+            errors.append(
+                f"Table {table}: student has more rows than instructor "
+                f"({len(s_df)} > {len(i_df)}); snapshot-safe export must be a row-subset"
             )
             continue
         s_cols = set(s_df.columns)
@@ -228,17 +264,33 @@ def check_exposure_monotonicity(student_bundle: Path, instructor_bundle: Path) -
             )
             continue
         diff = i_cols - s_cols
-        if not diff.issubset(expected_redacted):
+        allowed = expected_redacted | extra_columns_allowed_per_table.get(table_name, set())
+        if not diff.issubset(allowed):
             errors.append(
                 f"Table {table}: instructor−student column diff {sorted(diff)} contains "
-                f"non-redacted columns (expected subset of {sorted(expected_redacted)})"
+                f"non-redacted columns (expected subset of {sorted(allowed)})"
             )
             continue
         shared = [c for c in s_df.columns if c in i_df.columns]
-        s_shared = s_df[shared].reset_index(drop=True)
-        i_shared = i_df[shared].reset_index(drop=True)
-        if not s_shared.equals(i_shared):
-            errors.append(f"Table {table}: shared-column values differ between modes")
+        if is_snapshot_filtered and len(s_df) != len(i_df):
+            # Student is a row-subset; verify each student row appears
+            # verbatim in instructor (joined by the natural primary key
+            # of the table when one is available, else by full-row
+            # equality on the shared columns).
+            s_view = s_df[shared].reset_index(drop=True)
+            i_view = i_df[shared].reset_index(drop=True)
+            merged = s_view.merge(i_view, how="left", indicator=True)
+            unmatched = int((merged["_merge"] != "both").sum())
+            if unmatched:
+                errors.append(
+                    f"Table {table}: {unmatched} student row(s) not present in instructor "
+                    "(snapshot-safe export must keep instructor's row content verbatim)"
+                )
+        else:
+            s_shared = s_df[shared].reset_index(drop=True)
+            i_shared = i_df[shared].reset_index(drop=True)
+            if not s_shared.equals(i_shared):
+                errors.append(f"Table {table}: shared-column values differ between modes")
 
     # Both must have the same task splits with identical content
     student_tasks = (
