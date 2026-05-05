@@ -23,7 +23,12 @@ _SNAPSHOT_DTYPES = {f.name: f.dtype for f in LEAD_SNAPSHOT_FEATURES}
 
 
 def _make_config(seed: int = 42, n_leads: int = 80) -> GenerationConfig:
-    return GenerationConfig(seed=seed, n_accounts=30, n_contacts=90, n_leads=n_leads)
+    # ``snapshot_day=30`` matches the recipe pin and satisfies the
+    # student_public writer contract introduced in PR 2.2 (the
+    # snapshot-safe export needs a finite window).
+    return GenerationConfig(
+        seed=seed, n_accounts=30, n_contacts=90, n_leads=n_leads, snapshot_day=30
+    )
 
 
 def _make_narrative(seed: int = 42):

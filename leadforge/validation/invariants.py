@@ -18,6 +18,12 @@ from leadforge.core.enums import ExposureMode
 from leadforge.core.hashing import file_sha256
 from leadforge.render.manifests import NON_DETERMINISTIC_MANIFEST_FIELDS
 from leadforge.schema.features import redacted_columns_for
+from leadforge.validation.relational_leakage import (
+    BANNED_LEAD_COLUMNS,
+    BANNED_OPP_COLUMNS,
+    BANNED_TABLES,
+    SNAPSHOT_FILTERED_TABLES,
+)
 
 
 def check_determinism(bundle_a: Path, bundle_b: Path) -> list[str]:
@@ -185,7 +191,39 @@ def check_exposure_monotonicity(student_bundle: Path, instructor_bundle: Path) -
                         "for at least one shared feature"
                     )
 
-    # Both must have the same tables with identical content
+    # Both must have the same tables with identical content, modulo the
+    # snapshot-safe export contract (PR 2.2 / bundle schema v5):
+    #
+    # * Student is allowed to omit ``BANNED_TABLES`` (``customers`` /
+    #   ``subscriptions``) — these are conversion-conditional and thus
+    #   leak the label.
+    # * Student's ``leads`` is allowed to drop ``BANNED_LEAD_COLUMNS``;
+    #   ``opportunities`` is allowed to drop ``BANNED_OPP_COLUMNS``.
+    # * Student's event tables in ``SNAPSHOT_FILTERED_TABLES`` are
+    #   allowed to be a *row-subset* of instructor (filtered to
+    #   ``lead_created_at + snapshot_day``).
+    #
+    # In all cases, student is still a subset of instructor on every
+    # column / row that survives the contract.
+    expected_redacted = redacted_columns_for(ExposureMode.student_public)
+    snapshot_filtered_table_names = {name for name, _ in SNAPSHOT_FILTERED_TABLES}
+    extra_columns_allowed_per_table: dict[str, set[str]] = {
+        "leads": set(BANNED_LEAD_COLUMNS),
+        "opportunities": set(BANNED_OPP_COLUMNS),
+    }
+    # Per-snapshot-filtered-table primary key.  Used to verify the
+    # row-subset relationship cheaply and correctly under NaN: a left
+    # merge over all shared columns is fragile (NaN doesn't equal NaN
+    # in pandas, even on the same float), and the natural PK is enough
+    # to assert ``student.rows ⊆ instructor.rows`` since student rows
+    # were derived directly from instructor by row-filtering.
+    snapshot_filtered_pks: dict[str, str] = {
+        "touches": "touch_id",
+        "sessions": "session_id",
+        "sales_activities": "activity_id",
+        "opportunities": "opportunity_id",
+    }
+
     student_tables = (
         {p.name for p in (student_bundle / "tables").glob("*.parquet")}
         if (student_bundle / "tables").exists()
@@ -199,23 +237,33 @@ def check_exposure_monotonicity(student_bundle: Path, instructor_bundle: Path) -
     missing_from_instructor = student_tables - instructor_tables
     if missing_from_instructor:
         errors.append(f"Tables in student but not instructor: {sorted(missing_from_instructor)}")
-    extra_in_instructor = instructor_tables - student_tables
+    expected_only_in_instructor = {f"{name}.parquet" for name in BANNED_TABLES}
+    extra_in_instructor = instructor_tables - student_tables - expected_only_in_instructor
     if extra_in_instructor:
         errors.append(f"Tables in instructor but not student: {sorted(extra_in_instructor)}")
 
-    expected_redacted = redacted_columns_for(ExposureMode.student_public)
     for table in sorted(student_tables & instructor_tables):
         s_path = student_bundle / "tables" / table
         i_path = instructor_bundle / "tables" / table
         if file_sha256(s_path) == file_sha256(i_path):
             continue
-        # Mismatch is acceptable iff the only difference is redacted
-        # columns (same logic as for task splits below).
         s_df = pd.read_parquet(s_path)
         i_df = pd.read_parquet(i_path)
-        if len(s_df) != len(i_df):
+
+        table_name = table[: -len(".parquet")]
+        # Row counts can differ for snapshot-filtered event tables; the
+        # contract is "student rows ⊆ instructor rows", checked below by
+        # comparing shared columns on the inner join.
+        is_snapshot_filtered = table_name in snapshot_filtered_table_names
+        if not is_snapshot_filtered and len(s_df) != len(i_df):
             errors.append(
                 f"Table {table}: row count mismatch student={len(s_df)} instructor={len(i_df)}"
+            )
+            continue
+        if is_snapshot_filtered and len(s_df) > len(i_df):
+            errors.append(
+                f"Table {table}: student has more rows than instructor "
+                f"({len(s_df)} > {len(i_df)}); snapshot-safe export must be a row-subset"
             )
             continue
         s_cols = set(s_df.columns)
@@ -228,17 +276,41 @@ def check_exposure_monotonicity(student_bundle: Path, instructor_bundle: Path) -
             )
             continue
         diff = i_cols - s_cols
-        if not diff.issubset(expected_redacted):
+        allowed = expected_redacted | extra_columns_allowed_per_table.get(table_name, set())
+        if not diff.issubset(allowed):
             errors.append(
                 f"Table {table}: instructor−student column diff {sorted(diff)} contains "
-                f"non-redacted columns (expected subset of {sorted(expected_redacted)})"
+                f"non-redacted columns (expected subset of {sorted(allowed)})"
             )
             continue
         shared = [c for c in s_df.columns if c in i_df.columns]
-        s_shared = s_df[shared].reset_index(drop=True)
-        i_shared = i_df[shared].reset_index(drop=True)
-        if not s_shared.equals(i_shared):
-            errors.append(f"Table {table}: shared-column values differ between modes")
+        if is_snapshot_filtered and len(s_df) != len(i_df):
+            # Row-subset by primary key.  Each student row was derived
+            # from instructor by row-filtering, so the PK relationship
+            # is the strongest invariant we can assert without
+            # depending on column-by-column equality (which is fragile
+            # under NaN).
+            pk = snapshot_filtered_pks.get(table_name)
+            if pk is None or pk not in s_df.columns or pk not in i_df.columns:
+                errors.append(
+                    f"Table {table}: snapshot-filtered table missing expected "
+                    f"primary key {pk!r}; cannot verify row-subset"
+                )
+                continue
+            student_pks = set(s_df[pk].tolist())
+            instructor_pks = set(i_df[pk].tolist())
+            orphans = student_pks - instructor_pks
+            if orphans:
+                sample = sorted(orphans)[:3]
+                errors.append(
+                    f"Table {table}: {len(orphans)} student {pk}(s) absent from instructor, "
+                    f"e.g. {sample} (snapshot-safe export must be a row-subset)"
+                )
+        else:
+            s_shared = s_df[shared].reset_index(drop=True)
+            i_shared = i_df[shared].reset_index(drop=True)
+            if not s_shared.equals(i_shared):
+                errors.append(f"Table {table}: shared-column values differ between modes")
 
     # Both must have the same task splits with identical content
     student_tasks = (

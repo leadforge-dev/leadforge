@@ -233,11 +233,14 @@ def test_cli_smoke_reports_numeric_accuracy() -> None:
 
 @pytest.mark.skipif(
     not (_REPO_ROOT / "release" / "intermediate" / "tables" / "leads.parquet").exists(),
-    reason="alpha bundle not present (clean checkout)",
+    reason="release bundle not present (clean checkout)",
 )
-def test_cli_max_accuracy_gate_fails_on_alpha() -> None:
-    """Phase-2 CI gate flag: alpha bundles trivially exceed any sane threshold,
-    so ``--max-accuracy 0.65`` must exit 2."""
+def test_cli_max_accuracy_gate_passes_on_v5_bundle() -> None:
+    """Phase-2 CI gate: post-PR 2.2 (snapshot-safe v5) public bundles must
+    pass ``--max-accuracy 0.65``.  This test was originally pointed at
+    alpha bundles and asserted exit 2 (gate failure) as evidence of the
+    leak; PR 2.2 fixed the leak, so the regenerated bundles must now exit
+    0 instead."""
     result = subprocess.run(  # noqa: S603 — controlled args, sys.executable
         [
             sys.executable,
@@ -250,5 +253,5 @@ def test_cli_max_accuracy_gate_fails_on_alpha() -> None:
         text=True,
         check=False,
     )
-    assert result.returncode == 2, result.stderr
-    assert "GATE FAILURE" in result.stderr
+    assert result.returncode == 0, result.stderr
+    assert "GATE FAILURE" not in result.stderr

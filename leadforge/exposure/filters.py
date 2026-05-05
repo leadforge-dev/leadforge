@@ -28,15 +28,33 @@ class BundleFilter:
         write_metadata: Whether to create ``metadata/`` with hidden-truth
             files (``graph.json``, ``graph.graphml``, ``world_spec.json``,
             ``latent_registry.json``, ``mechanism_summary.json``).
+        relational_snapshot_safe: Whether the relational ``tables/`` dict
+            must be projected onto the snapshot-safe shape before being
+            written.  When ``True``, the bundle writer routes through
+            :func:`leadforge.render.relational_snapshot_safe.to_dataframes_snapshot_safe`,
+            which strips :data:`leadforge.validation.relational_leakage.BANNED_LEAD_COLUMNS`
+            from ``leads``, :data:`~leadforge.validation.relational_leakage.BANNED_OPP_COLUMNS`
+            from ``opportunities``, filters event tables per-lead by
+            ``lead_created_at + snapshot_day``, and omits
+            :data:`~leadforge.validation.relational_leakage.BANNED_TABLES`
+            (``customers`` / ``subscriptions``) entirely.  When ``False``,
+            the writer emits the full-horizon export.
     """
 
     write_metadata: bool
+    relational_snapshot_safe: bool
 
 
 #: Canonical filter rules for every supported exposure mode.
 FILTERS: dict[ExposureMode, BundleFilter] = {
-    ExposureMode.student_public: BundleFilter(write_metadata=False),
-    ExposureMode.research_instructor: BundleFilter(write_metadata=True),
+    ExposureMode.student_public: BundleFilter(
+        write_metadata=False,
+        relational_snapshot_safe=True,
+    ),
+    ExposureMode.research_instructor: BundleFilter(
+        write_metadata=True,
+        relational_snapshot_safe=False,
+    ),
 }
 
 

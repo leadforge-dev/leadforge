@@ -131,3 +131,23 @@ class TestCorruptBundle:
 
         errors = validate_bundle(corrupt)
         assert any("dataset_card.md" in e for e in errors)
+
+    def test_relational_snapshot_safe_must_be_a_bool(
+        self, tmp_path: Path, valid_bundle: Path
+    ) -> None:
+        """``manifest.relational_snapshot_safe`` is consulted to decide
+        whether ``customers`` / ``subscriptions`` are *expected* absent.
+        A bare ``bool(...)`` coercion would make the JSON string
+        ``"false"`` truthy, silently suppressing FK errors on a
+        corrupted manifest.  Surface the type problem instead."""
+        corrupt = tmp_path / "bad_flag"
+        shutil.copytree(valid_bundle, corrupt)
+        manifest = json.loads((corrupt / "manifest.json").read_text())
+        # JSON string "false" — truthy under bool() but invalid.
+        manifest["relational_snapshot_safe"] = "false"
+        (corrupt / "manifest.json").write_text(json.dumps(manifest, indent=2))
+
+        errors = validate_bundle(corrupt, include_realism=False)
+        assert any("relational_snapshot_safe" in e and "boolean" in e for e in errors), (
+            f"expected strict-bool error; got: {errors}"
+        )
