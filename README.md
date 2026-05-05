@@ -51,6 +51,9 @@ leadforge generate \
 # Inspect bundle metadata
 leadforge inspect ./out/demo_bundle
 
+# Or pipe the manifest into jq
+leadforge inspect ./out/demo_bundle --json | jq .snapshot_day
+
 # Validate bundle integrity
 leadforge validate ./out/demo_bundle
 ```

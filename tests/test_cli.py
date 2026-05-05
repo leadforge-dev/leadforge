@@ -327,22 +327,61 @@ class TestInspectCommand:
         assert str(manifest["snapshot_day"]) in output
         assert "Redactions:" in output
 
+    def test_inspect_pre_existing_header_order_unchanged(self, bundle_dir: Path) -> None:
+        """Regression guard: the 8 pre-v4 header rows stay in the same order."""
+        result = runner.invoke(app, ["inspect", str(bundle_dir)])
+        assert result.exit_code == 0
+        labels = [
+            "Recipe:",
+            "Seed:",
+            "Mode:",
+            "Difficulty:",
+            "Horizon days:",
+            "Generated at:",
+            "Package:",
+            "Schema ver:",
+        ]
+        positions = [result.output.index(label) for label in labels]
+        ordered = list(zip(labels, positions, strict=True))
+        assert positions == sorted(positions), f"header rows out of order: {ordered}"
+
+    def test_inspect_v2_bundle_omits_v3_lines(self, tmp_path: Path) -> None:
+        """v2-era manifests (no v3+ keys) should not print '?'-padded lines."""
+        bundle = tmp_path / "v2"
+        bundle.mkdir()
+        manifest = {
+            "bundle_schema_version": "2",
+            "package_version": "0.4.0",
+            "recipe_id": "x",
+            "seed": 1,
+            "exposure_mode": "student_public",
+            "difficulty": "intro",
+            "horizon_days": 90,
+            "motif_family": "fit_dominant",
+            "tables": {},
+            "tasks": {},
+        }
+        (bundle / "manifest.json").write_text(json.dumps(manifest))
+        result = runner.invoke(app, ["inspect", str(bundle)])
+        assert result.exit_code == 0
+        # None of the v3+ rows should appear at all.
+        assert "Primary task:" not in result.output
+        assert "Label window:" not in result.output
+        assert "Snapshot day:" not in result.output
+        assert "Redactions:" not in result.output
+        # And no stray "?" placeholder lines from those fields.
+        assert "? days" not in result.output
+
     def test_inspect_snapshot_day_none_annotation(self, tmp_path: Path) -> None:
         """A manifest with snapshot_day=None prints the full-horizon annotation."""
         bundle = tmp_path / "manual"
         bundle.mkdir()
         manifest = {
             "bundle_schema_version": "4",
-            "package_version": "1.0.0",
-            "recipe_id": "x",
-            "seed": 1,
-            "exposure_mode": "student_public",
-            "difficulty": "intro",
             "horizon_days": 90,
             "primary_task": "converted_within_90_days",
             "label_window_days": 90,
             "snapshot_day": None,
-            "motif_family": "fit_dominant",
             "redacted_columns": [],
             "tables": {},
             "tasks": {},
@@ -352,17 +391,48 @@ class TestInspectCommand:
         assert result.exit_code == 0
         assert "(full horizon, no windowing)" in result.output
 
-    def test_inspect_redactions_empty(self, tmp_path: Path) -> None:
+    def test_inspect_snapshot_day_equal_to_horizon_prints_value(self, tmp_path: Path) -> None:
+        """snapshot_day == horizon_days is NOT silently relabelled — manifest wins."""
+        bundle = tmp_path / "equal"
+        bundle.mkdir()
+        manifest = {
+            "horizon_days": 90,
+            "snapshot_day": 90,
+            "redacted_columns": [],
+            "tables": {},
+            "tasks": {},
+        }
+        (bundle / "manifest.json").write_text(json.dumps(manifest))
+        result = runner.invoke(app, ["inspect", str(bundle)])
+        assert result.exit_code == 0
+        assert "Snapshot day:  90 days" in result.output
+        assert "(full horizon" not in result.output
+
+    def test_inspect_redactions_empty_omits_line(self, tmp_path: Path) -> None:
+        """Empty redacted_columns prints no line at all (no '0 columns []' noise)."""
         bundle = tmp_path / "redact_empty"
         bundle.mkdir()
         manifest = {"redacted_columns": [], "tables": {}, "tasks": {}}
         (bundle / "manifest.json").write_text(json.dumps(manifest))
         result = runner.invoke(app, ["inspect", str(bundle)])
         assert result.exit_code == 0
-        assert "Redactions:" in result.output
-        assert "0 column(s)" in result.output
+        assert "Redactions:" not in result.output
 
-    def test_inspect_redactions_short_list(self, tmp_path: Path) -> None:
+    def test_inspect_redactions_singular_pluralization(self, tmp_path: Path) -> None:
+        """One column → 'column' (singular); not 'column(s)' or 'columns'."""
+        bundle = tmp_path / "one"
+        bundle.mkdir()
+        manifest = {"redacted_columns": ["only_one"], "tables": {}, "tasks": {}}
+        (bundle / "manifest.json").write_text(json.dumps(manifest))
+        result = runner.invoke(app, ["inspect", str(bundle)])
+        assert result.exit_code == 0
+        line = next(line for line in result.output.splitlines() if "Redactions:" in line)
+        assert "1 column [only_one]" in line
+        assert "columns" not in line
+        assert "column(s)" not in line
+
+    def test_inspect_redactions_short_list_full(self, tmp_path: Path) -> None:
+        """2 columns: full list, plural noun, no ellipsis."""
         bundle = tmp_path / "redact_short"
         bundle.mkdir()
         manifest = {
@@ -373,55 +443,67 @@ class TestInspectCommand:
         (bundle / "manifest.json").write_text(json.dumps(manifest))
         result = runner.invoke(app, ["inspect", str(bundle)])
         assert result.exit_code == 0
-        assert "2 column(s)" in result.output
-        assert "col_a" in result.output
-        assert "col_b" in result.output
-        assert "..." not in result.output.split("Redactions:")[1].splitlines()[0]
+        line = next(line for line in result.output.splitlines() if "Redactions:" in line)
+        assert "2 columns [col_a, col_b]" in line
+        assert "..." not in line
 
-    def test_inspect_redactions_long_list_truncates(self, tmp_path: Path) -> None:
-        bundle = tmp_path / "redact_long"
+    def test_inspect_redactions_boundary_4_cols_full(self, tmp_path: Path) -> None:
+        """Exactly 4 columns: still full list, no ellipsis (≤4 → full)."""
+        bundle = tmp_path / "redact_4"
         bundle.mkdir()
-        cols = ["c1", "c2", "c3", "c4", "c5", "c6"]
         manifest = {
-            "redacted_columns": cols,
+            "redacted_columns": ["c1", "c2", "c3", "c4"],
             "tables": {},
             "tasks": {},
         }
         (bundle / "manifest.json").write_text(json.dumps(manifest))
         result = runner.invoke(app, ["inspect", str(bundle)])
         assert result.exit_code == 0
-        line = [line for line in result.output.splitlines() if "Redactions:" in line][0]
-        assert "6 column(s)" in line
-        assert "c1" in line
-        assert "..." in line
-        assert "(6 total)" in line
-        # Tail elements should not all appear
-        assert "c5" not in line
-        assert "c6" not in line
+        line = next(line for line in result.output.splitlines() if "Redactions:" in line)
+        assert "4 columns [c1, c2, c3, c4]" in line
+        assert "..." not in line
 
-    def test_inspect_json_emits_valid_json(self, bundle_dir: Path) -> None:
-        """--json emits valid JSON containing all the human-readable keys."""
+    def test_inspect_redactions_boundary_5_cols_truncates(self, tmp_path: Path) -> None:
+        """Exactly 5 columns: triggers truncation; first 3 + ellipsis only."""
+        bundle = tmp_path / "redact_5"
+        bundle.mkdir()
+        manifest = {
+            "redacted_columns": ["c1", "c2", "c3", "c4", "c5"],
+            "tables": {},
+            "tasks": {},
+        }
+        (bundle / "manifest.json").write_text(json.dumps(manifest))
+        result = runner.invoke(app, ["inspect", str(bundle)])
+        assert result.exit_code == 0
+        line = next(line for line in result.output.splitlines() if "Redactions:" in line)
+        assert "5 columns [c1, c2, c3, ...]" in line
+        # c4 and c5 must not leak into the truncated head — pin the boundary.
+        assert "c4" not in line
+        assert "c5" not in line
+
+    def test_inspect_redactions_long_list(self, tmp_path: Path) -> None:
+        """6 columns: still 'first 3 + ellipsis'."""
+        bundle = tmp_path / "redact_long"
+        bundle.mkdir()
+        cols = ["c1", "c2", "c3", "c4", "c5", "c6"]
+        manifest = {"redacted_columns": cols, "tables": {}, "tasks": {}}
+        (bundle / "manifest.json").write_text(json.dumps(manifest))
+        result = runner.invoke(app, ["inspect", str(bundle)])
+        assert result.exit_code == 0
+        line = next(line for line in result.output.splitlines() if "Redactions:" in line)
+        assert "6 columns [c1, c2, c3, ...]" in line
+        # No redundant "(N total)" — count is already at the front.
+        assert "(6 total)" not in line
+        for tail in ("c4", "c5", "c6"):
+            assert tail not in line
+
+    def test_inspect_json_equals_manifest_file(self, bundle_dir: Path) -> None:
+        """The contract: --json output is byte-equivalent JSON to manifest.json."""
         result = runner.invoke(app, ["inspect", str(bundle_dir), "--json"])
         assert result.exit_code == 0
-        parsed = json.loads(result.output)
-        assert isinstance(parsed, dict)
-        for key in (
-            "recipe_id",
-            "seed",
-            "exposure_mode",
-            "difficulty",
-            "horizon_days",
-            "package_version",
-            "bundle_schema_version",
-            "primary_task",
-            "label_window_days",
-            "snapshot_day",
-            "redacted_columns",
-            "motif_family",
-            "tables",
-            "tasks",
-        ):
-            assert key in parsed, f"missing key: {key}"
+        on_disk = json.loads((bundle_dir / "manifest.json").read_text())
+        from_cli = json.loads(result.output)
+        assert from_cli == on_disk
 
     def test_inspect_json_short_flag(self, bundle_dir: Path) -> None:
         """-j short flag works the same as --json."""
