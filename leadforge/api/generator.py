@@ -54,6 +54,7 @@ class Generator:
         horizon_days: int | None = None,
         primary_task: str | None = None,
         label_window_days: int | None = None,
+        snapshot_day: int | None = None,
         output_path: str = _MISSING,  # type: ignore[assignment]
         override: dict[str, Any] | None = None,
     ) -> Generator:
@@ -76,6 +77,10 @@ class Generator:
                 directory name and manifest key.
             label_window_days: Override recipe default label observation
                 window in days.
+            snapshot_day: Override recipe default snapshot day for windowed
+                feature aggregation.  ``None`` means full-horizon (legacy)
+                aggregation; an integer ``N`` means features aggregate only
+                events with ``timestamp <= lead_created_at + N days``.
             output_path: Directory where the bundle will be saved.
             override: Optional dict of overrides (mirrors a ``--override`` file).
                 Applied after recipe defaults but before explicit kwargs.
@@ -105,6 +110,7 @@ class Generator:
             horizon_days=horizon_days,
             primary_task=primary_task,
             label_window_days=label_window_days,
+            snapshot_day=snapshot_day,
             output_path=output_path,
             override=override,
         )

@@ -64,6 +64,7 @@ class GenerationConfig:
     horizon_days: int = 90
     primary_task: str = "converted_within_90_days"
     label_window_days: int = 90
+    snapshot_day: int | None = None
     output_path: str = "./out"
     package_version: str = field(default_factory=lambda: __version__)
     difficulty_params: DifficultyParams | None = None
@@ -87,6 +88,19 @@ class GenerationConfig:
                 f"label_window_days ({self.label_window_days}) must not exceed "
                 f"horizon_days ({self.horizon_days})"
             )
+        if self.snapshot_day is not None:
+            if isinstance(self.snapshot_day, bool) or not isinstance(self.snapshot_day, int):
+                raise InvalidConfigError(
+                    f"snapshot_day must be a positive int or None, "
+                    f"got {type(self.snapshot_day).__name__!r}"
+                )
+            if self.snapshot_day <= 0:
+                raise InvalidConfigError(f"snapshot_day must be positive, got {self.snapshot_day}")
+            if self.snapshot_day > self.horizon_days:
+                raise InvalidConfigError(
+                    f"snapshot_day ({self.snapshot_day}) must not exceed "
+                    f"horizon_days ({self.horizon_days})"
+                )
         # Coerce string enums supplied as plain strings
         if not isinstance(self.exposure_mode, ExposureMode):
             try:

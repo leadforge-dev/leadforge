@@ -41,6 +41,7 @@ class Recipe:
     default_population: dict[str, int]
     horizon_days: int
     label_window_days: int | None = None
+    snapshot_day: int | None = None
 
     # ------------------------------------------------------------------ #
     # Construction
@@ -105,6 +106,17 @@ class Recipe:
                 raise InvalidRecipeError(f"'label_window_days' must be positive, got {raw_lwd}")
             label_window_days = raw_lwd
 
+        snapshot_day: int | None = None
+        raw_sd = data.get("snapshot_day")
+        if raw_sd is not None:
+            if isinstance(raw_sd, bool) or not isinstance(raw_sd, int):
+                raise InvalidRecipeError(
+                    f"'snapshot_day' must be a positive int, got {type(raw_sd).__name__!r}"
+                )
+            if raw_sd <= 0:
+                raise InvalidRecipeError(f"'snapshot_day' must be positive, got {raw_sd}")
+            snapshot_day = raw_sd
+
         return cls(
             id=data["id"],
             title=data["title"],
@@ -116,6 +128,7 @@ class Recipe:
             default_population=dict(pop),
             horizon_days=horizon_days,
             label_window_days=label_window_days,
+            snapshot_day=snapshot_day,
         )
 
     # ------------------------------------------------------------------ #
@@ -134,6 +147,7 @@ class Recipe:
         horizon_days: int | None = None,
         primary_task: str | None = None,
         label_window_days: int | None = None,
+        snapshot_day: int | None = None,
         output_path: str = _MISSING,  # type: ignore[assignment]
         override: dict[str, Any] | None = None,
     ) -> GenerationConfig:
@@ -165,6 +179,7 @@ class Recipe:
             "horizon_days": pkg["horizon_days"],
             "primary_task": pkg["primary_task"],
             "label_window_days": pkg["label_window_days"],
+            "snapshot_day": pkg["snapshot_day"],
         }
 
         # Layer 3 — recipe defaults
@@ -176,6 +191,8 @@ class Recipe:
         resolved["primary_task"] = self.primary_task
         if self.label_window_days is not None:
             resolved["label_window_days"] = self.label_window_days
+        if self.snapshot_day is not None:
+            resolved["snapshot_day"] = self.snapshot_day
 
         # Layer 2 — override dict (beats recipe/package defaults)
         if override:
@@ -186,6 +203,7 @@ class Recipe:
                 "horizon_days",
                 "primary_task",
                 "label_window_days",
+                "snapshot_day",
                 "seed",
                 "output_path",
                 "exposure_mode",
@@ -216,6 +234,8 @@ class Recipe:
             resolved["primary_task"] = primary_task
         if label_window_days is not None:
             resolved["label_window_days"] = label_window_days
+        if snapshot_day is not None:
+            resolved["snapshot_day"] = snapshot_day
 
         try:
             mode = ExposureMode(resolved["exposure_mode"])
@@ -254,6 +274,7 @@ class Recipe:
             horizon_days=resolved["horizon_days"],
             primary_task=resolved["primary_task"],
             label_window_days=resolved["label_window_days"],
+            snapshot_day=resolved["snapshot_day"],
             output_path=resolved["output_path"],
         )
 
