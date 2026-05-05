@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,12 @@ from leadforge.core.serialization import load_json
 
 def inspect(
     bundle_path: str = typer.Argument(..., help="Path to a generated bundle directory."),
+    json_output: bool = typer.Option(  # noqa: FBT001
+        False,
+        "--json",
+        "-j",
+        help="Emit the parsed manifest as JSON to stdout (pipe-friendly).",
+    ),
 ) -> None:
     """Inspect a generated dataset bundle and print a summary."""
     root = Path(bundle_path)
@@ -39,6 +46,10 @@ def inspect(
         typer.echo("Error: manifest.json is not a JSON object", err=True)
         raise typer.Exit(1)
 
+    if json_output:
+        typer.echo(json.dumps(manifest, indent=2))
+        return
+
     typer.echo(f"Bundle: {root}")
     typer.echo(f"  Recipe:        {manifest.get('recipe_id', '?')}")
     typer.echo(f"  Seed:          {manifest.get('seed', '?')}")
@@ -48,6 +59,10 @@ def inspect(
     typer.echo(f"  Generated at:  {manifest.get('generation_timestamp', '?')}")
     typer.echo(f"  Package:       leadforge {manifest.get('package_version', '?')}")
     typer.echo(f"  Schema ver:    {manifest.get('bundle_schema_version', '?')}")
+    typer.echo(f"  Primary task:  {manifest.get('primary_task', '?')}")
+    typer.echo(f"  Label window:  {manifest.get('label_window_days', '?')} days")
+    typer.echo(f"  Snapshot day:  {_format_snapshot_day(manifest)}")
+    typer.echo(f"  Redactions:    {_format_redactions(manifest)}")
     typer.echo(f"  Motif family:  {manifest.get('motif_family', '?')}")
 
     typer.echo("")
@@ -72,6 +87,36 @@ def inspect(
     has_metadata = (root / "metadata").is_dir()
     typer.echo("")
     typer.echo(f"Metadata dir:    {'present' if has_metadata else 'absent'}")
+
+
+def _format_snapshot_day(manifest: dict[str, Any]) -> str:
+    """Format the ``snapshot_day`` field, annotating the full-horizon case."""
+    if "snapshot_day" not in manifest:
+        return "?"
+    snapshot_day = manifest.get("snapshot_day")
+    horizon_days = manifest.get("horizon_days")
+    if snapshot_day is None or (
+        isinstance(snapshot_day, int)
+        and isinstance(horizon_days, int)
+        and snapshot_day == horizon_days
+    ):
+        return "(full horizon, no windowing)"
+    return f"{snapshot_day} days"
+
+
+def _format_redactions(manifest: dict[str, Any]) -> str:
+    """Format the ``redacted_columns`` field as count + list (full or truncated)."""
+    if "redacted_columns" not in manifest:
+        return "?"
+    cols = manifest.get("redacted_columns") or []
+    if not isinstance(cols, list):
+        return "?"
+    if not cols:
+        return "0 column(s) []"
+    if len(cols) <= 4:
+        return f"{len(cols)} column(s) [{', '.join(cols)}]"
+    head = ", ".join(cols[:3])
+    return f"{len(cols)} column(s) [{head}, ...] ({len(cols)} total)"
 
 
 def _safe_get(obj: Any, key: str, default: str = "?") -> Any:
