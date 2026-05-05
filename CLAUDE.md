@@ -204,6 +204,7 @@ Key abstractions: `Recipe`, `GenerationConfig`, `WorldSpec`, `WorldBundle`, `Exp
 ## Hard Constraints — Do Not Violate
 - Never use a single fixed hidden world (DGP must vary by motif family + rewiring).
 - Never leak post-snapshot-anchor data into flat task features.
+- **Never publish public relational tables that allow label reconstruction via joins.** Public relational exports must be snapshot-safe: event tables filtered to `event_timestamp <= lead_created_at + snapshot_day`; no terminal-state fields (`close_outcome`, `closed_at`, `converted_within_90_days`, `conversion_timestamp`) in public `leads`/`opportunities`; no conversion-conditional entities (`customers`, `subscriptions`) in public bundles.
 - Never require external APIs for core generation.
 - Never publish hidden truth in `student_public` mode.
 - Never derive `converted_within_90_days` as a directly sampled label; it must emerge from simulated events.
@@ -360,3 +361,8 @@ The current focus is producing a v4 lead scoring intro dataset. See `docs/v4/` f
 - Architecture/spec: `docs/leadforge_architecture_spec.md`
 - Implementation roadmap: `docs/leadforge_implementation_plan.md`
 - v4 dataset plan: `docs/v4/design.md`
+- **v1 dataset release roadmap (active): `docs/release/v1_release_roadmap.md`**
+- v1 release design: `docs/release/v1_release_design.md`
+- v1 acceptance gates: `docs/release/v1_acceptance_gates.md`
+- Post-v1 roadmap: `docs/release/post_v1_roadmap.md`
+- External review synthesis: `docs/external_review/summaries/`
