@@ -1,5 +1,5 @@
 ---
-pretty_name: "LeadForge: Synthetic B2B Lead Scoring (v1)"
+pretty_name: 'LeadForge: Synthetic B2B Lead Scoring (v1)'
 license: mit
 language:
   - en

@@ -43,7 +43,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import shutil
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -59,23 +58,24 @@ import pyarrow.parquet as pq
 # ``importlib.util.spec_from_file_location`` from the test suite).
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-# Shared release-packaging primitives extracted in PR 5.2 so the HF
-# packager can reuse the link-rewriter, the dir-safety guard, and the
-# cover-image validator without duplicating logic.
-from _release_common import (  # noqa: E402 — must follow sys.path insert
+# Shared release-packaging primitives.  PR 5.2 extracted these so the
+# Kaggle and HF packagers share one source of truth for link rewriting,
+# upload-dir safety, cover-image validation, source-tree-block drift
+# detection, idempotent file/dir replacement, and manifest reading.
+# ``GITHUB_BLOB_BASE`` is re-exported for tests asserting blob URLs in
+# rewritten README content; its presence here is a public-symbol
+# contract, not a local consumer.
+from _release_common import (  # noqa: E402,F401 — must follow sys.path insert
     GITHUB_BLOB_BASE,
+    SOURCE_TREE_BLOCK,
     ValidationError,
+    load_manifest,
+    replace_dir,
+    replace_file,
+    rewrite_release_links,
     validate_cover_image,
+    validate_readme_substitution,
     validate_upload_dir_safe,
-)
-from _release_common import (
-    PARENT_RELATIVE_LINK_RE as _PARENT_RELATIVE_LINK,
-)
-from _release_common import (
-    VALIDATION_REPORT_LINK as _VALIDATION_REPORT_LINK,
-)
-from _release_common import (
-    VALIDATION_REPORT_URL as _VALIDATION_REPORT_URL,
 )
 
 # ---------------------------------------------------------------------------
@@ -210,30 +210,14 @@ SPLIT_COLUMN_DESCRIPTION: Final[str] = (
 # ---------------------------------------------------------------------------
 #
 # ``GITHUB_BLOB_BASE``, the ``](../foo)`` regex, and the validation-
-# report link rewrite live in ``_release_common`` (PR 5.2). Tree-block
-# substitution stays local because the upload tree differs per
-# platform (Kaggle ships ``dataset-metadata.json`` + cover image at
-# the top; HF does not).
+# report link rewrite live in ``_release_common`` (PR 5.2), as does the
+# source-side tree-diagram constant (``SOURCE_TREE_BLOCK``).  Only the
+# Kaggle-specific upload-tree diagram lives here.
 
-#: The "What's inside" tree diagram in ``release/README.md``.  The
-#: published README on Kaggle should describe the *upload* layout
+#: The published README on Kaggle should describe the *upload* layout
 #: (which has dataset-metadata.json + cover image at the top, no
 #: instructor companion, no notebooks/validation siblings), not the
 #: source-repo layout — we substitute the block on the way out.
-KAGGLE_TREE_BLOCK: Final[str] = """```
-release/
-├── intro/ intermediate/ advanced/    # student_public bundles, one per difficulty tier
-│   ├── manifest.json                 # provenance + file hashes
-│   ├── dataset_card.md               # auto-rendered per-bundle card
-│   ├── feature_dictionary.csv        # authoritative column spec
-│   ├── lead_scoring.csv              # flat convenience CSV (all splits)
-│   ├── tables/*.parquet              # 7 snapshot-safe relational tables
-│   └── tasks/converted_within_90_days/{train,valid,test}.parquet
-├── intermediate_instructor/          # research companion: full-horizon tables + metadata/
-├── notebooks/01_baseline_lead_scoring.ipynb
-└── validation/                       # validation_report.{json,md} + figures
-```"""
-
 KAGGLE_UPLOAD_TREE_BLOCK: Final[str] = """```
 .
 ├── intro/ intermediate/ advanced/    # student_public bundles, one per difficulty tier
@@ -255,20 +239,15 @@ def _kaggle_readme_text(readme: str) -> str:
 
     Rewrites:
 
-    1. Source-repo tree diagram → upload-tree diagram (the published
-       README should describe what the *user* sees on Kaggle, not the
-       source repo layout).
-    2. ``](../foo)`` → ``]({GITHUB_BLOB_BASE}/foo)`` (markdown links
-       that escape the bundle root resolve to the source repo on
-       GitHub).
-    3. ``](validation/validation_report.md)`` → blob URL (the
-       validation report does not ship to Kaggle; readers click
-       through to GitHub).
+    1. ``SOURCE_TREE_BLOCK`` → ``KAGGLE_UPLOAD_TREE_BLOCK`` (the
+       published README should describe what the *user* sees on
+       Kaggle, not the source repo layout).
+    2. ``](../foo)`` and ``](validation/validation_report.md)`` →
+       GitHub blob URLs (delegated to ``rewrite_release_links``).
     """
 
-    text = readme.replace(KAGGLE_TREE_BLOCK, KAGGLE_UPLOAD_TREE_BLOCK)
-    text = _PARENT_RELATIVE_LINK.sub(rf"]({GITHUB_BLOB_BASE}/\1)", text)
-    text = text.replace(_VALIDATION_REPORT_LINK, _VALIDATION_REPORT_URL)
+    text = readme.replace(SOURCE_TREE_BLOCK, KAGGLE_UPLOAD_TREE_BLOCK)
+    text = rewrite_release_links(text)
     return text
 
 
@@ -553,11 +532,7 @@ def fields_from_parquet(path: Path) -> tuple[FieldDescriptor, ...]:
     return tuple(FieldDescriptor(name=f.name, type=_kaggle_type_from_arrow(f.type)) for f in schema)
 
 
-def _load_manifest(path: Path) -> dict[str, Any]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict):
-        raise ValueError(f"manifest.json at {path} is not a JSON object")
-    return payload
+# ``_load_manifest`` is now ``load_manifest`` in ``_release_common``.
 
 
 def build_tier_resources(
@@ -583,7 +558,7 @@ def build_tier_resources(
     flat_csv_path = tier_dir / "lead_scoring.csv"
     fields = _flat_csv_fields(flat_csv_path, feature_dict)
 
-    manifest = _load_manifest(tier_dir / "manifest.json")
+    manifest = load_manifest(tier_dir / "manifest.json")
     table_inventory = manifest.get("tables", {})
     snapshot_day = manifest.get("snapshot_day")
 
@@ -785,38 +760,8 @@ def render_metadata_json(metadata: DatasetMetadata) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _validate_kaggle_dir_safe(kaggle_dir: Path, release_dir: Path) -> None:
-    """Refuse to assemble into a path that aliases something dangerous.
-
-    Thin wrapper that forwards to ``_release_common.validate_upload_dir_safe``
-    with ``kind="kaggle"`` so the error message identifies which packager
-    refused.  The standalone function is kept for the test in
-    ``tests/scripts/test_package_kaggle_release.py`` that imports it directly.
-    """
-
-    validate_upload_dir_safe(kaggle_dir, release_dir, kind="kaggle")
-
-
-def _replace_file(src: Path, dst: Path) -> None:
-    """Copy ``src`` → ``dst``, replacing any existing entry at ``dst``."""
-
-    if dst.is_symlink() or dst.is_file():
-        dst.unlink()
-    elif dst.exists() and dst.is_dir():
-        shutil.rmtree(dst)
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src, dst)
-
-
-def _replace_dir(src: Path, dst: Path) -> None:
-    """Copy directory ``src`` → ``dst``, replacing any existing entry."""
-
-    if dst.is_symlink() or dst.is_file():
-        dst.unlink()
-    elif dst.exists() and dst.is_dir():
-        shutil.rmtree(dst)
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(src, dst)
+# ``_validate_kaggle_dir_safe``, ``_replace_file``, ``_replace_dir``
+# now live in ``_release_common`` (PR 5.2) under their public names.
 
 
 def assemble_upload_dir(
@@ -836,25 +781,26 @@ def assemble_upload_dir(
     children — switching to copies removes that fragility at the cost
     of ~15 MB of disk per assembly run, which is gitignored anyway.
 
-    Re-running the assembly is idempotent: ``_replace_file`` and
-    ``_replace_dir`` rmtree-then-copy any existing entry.  The README
-    is the one file rewritten on the way in (tree diagram + ``../``
-    links).  ``--dry-run`` skips this whole function.
+    Re-running the assembly is idempotent: ``replace_file`` and
+    ``replace_dir`` (from ``_release_common``) rmtree-then-copy any
+    existing entry.  The README is the one file rewritten on the way
+    in (tree diagram + ``../`` links).  ``--dry-run`` skips this
+    whole function.
     """
 
-    _validate_kaggle_dir_safe(kaggle_dir, release_dir)
+    validate_upload_dir_safe(kaggle_dir, release_dir, kind="kaggle")
     kaggle_dir.mkdir(parents=True, exist_ok=True)
 
     # Cover image.
     cover_src = release_dir / cover_image.name
     if not cover_src.exists():
         cover_src = cover_image
-    _replace_file(cover_src, kaggle_dir / cover_image.name)
+    replace_file(cover_src, kaggle_dir / cover_image.name)
 
     # LICENSE — straight copy, no rewriting.
     license_src = release_dir / "LICENSE"
     if license_src.exists():
-        _replace_file(license_src, kaggle_dir / "LICENSE")
+        replace_file(license_src, kaggle_dir / "LICENSE")
 
     # README.md — real copy with link rewriting so ``../`` links and
     # the directory diagram resolve correctly on the Kaggle dataset
@@ -873,7 +819,7 @@ def assemble_upload_dir(
     # Per-tier bundles — full directory copies.
     for tier in tiers:
         tier_src = release_dir / tier
-        _replace_dir(tier_src, kaggle_dir / tier)
+        replace_dir(tier_src, kaggle_dir / tier)
 
 
 # ---------------------------------------------------------------------------
@@ -941,9 +887,24 @@ def run_packager(
     errors: list[ValidationError] = []
     errors.extend(validate_metadata(metadata))
     errors.extend(validate_cover_image(cover_image))
-    errors.extend(_validate_readme_substitution(release_dir))
+    errors.extend(validate_readme_substitution(release_dir, packager_name="Kaggle"))
 
     metadata_path = kaggle_dir / "dataset-metadata.json"
+
+    # Validation gate: if anything failed, return errors WITHOUT writing
+    # any artifact.  Writing on validation failure leaves a corrupt
+    # metadata file on disk that can be accidentally committed; the
+    # earlier draft did this and PR 5.2's self-review caught it.  The
+    # CLI converts ``errors`` into rc=1; callers who want a record of
+    # the corrupt artifact can dry-run after fixing inputs.
+    if errors:
+        return PackagerOutcome(
+            metadata=metadata,
+            metadata_path=metadata_path,
+            errors=tuple(errors),
+            assembled=False,
+        )
+
     metadata_path.parent.mkdir(parents=True, exist_ok=True)
     metadata_path.write_text(render_metadata_json(metadata), encoding="utf-8")
 
@@ -953,40 +914,9 @@ def run_packager(
     return PackagerOutcome(
         metadata=metadata,
         metadata_path=metadata_path,
-        errors=tuple(errors),
+        errors=(),
         assembled=not dry_run,
     )
-
-
-def _validate_readme_substitution(release_dir: Path) -> list[ValidationError]:
-    """Guard against silent drift between the README's tree diagram
-    and ``KAGGLE_TREE_BLOCK``.
-
-    ``_kaggle_readme_text`` substitutes the source-repo tree diagram
-    for the upload-tree diagram via plain string replace.  If the
-    README's tree changes by even one whitespace character, the
-    substitution silently no-ops and the published Kaggle dataset
-    card shows the source-repo tree (with ``intermediate_instructor/``,
-    ``notebooks/``, ``validation/``).  We catch that case here.
-    """
-
-    readme = release_dir / "README.md"
-    if not readme.exists():
-        return []  # No README is itself a release-day issue, but not this validator's concern.
-    if KAGGLE_TREE_BLOCK not in readme.read_text(encoding="utf-8"):
-        return [
-            ValidationError(
-                field="release/README.md",
-                message=(
-                    "KAGGLE_TREE_BLOCK not found verbatim in release/README.md; "
-                    "the source-repo tree diagram in the README has drifted from "
-                    "the constant in scripts/package_kaggle_release.py — the "
-                    "Kaggle description rewrite will silently no-op until the "
-                    "README and KAGGLE_TREE_BLOCK are reconciled."
-                ),
-            )
-        ]
-    return []
 
 
 # ---------------------------------------------------------------------------

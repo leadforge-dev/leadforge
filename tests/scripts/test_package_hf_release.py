@@ -14,7 +14,7 @@ Locks the Phase 5 Hugging Face packaging contract:
 * the README link-rewriting that lets the published dataset card on
   HF keep working ``../`` links (rewritten to GitHub blob URLs) and a
   directory diagram that reflects the upload layout, plus a guard
-  that the source ``HF_TREE_BLOCK_SOURCE`` is still present verbatim
+  that the source ``SOURCE_TREE_BLOCK`` (in ``_release_common``) is still present verbatim
   in the README (silent-failure trap; mirrors PR 5.1's KAGGLE block)
 * the assembled upload tree resolves every declared resource path
 * the safety net that refuses to assemble into ``cwd`` /
@@ -47,6 +47,7 @@ _RELEASE_DIR = _REPO_ROOT / "release"
 _RELEASE_BUNDLES_PRESENT = (_RELEASE_DIR / "intro" / "manifest.json").exists()
 _INSTRUCTOR_BUNDLE_PRESENT = (_RELEASE_DIR / "intermediate_instructor" / "manifest.json").exists()
 _COMMITTED_README = _REPO_ROOT / "release" / "huggingface" / "README.md"
+_COMMITTED_INSTRUCTOR_README = _REPO_ROOT / "release" / "huggingface-instructor" / "README.md"
 _COMMITTED_COVER = _REPO_ROOT / "release" / "dataset-cover-image.png"
 
 
@@ -120,7 +121,7 @@ def test_validate_card_reports_every_field_violation() -> None:
     assert "configs" in fields
 
 
-def test_validate_card_requires_exactly_one_default(tmp_path: Path) -> None:
+def test_validate_card_requires_exactly_one_default() -> None:
     """G12.2 — exactly one config carries ``default: true``."""
 
     base = _minimal_card()
@@ -184,21 +185,33 @@ def test_validate_card_flags_data_files_without_split_or_path() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_render_yaml_frontmatter_round_trips_through_pyyaml() -> None:
+@pytest.mark.parametrize(
+    "pretty_name",
+    [
+        packager.DEFAULT_PRETTY_NAME,
+        # Em-dash flavor — matches the instructor variant; locks down
+        # PyYAML round-tripping for non-ASCII content (regression
+        # guard for the PR 5.2 self-review note about the hand-rolled
+        # renderer's incomplete coverage).
+        packager.DEFAULT_INSTRUCTOR_PRETTY_NAME,
+    ],
+)
+def test_render_yaml_frontmatter_round_trips_through_pyyaml(pretty_name: str) -> None:
     """The rendered YAML must parse cleanly via ``yaml.safe_load``.
 
-    HF parses dataset-card frontmatter with PyYAML; if our hand-rolled
-    renderer drifts from valid YAML, the dataset card silently drops
-    its metadata on the HF page.
+    HF parses dataset-card frontmatter with PyYAML; if our renderer
+    drifts from valid YAML, the dataset card silently drops its
+    metadata on the HF page.
     """
 
-    card = _minimal_card()
+    base = _minimal_card()
+    card = packager.HuggingFaceCard(**{**base.__dict__, "pretty_name": pretty_name})
     yaml_text = packager.render_yaml_frontmatter(card)
     # ``render_yaml_frontmatter`` includes the leading and trailing
     # ``---`` markers.  Strip them before feeding to safe_load.
     inner = yaml_text.strip().strip("-").strip()
     parsed = yaml.safe_load(inner)
-    assert parsed["pretty_name"] == card.pretty_name
+    assert parsed["pretty_name"] == pretty_name
     assert parsed["license"] == "mit"
     assert parsed["language"] == ["en"]
     assert parsed["task_categories"] == [packager.HF_TASK_CATEGORY]
@@ -216,22 +229,8 @@ def test_render_yaml_tags_sorted_at_render_time() -> None:
         **{**base.__dict__, "tags": ("zebra", "alpha", "mango")},
     )
     rendered = packager.render_yaml_frontmatter(shuffled)
-    # Tag block lines, in the rendered order.
-    tag_lines = [
-        line.strip().lstrip("- ") for line in rendered.splitlines() if line.startswith("  - ")
-    ]
-    # The first three list-item lines are language, task_categories,
-    # size_categories — find tag block by position after ``tags:``.
-    lines = rendered.splitlines()
-    tags_idx = lines.index("tags:")
-    block: list[str] = []
-    for line in lines[tags_idx + 1 :]:
-        if line.startswith("  - "):
-            block.append(line[4:].strip())
-        else:
-            break
-    assert block == ["alpha", "mango", "zebra"]
-    _ = tag_lines  # silence linter
+    parsed = yaml.safe_load(rendered.strip().strip("-").strip())
+    assert parsed["tags"] == ["alpha", "mango", "zebra"]
 
 
 # ---------------------------------------------------------------------------
@@ -240,9 +239,9 @@ def test_render_yaml_tags_sorted_at_render_time() -> None:
 
 
 @pytest.mark.skipif(not _RELEASE_BUNDLES_PRESENT, reason="release bundles not present")
-def test_hf_readme_text_rewrites_links_and_tree_diagram() -> None:
+def test_hf_public_readme_text_rewrites_links_and_tree_diagram() -> None:
     readme = (_RELEASE_DIR / "README.md").read_text(encoding="utf-8")
-    rewritten = packager._hf_readme_text(readme)
+    rewritten = packager._hf_public_readme_text(readme)
 
     # Source-repo tree → upload tree.
     assert "intermediate_instructor/" not in rewritten
@@ -260,10 +259,10 @@ def test_hf_readme_text_rewrites_links_and_tree_diagram() -> None:
 
 
 @pytest.mark.skipif(not _RELEASE_BUNDLES_PRESENT, reason="release bundles not present")
-def test_hf_tree_block_source_present_in_release_readme() -> None:
+def test_source_tree_block_is_present_in_release_readme() -> None:
     """Silent-failure guard.
 
-    ``_hf_readme_text`` substitutes ``HF_TREE_BLOCK_SOURCE`` →
+    ``_hf_public_readme_text`` substitutes ``SOURCE_TREE_BLOCK`` →
     ``HF_UPLOAD_TREE_BLOCK`` via plain string replace.  If anyone
     tweaks the README's tree diagram by even one whitespace
     character, the substitution silently no-ops and the published HF
@@ -272,28 +271,28 @@ def test_hf_tree_block_source_present_in_release_readme() -> None:
     """
 
     readme = (_RELEASE_DIR / "README.md").read_text(encoding="utf-8")
-    assert packager.HF_TREE_BLOCK_SOURCE in readme, (
-        "scripts/package_hf_release.py HF_TREE_BLOCK_SOURCE no longer matches "
+    assert packager.SOURCE_TREE_BLOCK in readme, (
+        "scripts/_release_common.py SOURCE_TREE_BLOCK no longer matches "
         "the tree diagram in release/README.md — reconcile the two before "
         "the next HF README regeneration."
     )
 
 
 def test_validate_readme_substitution_flags_drift(tmp_path: Path) -> None:
-    """``_validate_readme_substitution`` is wired into the run-time
-    validator, not just the static guard above."""
+    """``validate_readme_substitution`` (now in ``_release_common``) is
+    wired into the run-time validator, not just the static guard above."""
 
     fake_release = tmp_path / "release"
     fake_release.mkdir()
     (fake_release / "README.md").write_text("# Some unrelated README\n", encoding="utf-8")
-    errors = packager._validate_readme_substitution(fake_release)
+    errors = packager.validate_readme_substitution(fake_release, packager_name="HF")
     assert errors
     assert errors[0].field == "release/README.md"
-    assert "HF_TREE_BLOCK_SOURCE" in errors[0].message
+    assert "SOURCE_TREE_BLOCK" in errors[0].message
 
     if _RELEASE_BUNDLES_PRESENT:
         # Sanity: the real release README does NOT trigger the validator.
-        assert packager._validate_readme_substitution(_RELEASE_DIR) == []
+        assert packager.validate_readme_substitution(_RELEASE_DIR, packager_name="HF") == []
 
 
 # ---------------------------------------------------------------------------
@@ -307,9 +306,9 @@ def test_assemble_upload_dir_rejects_unsafe_huggingface_dir(tmp_path: Path) -> N
     fake_release = tmp_path / "release"
     fake_release.mkdir()
     with pytest.raises(ValueError, match="unsafe"):
-        packager.assemble_upload_dir(fake_release, fake_release)
+        packager.assemble_upload_dir(fake_release, fake_release, rendered_readme="")
     with pytest.raises(ValueError, match="unsafe"):
-        packager.assemble_upload_dir(fake_release, fake_release.parent)
+        packager.assemble_upload_dir(fake_release, fake_release.parent, rendered_readme="")
 
 
 def test_assemble_upload_dir_rejects_huggingface_dir_equal_to_cwd(
@@ -328,7 +327,48 @@ def test_assemble_upload_dir_rejects_huggingface_dir_equal_to_cwd(
     cwd.mkdir()
     monkeypatch.chdir(cwd)
     with pytest.raises(ValueError, match="unsafe"):
-        packager.assemble_upload_dir(fake_release, cwd)
+        packager.assemble_upload_dir(fake_release, cwd, rendered_readme="")
+
+
+def test_assemble_upload_dir_rejects_descendant_of_release_dir(tmp_path: Path) -> None:
+    """Refuse to assemble into a strict descendant of ``release_dir``.
+
+    Per PR 5.2 self-review #3: ``--huggingface-dir release/intro``
+    would otherwise rmtree the intro tier bundle.  Only direct
+    children of ``release_dir`` are allowed (the canonical
+    ``release/huggingface``, ``release/huggingface-instructor``,
+    ``release/kaggle`` shapes).
+    """
+
+    fake_release = tmp_path / "release"
+    (fake_release / "intro" / "tables").mkdir(parents=True)
+    deep = fake_release / "intro" / "tables"  # 2 levels under release_dir
+    with pytest.raises(ValueError, match="unsafe"):
+        packager.assemble_upload_dir(fake_release, deep, rendered_readme="")
+
+
+def test_assemble_upload_dir_allows_canonical_child(tmp_path: Path) -> None:
+    """Direct-child of release_dir IS the canonical safe location.
+
+    ``release/huggingface`` is allowed; only deeper nesting trips the
+    descendant guard.
+    """
+
+    fake_release = tmp_path / "release"
+    fake_release.mkdir()
+    safe_child = fake_release / "huggingface"
+    # Should not raise.  The function may still fail later because the
+    # source bundles aren't present, but the safety guard must let it
+    # through.
+    try:
+        packager.assemble_upload_dir(fake_release, safe_child, rendered_readme="")
+    except ValueError as exc:
+        if "unsafe" in str(exc):
+            raise AssertionError(f"safety guard rejected canonical child: {exc}") from exc
+    except FileNotFoundError:
+        # Expected — fake_release has no tier bundles, so the copytree
+        # call fails after the safety check.  That's the right shape.
+        pass
 
 
 @pytest.mark.skipif(not _RELEASE_BUNDLES_PRESENT, reason="release bundles not present")
@@ -358,7 +398,7 @@ def test_assembled_upload_dir_resolves_every_declared_data_file(tmp_path: Path) 
 
     # Top-level required artefacts.
     assert (upload_dir / "README.md").is_file()
-    assert (upload_dir / packager.COVER_IMAGE_FILENAME).is_file()
+    assert (upload_dir / _COMMITTED_COVER.name).is_file()
     assert (upload_dir / "LICENSE").is_file()
 
 
@@ -400,6 +440,56 @@ def test_main_reports_missing_release_dir(
     captured = capsys.readouterr()
     assert rc == 2
     assert "release directory not found" in captured.err
+
+
+@pytest.mark.skipif(not _RELEASE_BUNDLES_PRESENT, reason="release bundles not present")
+def test_run_packager_does_not_write_on_validation_failure(tmp_path: Path) -> None:
+    """Validation failure must NOT leave a corrupt README on disk
+    (PR 5.2 self-review #1).
+
+    Forces a validation failure by passing a cover image that is too
+    small.  Asserts the README path doesn't materialise and
+    ``outcome.errors`` is populated.
+    """
+
+    tiny_cover = tmp_path / "tiny.png"
+    from PIL import Image
+
+    Image.new("RGB", (10, 10), (0, 0, 0)).save(tiny_cover)
+    out_dir = tmp_path / "huggingface"
+    outcome = packager.run_packager(_RELEASE_DIR, huggingface_dir=out_dir, cover_image=tiny_cover)
+    assert outcome.errors, "expected at least one validation error"
+    assert not (out_dir / "README.md").exists(), "README must not be written when validation fails"
+    assert outcome.assembled is False
+
+
+def test_main_rejects_default_config_with_instructor_variant(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``--default-config`` is meaningless for ``--variant=instructor``
+    (only one config); silently accepting it is a misconfiguration
+    (PR 5.2 self-review #10).
+    """
+
+    rc = packager.main(
+        [
+            "--release-dir",
+            str(_RELEASE_DIR),
+            "--huggingface-dir",
+            str(tmp_path / "hf"),
+            "--variant",
+            "instructor",
+            "--default-config",
+            "advanced",
+            "--cover-image",
+            str(_COMMITTED_COVER),
+            "--dry-run",
+        ]
+    )
+    captured = capsys.readouterr()
+    assert rc == 2
+    assert "--default-config" in captured.err
+    assert "instructor" in captured.err
 
 
 # ---------------------------------------------------------------------------
@@ -473,6 +563,32 @@ def test_committed_hf_readme_matches_fresh_regeneration(tmp_path: Path) -> None:
     assert packager.GITHUB_BLOB_BASE in body
 
 
+@pytest.mark.skipif(
+    not (_INSTRUCTOR_BUNDLE_PRESENT and _COMMITTED_INSTRUCTOR_README.exists()),
+    reason="instructor bundle or committed instructor README missing",
+)
+def test_committed_instructor_readme_matches_fresh_regeneration(tmp_path: Path) -> None:
+    """Audit-artifact-sync for the instructor companion.
+
+    A fresh instructor regeneration must match
+    ``release/huggingface-instructor/README.md`` byte-for-byte.  Locks
+    down the dedicated ``INSTRUCTOR_BODY`` constant introduced in PR
+    5.2 self-review #2.
+    """
+
+    fresh_dir = tmp_path / "huggingface-instructor"
+    packager.run_packager(
+        _RELEASE_DIR,
+        huggingface_dir=fresh_dir,
+        variant="instructor",
+        cover_image=_COMMITTED_COVER,
+        dry_run=True,
+    )
+    fresh_bytes = (fresh_dir / "README.md").read_bytes()
+    committed_bytes = _COMMITTED_INSTRUCTOR_README.read_bytes()
+    assert fresh_bytes == committed_bytes
+
+
 # ---------------------------------------------------------------------------
 # Instructor companion (G12.4)
 # ---------------------------------------------------------------------------
@@ -500,10 +616,21 @@ def test_run_packager_instructor_variant_packages_independently(tmp_path: Path) 
     # ``intermediate/`` in the upload tree.
     for df in only.data_files:
         assert (upload_dir / df.path).is_file()
-    # Instructor body uses the instructor tree block.
+    # Instructor body is the dedicated INSTRUCTOR_BODY constant, not
+    # the public README inlined verbatim — locks down PR 5.2 self-
+    # review fix #2 (3-tier prose was leaking into the 1-tier card).
     body = outcome.card.body
-    assert "metadata/" in body  # instructor metadata sibling visible
-    assert "9 full-horizon tables" in body
+    assert body is packager.INSTRUCTOR_BODY
+    # Public-tier names must NOT appear in the instructor body.
+    assert "intro" not in body.lower().split()  # word boundary, not substring
+    # The instructor body talks about the instructor companion role.
+    assert "Instructor companion" in body
+    assert "redaction" in body.lower()
+    assert "metadata/world_spec" in body
+    # Tree block reflects the instructor (single-tier) layout.
+    assert "intermediate/" in body
+    # No leakage of public tree elements.
+    assert "intro/ intermediate/ advanced/" not in body
 
 
 # ---------------------------------------------------------------------------

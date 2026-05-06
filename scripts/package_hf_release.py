@@ -4,8 +4,8 @@
 PR 5.2 — second of two PRs in Phase 5 (Platform packaging) of the v1
 release roadmap.  This script:
 
-1. Reads each public tier's ``manifest.json`` + flat CSV header under
-   ``release/`` and assembles a Hugging Face dataset card
+1. Reads each public tier's ``manifest.json`` under ``release/`` and
+   assembles a Hugging Face dataset card
    (``release/huggingface/README.md``) whose YAML frontmatter satisfies
    G12.1 of ``docs/release/v1_acceptance_gates.md``: ``pretty_name``,
    ``license: mit``, ``language: en``, ``task_categories:
@@ -26,38 +26,46 @@ release roadmap.  This script:
    ``leadforge-lead-scoring-v1-instructor`` companion repo (G12.4)
    from ``release/intermediate_instructor/`` into a separate
    ``release/huggingface-instructor/`` tree with one config
-   (``intermediate``).  Same code path; different defaults.
+   (``intermediate``).  The instructor variant ships its OWN dataset
+   card body (``INSTRUCTOR_BODY``) — inlining the public README would
+   leak three-tier prose into a single-tier dataset.
 
 The actual ``huggingface_hub.HfApi().upload_folder()`` call lives in
 PR 7.2; this script is intentionally publish-free.  ``--dry-run``
 writes the README only and skips upload-tree assembly, useful for
 README iteration.
 
-Failed validation exits with rc=1; pre-flight errors (missing release
-dir, missing tier, unsafe ``--huggingface-dir``) exit with rc=2.
+Validation discipline: ``run_packager`` runs every check first and
+returns ``errors`` WITHOUT writing any artifact when validation fails.
+The CLI converts ``errors`` into rc=1.  Pre-flight problems (missing
+release dir, unsafe ``--huggingface-dir``) raise and exit with rc=2
+without touching disk.
 """
 
 from __future__ import annotations
 
 import argparse
-import json
-import shutil
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
+import yaml
+
 # Make ``scripts/`` importable regardless of how this file is loaded.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-# ``GITHUB_BLOB_BASE`` is re-exported for tests and downstream callers
-# (mirrors the symbol surface of ``scripts/package_kaggle_release.py``).
 from _release_common import (  # noqa: E402,F401 — must follow sys.path insert
     GITHUB_BLOB_BASE,
+    SOURCE_TREE_BLOCK,
     ValidationError,
+    load_manifest,
+    replace_dir,
+    replace_file,
     rewrite_release_links,
     validate_cover_image,
+    validate_readme_substitution,
     validate_upload_dir_safe,
 )
 
@@ -66,17 +74,18 @@ from _release_common import (  # noqa: E402,F401 — must follow sys.path insert
 # https://huggingface.co/docs/hub/datasets-cards)
 # ---------------------------------------------------------------------------
 
-#: Allowed ``size_categories`` tokens (HF taxonomy).  Each public tier
-#: has 5,000 leads (3500 train / 750 valid / 750 test) so ``1K<n<10K``
-#: is the right bucket; constants are kept here so ``--variant=instructor``
-#: can pick the right bucket too if the tier sizes ever change.
+#: Allowed ``size_categories`` token (HF taxonomy).  Each public tier
+#: ships task splits of 3500 / 750 / 750 rows; HF computes the size
+#: bucket from ``data_files``, so the largest split (3.5K) lands the
+#: dataset in the ``1K<n<10K`` bucket.  Pinned manually here rather
+#: than derived from the manifest because (a) the bucket is stable
+#: across the v1 family and (b) deriving from manifest row counts adds
+#: I/O and a bucket-mapping helper for no real benefit at v1 scale.
 HF_SIZE_BUCKET_5K: Final[str] = "1K<n<10K"
 
 #: Public-tier configs land under ``intro``/``intermediate``/``advanced``;
 #: ``intermediate`` is the recommended entry point per G12.2 (the
-#: difficulty band sits between the two extremes).  Picking
-#: ``intermediate`` as default mirrors ``release/HF_DATASET_CARD.md``
-#: (the legacy stub PR 5.2 supersedes).
+#: difficulty band sits between the two extremes).
 DEFAULT_DEFAULT_CONFIG: Final[str] = "intermediate"
 
 #: Allowed HF dataset-card ``task_categories`` token for tabular
@@ -86,10 +95,6 @@ HF_TASK_CATEGORY: Final[str] = "tabular-classification"
 # ---------------------------------------------------------------------------
 # Release-specific defaults
 # ---------------------------------------------------------------------------
-
-DEFAULT_OWNER: Final[str] = "leadforge"
-DEFAULT_DATASET_SLUG: Final[str] = "leadforge-lead-scoring-v1"
-DEFAULT_INSTRUCTOR_DATASET_SLUG: Final[str] = "leadforge-lead-scoring-v1-instructor"
 
 DEFAULT_PRETTY_NAME: Final[str] = "LeadForge: Synthetic B2B Lead Scoring (v1)"
 DEFAULT_INSTRUCTOR_PRETTY_NAME: Final[str] = (
@@ -112,12 +117,10 @@ DEFAULT_LICENSE: Final[str] = "mit"
 DEFAULT_LANGUAGE: Final[str] = "en"
 
 DEFAULT_PUBLIC_TIERS: Final[tuple[str, ...]] = ("intro", "intermediate", "advanced")
-DEFAULT_INSTRUCTOR_TIERS: Final[tuple[str, ...]] = ("intermediate_instructor",)
 
-#: HF expects the validation split to be called ``validation`` (HF
-#: convention; ``valid`` would still load but the viewer labels it
-#: differently).  The committed parquet is ``valid.parquet``; the
-#: ``configs[*].data_files`` mapping bridges the two.
+#: HF expects the validation split to be called ``validation``.  The
+#: committed parquet is ``valid.parquet``; the ``configs[*].data_files``
+#: mapping bridges the two.
 DEFAULT_TASK: Final[str] = "converted_within_90_days"
 HF_SPLIT_NAMES: Final[tuple[tuple[str, str], ...]] = (
     ("train", "train"),
@@ -130,31 +133,9 @@ DEFAULT_HUGGINGFACE_DIR: Final[Path] = Path("release/huggingface")
 DEFAULT_HUGGINGFACE_INSTRUCTOR_DIR: Final[Path] = Path("release/huggingface-instructor")
 DEFAULT_COVER_IMAGE: Final[Path] = Path("release/dataset-cover-image.png")
 
-#: HF dataset cards do not require a cover image, but the field is
-#: harmless and keeps the published thumbnail aligned with Kaggle's.
-COVER_IMAGE_FILENAME: Final[str] = "dataset-cover-image.png"
-
 # ---------------------------------------------------------------------------
-# README rewriting — HF-specific tree block
+# README rewriting — HF-specific tree blocks
 # ---------------------------------------------------------------------------
-
-#: Source-repo tree diagram from ``release/README.md`` — must match the
-#: PR 4.1 README byte-for-byte; the silent-failure guard
-#: (:func:`_validate_readme_substitution`) fires when the two drift
-#: apart (mirrors PR 5.1's ``KAGGLE_TREE_BLOCK`` validator).
-HF_TREE_BLOCK_SOURCE: Final[str] = """```
-release/
-├── intro/ intermediate/ advanced/    # student_public bundles, one per difficulty tier
-│   ├── manifest.json                 # provenance + file hashes
-│   ├── dataset_card.md               # auto-rendered per-bundle card
-│   ├── feature_dictionary.csv        # authoritative column spec
-│   ├── lead_scoring.csv              # flat convenience CSV (all splits)
-│   ├── tables/*.parquet              # 7 snapshot-safe relational tables
-│   └── tasks/converted_within_90_days/{train,valid,test}.parquet
-├── intermediate_instructor/          # research companion: full-horizon tables + metadata/
-├── notebooks/01_baseline_lead_scoring.ipynb
-└── validation/                       # validation_report.{json,md} + figures
-```"""
 
 HF_UPLOAD_TREE_BLOCK: Final[str] = """```
 .
@@ -176,7 +157,7 @@ HF_INSTRUCTOR_UPLOAD_TREE_BLOCK: Final[str] = """```
 │   ├── manifest.json                 # provenance + file hashes
 │   ├── dataset_card.md               # auto-rendered per-bundle card
 │   ├── feature_dictionary.csv        # authoritative column spec
-│   ├── tables/*.parquet              # 9 full-horizon tables (incl. customers, subscriptions)
+│   ├── tables/*.parquet              # full-horizon tables (incl. customers, subscriptions)
 │   ├── tasks/converted_within_90_days/{train,valid,test}.parquet
 │   └── metadata/                     # world_spec, graph.{graphml,json}, latent_registry, etc.
 ├── README.md                         # this file (HF dataset card)
@@ -185,53 +166,159 @@ HF_INSTRUCTOR_UPLOAD_TREE_BLOCK: Final[str] = """```
 ```"""
 
 
-def _hf_readme_text(readme: str, *, tree_block: str = HF_UPLOAD_TREE_BLOCK) -> str:
-    """Apply the HF-specific rewrites to a copy of the release README.
+def _hf_public_readme_text(readme: str) -> str:
+    """Rewrite the public release README into the HF public dataset card.
 
-    Rewrites:
-
-    1. Source-repo tree diagram → upload-tree diagram (the published
-       README should describe what the *user* sees on HF, not the
-       source repo layout).
-    2. ``](../foo)`` → ``](GITHUB_BLOB_BASE/foo)`` and
-       ``](validation/...)`` → blob URL — both via
-       ``rewrite_release_links`` from ``_release_common``.
-
-    The instructor variant calls this with
-    ``tree_block=HF_INSTRUCTOR_UPLOAD_TREE_BLOCK``; otherwise the
-    public upload tree is used.
+    1. Source-repo tree diagram → public upload-tree diagram.
+    2. ``](../foo)`` and ``](validation/...)`` → GitHub blob URLs
+       (delegated to ``rewrite_release_links``).
     """
 
-    text = readme.replace(HF_TREE_BLOCK_SOURCE, tree_block)
-    text = rewrite_release_links(text)
-    return text
+    text = readme.replace(SOURCE_TREE_BLOCK, HF_UPLOAD_TREE_BLOCK)
+    return rewrite_release_links(text)
 
 
-def _validate_readme_substitution(release_dir: Path) -> list[ValidationError]:
-    """Guard against silent drift between the README's tree diagram and
-    ``HF_TREE_BLOCK_SOURCE`` (mirrors PR 5.1's Kaggle-side guard).
+# ---------------------------------------------------------------------------
+# Instructor-companion body
+#
+# Inlining the public README into the instructor card published 3-tier
+# prose for a 1-tier dataset (PR 5.2 self-review #2).  The instructor
+# package serves a different audience — researchers who already read
+# the public dataset card — so it ships a focused, self-contained body
+# that links to the public dataset for shared framing.
+#
+# The constant is the WHOLE markdown body (no YAML; that comes from the
+# generated frontmatter).  It is byte-stable; the audit-artifact-sync
+# test catches any drift against the committed instructor README.
+# ---------------------------------------------------------------------------
 
-    Plain string ``replace()`` silently no-ops when the substring is
-    not found, which would publish the source-repo tree diagram on HF.
-    """
+INSTRUCTOR_BODY: Final[str] = f"""\
+# LeadForge: Synthetic B2B Lead Scoring (v1) — Instructor companion
 
-    readme = release_dir / "README.md"
-    if not readme.exists():
-        return []
-    if HF_TREE_BLOCK_SOURCE not in readme.read_text(encoding="utf-8"):
-        return [
-            ValidationError(
-                field="release/README.md",
-                message=(
-                    "HF_TREE_BLOCK_SOURCE not found verbatim in release/README.md; "
-                    "the source-repo tree diagram in the README has drifted from "
-                    "the constant in scripts/package_hf_release.py — the "
-                    "HF README rewrite will silently no-op until the README and "
-                    "HF_TREE_BLOCK_SOURCE are reconciled."
-                ),
-            )
-        ]
-    return []
+This is the **research / instructor companion** to the public
+[`leadforge/leadforge-lead-scoring-v1`](https://huggingface.co/datasets/leadforge/leadforge-lead-scoring-v1)
+dataset.  It exposes the **full-horizon** view of a single difficulty
+tier (`intermediate`) plus the **hidden causal structure** that the
+public dataset deliberately redacts: the world graph (DAG), latent
+trait registry, mechanism summary, and full-horizon relational tables
+including `customers` and `subscriptions`.
+
+It exists for instructors who want to walk students through how the
+public dataset was generated, and for researchers who want to verify
+that the public redactions actually remove the leakage paths the
+dataset advertises.  **It is not a replacement for the public dataset
+in any teaching or modelling context** — students should still train
+on the public bundle.
+
+## What this companion contains
+
+{HF_INSTRUCTOR_UPLOAD_TREE_BLOCK}
+
+The single ``intermediate`` config exposes the same train/valid/test
+parquet splits as the public dataset's ``intermediate`` config — same
+seeds, same row counts (3,500 / 750 / 750), same target.  The
+difference lives in the relational tables and metadata:
+
+| File | Public `intermediate` | Instructor companion |
+|---|---|---|
+| `tables/leads.parquet` | redacted (label dropped) | full (label retained) |
+| `tables/opportunities.parquet` | snapshot-filtered + redacted | full-horizon, full columns |
+| `tables/customers.parquet` | omitted (would leak label) | included |
+| `tables/subscriptions.parquet` | omitted (would leak label) | included |
+| `tables/touches.parquet` etc. | filtered to ≤ snapshot day | full 90-day horizon |
+| `metadata/world_spec.json` | absent | included (DGP + recipe) |
+| `metadata/graph.{{graphml,json}}` | absent | included (hidden DAG) |
+| `metadata/latent_registry.json` | absent | included (latent traits) |
+| `metadata/mechanism_summary.json` | absent | included (per-edge mechanisms) |
+
+The redaction contract is single-sourced in
+[`leadforge/validation/leakage_probes.py`]({GITHUB_BLOB_BASE}/leadforge/validation/leakage_probes.py)
+and re-applied by
+[`leadforge/render/relational_snapshot_safe.py`]({GITHUB_BLOB_BASE}/leadforge/render/relational_snapshot_safe.py)
+when the public bundle is built; this companion is the unfiltered
+source view, so the two are always consistent by construction.
+
+## Quick start
+
+```python
+from datasets import load_dataset
+
+# Loads the same train/valid/test splits as the public 'intermediate'
+# config; differs only in what `tables/` and `metadata/` provide.
+ds = load_dataset(
+    "leadforge/leadforge-lead-scoring-v1-instructor",
+    name="intermediate",
+)
+train = ds["train"].to_pandas()
+
+# Full-horizon relational tables — includes customers and subscriptions
+# (omitted from the public dataset because their existence reconstructs
+# the conversion label).
+import pandas as pd
+customers = pd.read_parquet(
+    "hf://datasets/leadforge/leadforge-lead-scoring-v1-instructor/intermediate/tables/customers.parquet"
+)
+```
+
+## Intended uses
+
+- Teaching the **public-vs-instructor split** itself: load both
+  datasets side-by-side, show students which columns and tables were
+  redacted, and walk through why each was a leakage path.
+- **Verifying the redaction contract:** train a model on the
+  full-horizon tables, train another on the snapshot-safe public
+  tables, compare AUC.  The gap is the redaction's effect.
+- Teaching **causal structure and DGP transparency** using
+  `metadata/world_spec.json` + `metadata/graph.json`.
+- Reproducing the public dataset from the instructor view via
+  [`leadforge`]({GITHUB_BLOB_BASE}) source code.
+
+## Out-of-scope uses
+
+- **Production lead scoring.**  Same as the public dataset; the
+  company, product, and customers are fictional.
+- **Modelling with the unredacted view as a baseline.**  Models
+  trained against the full-horizon tables look strong because they're
+  directly seeing post-conversion events.  That number is not a
+  baseline; it's the ceiling.
+- **Demographic / fairness research.**  v1 does not model protected
+  attributes.
+
+## Composition
+
+- **Entities.**  9 relational tables (accounts, contacts, leads,
+  touches, sessions, sales_activities, opportunities, customers,
+  subscriptions); per-row counts in `manifest.json`.
+- **Splits.**  Identical to the public `intermediate` config: 70/15/15
+  train/valid/test, deterministic given seed 42, recorded in
+  `tasks/converted_within_90_days/task_manifest.json`.
+- **Provenance.**  Recipe `b2b_saas_procurement_v1`, seed 42, package
+  version stamped in `manifest.json` along with SHA-256 hashes for
+  every parquet file.
+- **Bundle schema version.**  5 (matches the public dataset).
+
+## Maintenance, license
+
+We *want* the dataset to be broken.  See the
+[public dataset card](https://huggingface.co/datasets/leadforge/leadforge-lead-scoring-v1)
+for the adversarial-framing pointers, the issue templates, and the
+break-me guide.  File issues at
+[leadforge-dev/leadforge](https://github.com/leadforge-dev/leadforge);
+PRs welcome.
+
+| Field | Value |
+|---|---|
+| Generator | leadforge `1.0.0+` |
+| Recipe | `b2b_saas_procurement_v1` |
+| Canonical seed | 42 |
+| Bundle schema version | 5 |
+| Format | Parquet (canonical) |
+| License | MIT — see [LICENSE](LICENSE) |
+| Public dataset | [link](https://huggingface.co/datasets/leadforge/leadforge-lead-scoring-v1) |
+
+Verify integrity with `leadforge validate <bundle_dir>`; every file is
+hashed in `manifest.json`.
+"""
 
 
 # ---------------------------------------------------------------------------
@@ -264,9 +351,9 @@ class ConfigEntry:
 class HuggingFaceCard:
     """Top-level HF dataset-card payload.
 
-    ``body`` is the markdown that follows the YAML frontmatter — by
-    default the rewritten ``release/README.md`` (G12.1 expects the
-    README to BE the dataset card; the YAML lives at the top).
+    ``body`` is the markdown that follows the YAML frontmatter — the
+    rewritten public README for the public variant, the
+    ``INSTRUCTOR_BODY`` constant for the instructor variant.
     """
 
     pretty_name: str
@@ -369,50 +456,26 @@ def validate_card(card: HuggingFaceCard) -> list[ValidationError]:
 
 
 # ---------------------------------------------------------------------------
-# Bundle reading + config building
+# Card construction
 # ---------------------------------------------------------------------------
 
 
-def _load_manifest(path: Path) -> dict[str, Any]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict):
-        raise ValueError(f"manifest.json at {path} is not a JSON object")
-    return payload
-
-
-def build_config_for_tier(
-    release_dir: Path,
+def _config_for_tier(
     *,
-    tier_dir: str,
     config_name: str,
     task: str = DEFAULT_TASK,
     default: bool = False,
 ) -> ConfigEntry:
-    """Build a single ``configs[]`` entry for one tier.
+    """Pure constructor — no I/O.
 
-    ``tier_dir`` is the directory name under the upload tree
-    (``intro`` / ``intermediate`` / ``advanced`` for the public
-    variant; ``intermediate`` for the instructor companion which
-    flattens ``intermediate_instructor/`` → ``intermediate/`` in the
-    upload tree).  ``config_name`` is what users pass to
-    ``load_dataset(..., name=...)``.
-
-    The function reads ``manifest.json`` to confirm the tier exists
-    and the task splits are declared; it does NOT fail when files are
-    missing on disk because the upload tree is reassembled by
-    :func:`assemble_upload_dir` and the manifest is the single source
-    of truth for what should be there.
+    Builds a ``ConfigEntry`` from the canonical task-split layout.
+    The earlier draft also opened the manifest to check the task was
+    declared, but that's I/O for a structural check that
+    :func:`assemble_upload_dir` already enforces (the parquet copies
+    fail loud if the source paths are missing).  Keeping it pure makes
+    card construction work without a fully-populated release dir,
+    which is what tests want.
     """
-
-    manifest_path = release_dir / tier_dir / "manifest.json"
-    if not manifest_path.exists():
-        raise FileNotFoundError(f"manifest.json missing for tier {tier_dir!r}: {manifest_path}")
-    manifest = _load_manifest(manifest_path)
-    if task not in manifest.get("tasks", {}):
-        raise ValueError(
-            f"task {task!r} not declared in manifest at {manifest_path}; "
-            f"got {sorted(manifest.get('tasks', {}))!r}"
-        )
 
     data_files = tuple(
         DataFileEntry(
@@ -422,6 +485,20 @@ def build_config_for_tier(
         for hf_split, file_split in HF_SPLIT_NAMES
     )
     return ConfigEntry(config_name=config_name, data_files=data_files, default=default)
+
+
+def _assert_tier_dir_exists(release_dir: Path, tier_dir: str) -> None:
+    """Cheap preflight: tier dir must contain a ``manifest.json``.
+
+    Catches user typos at ``--dry-run`` time rather than waiting for
+    ``shutil.copytree`` to fail during assembly.  No JSON parse — we
+    only care that the tier exists; the schema is the assembler's
+    concern.
+    """
+
+    manifest = release_dir / tier_dir / "manifest.json"
+    if not manifest.exists():
+        raise FileNotFoundError(f"manifest.json missing for tier {tier_dir!r}: {manifest}")
 
 
 def build_card(
@@ -441,62 +518,40 @@ def build_card(
     """Assemble a ``HuggingFaceCard`` from the release tree.
 
     ``variant="public"`` builds the three-tier card pointing at
-    ``release/{intro,intermediate,advanced}/``;
-    ``variant="instructor"`` builds a single-config card pointing at
-    ``release/intermediate_instructor/`` (flattened to
-    ``intermediate/`` in the upload tree).
+    ``release/{intro,intermediate,advanced}/`` and uses the rewritten
+    public README as the body.
 
-    When ``body`` is ``None`` (the default) we lift the contents of
-    ``release/README.md`` and apply the HF-specific rewrites — HF
-    renders the body as the dataset card so a full README there is
-    more useful than a curated blurb (mirrors the Kaggle packager's
-    description handling).
+    ``variant="instructor"`` builds a single-config card pointing at
+    ``release/intermediate_instructor/`` (flattened to ``intermediate/``
+    in the upload tree) and uses :data:`INSTRUCTOR_BODY` as the body.
+    The instructor variant gets a focused body rather than the public
+    README to avoid publishing 3-tier prose for a 1-tier dataset.
     """
 
     if variant == "public":
-        public_tiers = (
-            ("intro", "intro"),
-            ("intermediate", "intermediate"),
-            ("advanced", "advanced"),
-        )
+        for tier in DEFAULT_PUBLIC_TIERS:
+            _assert_tier_dir_exists(release_dir, tier)
         configs = tuple(
-            build_config_for_tier(
-                release_dir,
-                tier_dir=tier_dir,
-                config_name=config_name,
+            _config_for_tier(
+                config_name=tier,
                 task=task,
-                default=(config_name == default_config),
+                default=(tier == default_config),
             )
-            for tier_dir, config_name in public_tiers
+            for tier in DEFAULT_PUBLIC_TIERS
         )
         if pretty_name is None:
             pretty_name = DEFAULT_PRETTY_NAME
         if body is None:
-            body = _hf_readme_text(
+            body = _hf_public_readme_text(
                 (release_dir / "README.md").read_text(encoding="utf-8"),
-                tree_block=HF_UPLOAD_TREE_BLOCK,
             )
     elif variant == "instructor":
-        # Companion repo flattens ``intermediate_instructor`` →
-        # ``intermediate`` in the upload tree so the HF dataset slug
-        # ``leadforge-lead-scoring-v1-instructor`` exposes the
-        # familiar config name.
-        configs = (
-            build_config_for_tier(
-                release_dir,
-                tier_dir="intermediate_instructor",
-                config_name="intermediate",
-                task=task,
-                default=True,
-            ),
-        )
+        _assert_tier_dir_exists(release_dir, "intermediate_instructor")
+        configs = (_config_for_tier(config_name="intermediate", task=task, default=True),)
         if pretty_name is None:
             pretty_name = DEFAULT_INSTRUCTOR_PRETTY_NAME
         if body is None:
-            body = _hf_readme_text(
-                (release_dir / "README.md").read_text(encoding="utf-8"),
-                tree_block=HF_INSTRUCTOR_UPLOAD_TREE_BLOCK,
-            )
+            body = INSTRUCTOR_BODY
     else:
         raise ValueError(f"unknown variant: {variant!r} (expected 'public' or 'instructor')")
 
@@ -515,74 +570,71 @@ def build_card(
 # ---------------------------------------------------------------------------
 # Rendering
 #
-# YAML is hand-rolled rather than dumped by PyYAML because the HF
-# dataset-card YAML has a precise key order and indentation style that
-# the viewer is fussy about (and PyYAML's default flow style collapses
-# the configs list into a single line).  Hand-rolling also makes the
-# determinism contract obvious in the source.
+# YAML serialization uses ``yaml.safe_dump`` with a custom dumper that
+# forces indent-2 on top-level sequences (HF dataset-card examples in
+# the wild use this style; PyYAML's default puts top-level list items
+# at indent 0).  The earlier draft hand-rolled the renderer with a
+# brittle quoting heuristic; PR 5.2's self-review caught the hack and
+# replaced it with PyYAML.
 # ---------------------------------------------------------------------------
-# ---------------------------------------------------------------------------
 
 
-def _yaml_string(value: str) -> str:
-    """Render a YAML string scalar.
+class _IndentedDumper(yaml.SafeDumper):
+    """Force indent-2 on top-level sequences.
 
-    HF parses the frontmatter with PyYAML.  We use double-quoted
-    strings only when the value contains characters that would change
-    YAML semantics (``:``, leading ``- ``, leading whitespace).  Plain
-    scalars are used otherwise so the YAML stays readable.
+    PyYAML's default ``increase_indent`` returns ``indentless=True``
+    when emitting a top-level block sequence, putting ``- item`` at
+    column 0.  HF dataset cards conventionally indent these by 2 (per
+    the examples in the HF docs), so we override the flag to ``False``.
     """
 
-    if value == "":
-        return '""'
-    needs_quoting = any(c in value for c in ":#&*!|>'\"%@`")
-    needs_quoting = needs_quoting or value.startswith(("- ", " ", "?", "[", "{", "*", "&"))
-    needs_quoting = needs_quoting or value.endswith(" ")
-    if not needs_quoting:
-        return value
-    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
-    return f'"{escaped}"'
+    def increase_indent(self, flow: bool = False, indentless: bool = False) -> Any:  # noqa: ARG002
+        return super().increase_indent(flow, False)
 
 
-def _yaml_list(values: Sequence[str], *, indent: int) -> list[str]:
-    """Render a YAML block-style list."""
+def _frontmatter_dict(card: HuggingFaceCard) -> dict[str, Any]:
+    """Build the dict serialised into YAML.
 
-    pad = " " * indent
-    return [f"{pad}- {_yaml_string(v)}" for v in values]
+    Tags are sorted at render time (mirrors the keyword sort in the
+    Kaggle packager) so dataclass order doesn't leak into the rendered
+    file.  The dict is built in field order so PyYAML preserves it
+    (with ``sort_keys=False``).
+    """
+
+    return {
+        "pretty_name": card.pretty_name,
+        "license": card.license,
+        "language": list(card.language),
+        "task_categories": list(card.task_categories),
+        "size_categories": list(card.size_categories),
+        "tags": sorted(card.tags),
+        "configs": [
+            {
+                "config_name": config.config_name,
+                **({"default": True} if config.default else {}),
+                "data_files": [{"split": df.split, "path": df.path} for df in config.data_files],
+            }
+            for config in card.configs
+        ],
+    }
 
 
 def render_yaml_frontmatter(card: HuggingFaceCard) -> str:
     """Render the YAML frontmatter as a deterministic string.
 
-    Order: ``pretty_name``, ``license``, ``language``,
-    ``task_categories``, ``size_categories``, ``tags``, ``configs``.
-    Tags are sorted at render time (mirrors the keyword sort in the
-    Kaggle packager) so order on the dataclass doesn't leak into the
-    rendered file.
+    The leading and trailing ``---`` markers are included so callers
+    can concatenate this directly to the body.
     """
 
-    lines: list[str] = ["---"]
-    lines.append(f"pretty_name: {_yaml_string(card.pretty_name)}")
-    lines.append(f"license: {_yaml_string(card.license)}")
-    lines.append("language:")
-    lines.extend(_yaml_list(card.language, indent=2))
-    lines.append("task_categories:")
-    lines.extend(_yaml_list(card.task_categories, indent=2))
-    lines.append("size_categories:")
-    lines.extend(_yaml_list(card.size_categories, indent=2))
-    lines.append("tags:")
-    lines.extend(_yaml_list(sorted(card.tags), indent=2))
-    lines.append("configs:")
-    for config in card.configs:
-        lines.append(f"  - config_name: {_yaml_string(config.config_name)}")
-        if config.default:
-            lines.append("    default: true")
-        lines.append("    data_files:")
-        for df in config.data_files:
-            lines.append(f"      - split: {_yaml_string(df.split)}")
-            lines.append(f"        path: {_yaml_string(df.path)}")
-    lines.append("---")
-    return "\n".join(lines) + "\n"
+    payload = yaml.dump(
+        _frontmatter_dict(card),
+        Dumper=_IndentedDumper,
+        default_flow_style=False,
+        sort_keys=False,
+        allow_unicode=True,
+        width=200,
+    )
+    return f"---\n{payload}---\n"
 
 
 def render_card(card: HuggingFaceCard) -> str:
@@ -599,41 +651,23 @@ def render_card(card: HuggingFaceCard) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _replace_file(src: Path, dst: Path) -> None:
-    """Copy ``src`` → ``dst``, replacing any existing entry at ``dst``."""
-
-    if dst.is_symlink() or dst.is_file():
-        dst.unlink()
-    elif dst.exists() and dst.is_dir():
-        shutil.rmtree(dst)
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src, dst)
-
-
-def _replace_dir(src: Path, dst: Path) -> None:
-    """Copy directory ``src`` → ``dst``, replacing any existing entry."""
-
-    if dst.is_symlink() or dst.is_file():
-        dst.unlink()
-    elif dst.exists() and dst.is_dir():
-        shutil.rmtree(dst)
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(src, dst)
-
-
 def assemble_upload_dir(
     release_dir: Path,
     upload_dir: Path,
     *,
     variant: str = "public",
+    rendered_readme: str,
     cover_image: Path = DEFAULT_COVER_IMAGE,
 ) -> None:
     """Assemble ``upload_dir`` for ``huggingface_hub.upload_folder()``.
 
-    Mirrors PR 5.1's Kaggle assembler: real-file copies of the per-
-    tier bundles + cover image + LICENSE + the rewritten README.  No
-    symlinks (the ``datasets`` library walks the upload tree and silent
-    skips broken symlinks in some versions).
+    Writes the README, copies the cover image and LICENSE, and copies
+    each tier bundle as a real-file copy (no symlinks; ``datasets``
+    walks the tree and silently skips broken symlinks in some
+    versions).  ``rendered_readme`` is the already-validated and
+    rendered card text — passing it in (rather than reading it back
+    from ``run_packager``) means this function produces a complete
+    upload tree on its own.
 
     For ``variant="instructor"``, the source directory
     ``intermediate_instructor/`` is flattened to ``intermediate/`` in
@@ -645,25 +679,31 @@ def assemble_upload_dir(
     validate_upload_dir_safe(upload_dir, release_dir, kind=kind)
     upload_dir.mkdir(parents=True, exist_ok=True)
 
+    # README — written from the validated card text.
+    readme_path = upload_dir / "README.md"
+    if readme_path.is_symlink() or readme_path.is_file():
+        readme_path.unlink()
+    readme_path.write_text(rendered_readme, encoding="utf-8")
+
     # Cover image — reuse the one ``release/`` already ships.
     cover_src = release_dir / cover_image.name
     if not cover_src.exists():
         cover_src = cover_image
     if cover_src.exists():
-        _replace_file(cover_src, upload_dir / COVER_IMAGE_FILENAME)
+        replace_file(cover_src, upload_dir / cover_image.name)
 
     # LICENSE — straight copy, no rewriting.
     license_src = release_dir / "LICENSE"
     if license_src.exists():
-        _replace_file(license_src, upload_dir / "LICENSE")
+        replace_file(license_src, upload_dir / "LICENSE")
 
     # Per-tier bundles — full directory copies.  The instructor variant
     # flattens its source dir name.
     if variant == "public":
         for tier in DEFAULT_PUBLIC_TIERS:
-            _replace_dir(release_dir / tier, upload_dir / tier)
+            replace_dir(release_dir / tier, upload_dir / tier)
     elif variant == "instructor":
-        _replace_dir(
+        replace_dir(
             release_dir / "intermediate_instructor",
             upload_dir / "intermediate",
         )
@@ -699,6 +739,11 @@ def run_packager(
 ) -> PackagerOutcome:
     """Build, validate, and write the HF dataset card.
 
+    Validation discipline: build → validate → ONLY THEN write.  If
+    validation fails the function returns an outcome with populated
+    ``errors`` and **no artifact on disk**.  The CLI converts errors
+    to rc=1.
+
     With ``dry_run=False`` (the default) the packager additionally
     assembles the HF-loadable upload directory under
     ``huggingface_dir`` (real-file copies of the per-tier bundles +
@@ -720,24 +765,43 @@ def run_packager(
     errors: list[ValidationError] = []
     errors.extend(validate_card(card))
     errors.extend(validate_cover_image(cover_image))
-    errors.extend(_validate_readme_substitution(release_dir))
+    if variant == "public":
+        # The instructor body doesn't substitute SOURCE_TREE_BLOCK —
+        # it's a self-contained markdown — so the substitution guard
+        # only applies to the public variant.
+        errors.extend(validate_readme_substitution(release_dir, packager_name="HF"))
 
     readme_path = huggingface_dir / "README.md"
-    readme_path.parent.mkdir(parents=True, exist_ok=True)
-    readme_path.write_text(render_card(card), encoding="utf-8")
 
-    if not dry_run:
+    # Validation gate: don't leave broken artifacts on disk.
+    if errors:
+        return PackagerOutcome(
+            card=card,
+            readme_path=readme_path,
+            errors=tuple(errors),
+            assembled=False,
+        )
+
+    rendered = render_card(card)
+    huggingface_dir.mkdir(parents=True, exist_ok=True)
+
+    if dry_run:
+        # README-only — fast iteration path.  Write directly, don't
+        # invoke the assembler.
+        readme_path.write_text(rendered, encoding="utf-8")
+    else:
         assemble_upload_dir(
             release_dir,
             huggingface_dir,
             variant=variant,
+            rendered_readme=rendered,
             cover_image=cover_image,
         )
 
     return PackagerOutcome(
         card=card,
         readme_path=readme_path,
-        errors=tuple(errors),
+        errors=(),
         assembled=not dry_run,
     )
 
@@ -778,25 +842,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         default=DEFAULT_DEFAULT_CONFIG,
         help=(
             "config that carries default: true (G12.2; "
-            "default: %(default)s for public; ignored for instructor)"
-        ),
-    )
-    parser.add_argument(
-        "--owner",
-        default=DEFAULT_OWNER,
-        help=(
-            "HF dataset owner — currently informational; PR 7.2 will "
-            "consume it via ``huggingface_hub.HfApi().upload_folder``. "
-            "default: %(default)s"
-        ),
-    )
-    parser.add_argument(
-        "--dataset-slug",
-        default=None,
-        help=(
-            "HF dataset slug — currently informational; PR 7.2 will "
-            "consume it. defaults: leadforge-lead-scoring-v1 (public) / "
-            "leadforge-lead-scoring-v1-instructor (instructor)"
+            "default: %(default)s; rejected for --variant=instructor "
+            "which has only one config)"
         ),
     )
     parser.add_argument(
@@ -819,6 +866,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     huggingface_dir: Path = args.huggingface_dir or (
         DEFAULT_HUGGINGFACE_DIR if variant == "public" else DEFAULT_HUGGINGFACE_INSTRUCTOR_DIR
     )
+
+    # Reject silent misconfiguration — instructor variant has one
+    # config and ``--default-config`` is meaningless for it.
+    if variant == "instructor" and args.default_config != DEFAULT_DEFAULT_CONFIG:
+        print(
+            f"error: --default-config={args.default_config!r} is not valid with "
+            f"--variant=instructor (instructor has a single 'intermediate' config)",
+            file=sys.stderr,
+        )
+        return 2
 
     try:
         outcome = run_packager(
