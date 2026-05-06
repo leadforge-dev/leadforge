@@ -7,8 +7,8 @@ Locks the Phase 5 Kaggle packaging contract:
 * the README link-rewriting that lets the published dataset card on
   Kaggle keep working ``../`` links (rewritten to GitHub blob URLs)
   and a directory diagram that reflects the upload layout, plus a
-  guard that the source ``KAGGLE_TREE_BLOCK`` is still present
-  verbatim in the README (silent-failure trap)
+  guard that the source ``SOURCE_TREE_BLOCK`` (in ``_release_common``)
+  is still present verbatim in the README (silent-failure trap)
 * the assembled upload tree resolves every declared resource path
   (so ``kaggle datasets create`` can find each file)
 * the safety net that refuses to assemble into ``cwd`` /
@@ -175,7 +175,7 @@ def test_validate_cover_image_rejects_too_small_image(tmp_path: Path) -> None:
     errors = packager.validate_cover_image(tiny)
     assert errors
     assert errors[0].field == "cover_image"
-    assert "below Kaggle minimum" in errors[0].message
+    assert "below minimum" in errors[0].message
 
 
 def test_validate_cover_image_reports_missing_file(tmp_path: Path) -> None:
@@ -224,10 +224,10 @@ def test_kaggle_readme_text_rewrites_links_and_tree_diagram() -> None:
 
 
 @pytest.mark.skipif(not _RELEASE_BUNDLES_PRESENT, reason="release bundles not present")
-def test_kaggle_tree_block_is_present_in_release_readme() -> None:
+def test_source_tree_block_is_present_in_release_readme() -> None:
     """Silent-failure guard.
 
-    ``_kaggle_readme_text`` substitutes ``KAGGLE_TREE_BLOCK`` →
+    ``_kaggle_readme_text`` substitutes ``SOURCE_TREE_BLOCK`` →
     ``KAGGLE_UPLOAD_TREE_BLOCK`` via plain string replace.  If anyone
     tweaks the README's tree diagram by even one whitespace
     character, the substitution silently no-ops and the published
@@ -236,8 +236,8 @@ def test_kaggle_tree_block_is_present_in_release_readme() -> None:
     """
 
     readme = (_RELEASE_DIR / "README.md").read_text(encoding="utf-8")
-    assert packager.KAGGLE_TREE_BLOCK in readme, (
-        "scripts/package_kaggle_release.py KAGGLE_TREE_BLOCK no longer matches "
+    assert packager.SOURCE_TREE_BLOCK in readme, (
+        "scripts/_release_common.py SOURCE_TREE_BLOCK no longer matches "
         "the tree diagram in release/README.md — reconcile the two before "
         "the next release-metadata regeneration."
     )
@@ -245,19 +245,19 @@ def test_kaggle_tree_block_is_present_in_release_readme() -> None:
 
 @pytest.mark.skipif(not _RELEASE_BUNDLES_PRESENT, reason="release bundles not present")
 def test_validate_readme_substitution_flags_drift(tmp_path: Path) -> None:
-    """``_validate_readme_substitution`` is wired into the run-time
-    validator, not just the static guard above."""
+    """``validate_readme_substitution`` (now in ``_release_common``) is
+    wired into the run-time validator, not just the static guard above."""
 
     fake_release = tmp_path / "release"
     fake_release.mkdir()
     (fake_release / "README.md").write_text("# Some unrelated README\n", encoding="utf-8")
-    errors = packager._validate_readme_substitution(fake_release)
+    errors = packager.validate_readme_substitution(fake_release, packager_name="Kaggle")
     assert errors
     assert errors[0].field == "release/README.md"
-    assert "KAGGLE_TREE_BLOCK" in errors[0].message
+    assert "SOURCE_TREE_BLOCK" in errors[0].message
 
     # Sanity: the real release README does NOT trigger the validator.
-    assert packager._validate_readme_substitution(_RELEASE_DIR) == []
+    assert packager.validate_readme_substitution(_RELEASE_DIR, packager_name="Kaggle") == []
 
 
 @pytest.mark.skipif(not _RELEASE_BUNDLES_PRESENT, reason="release bundles not present")
@@ -366,6 +366,81 @@ def test_assemble_upload_dir_idempotent_against_existing_tree(tmp_path: Path) ->
 # ---------------------------------------------------------------------------
 # CLI driver — error paths
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(not _RELEASE_BUNDLES_PRESENT, reason="release bundles not present")
+def test_run_packager_rejects_unsafe_kaggle_dir_in_dry_run(tmp_path: Path) -> None:
+    """Copilot review on PR #72 item #1.
+
+    The earlier draft only checked ``--kaggle-dir`` safety inside
+    ``assemble_upload_dir``, which dry-run skips.  A user passing
+    ``--kaggle-dir release`` (i.e. ``release_dir`` itself) in dry-run
+    would write ``dataset-metadata.json`` into ``release/`` before
+    the safety net fired.  With the hoisted check, dry-run also
+    raises ``ValueError`` BEFORE any mkdir or write.
+    """
+
+    cover = tmp_path / "cover.png"
+    Image.new("RGB", (1280, 640), (0, 0, 0)).save(cover)
+
+    with pytest.raises(ValueError, match="unsafe"):
+        packager.run_packager(
+            _RELEASE_DIR,
+            kaggle_dir=_RELEASE_DIR,  # release_dir itself
+            cover_image=cover,
+            dry_run=True,
+        )
+
+    # ``release/dataset-metadata.json`` must not exist at the top
+    # level (it's gitignored anyway, but a stray write would still
+    # show up in ``git status``).
+    assert not (_RELEASE_DIR / "dataset-metadata.json").exists()
+
+
+@pytest.mark.skipif(not _RELEASE_BUNDLES_PRESENT, reason="release bundles not present")
+def test_run_packager_resolves_cover_image_via_release_fallback(tmp_path: Path) -> None:
+    """Copilot review on PR #72 item #2.
+
+    A bare-basename ``--cover-image`` that exists under ``release/``
+    must validate (via ``resolve_cover_image_path`` fallback) and
+    materialise into the assembled metadata's ``image`` field.
+    """
+
+    out_dir = tmp_path / "kaggle"
+    bare = Path(_COMMITTED_COVER.name)
+    assert not bare.is_absolute()
+
+    outcome = packager.run_packager(
+        _RELEASE_DIR,
+        kaggle_dir=out_dir,
+        cover_image=bare,
+        dry_run=True,
+    )
+    assert outcome.errors == ()
+    # Metadata's ``image`` field carries the resolved filename.
+    parsed = json.loads((out_dir / "dataset-metadata.json").read_text(encoding="utf-8"))
+    assert parsed["image"] == _COMMITTED_COVER.name
+
+
+@pytest.mark.skipif(not _RELEASE_BUNDLES_PRESENT, reason="release bundles not present")
+def test_run_packager_does_not_write_on_validation_failure(tmp_path: Path) -> None:
+    """A failed validation must NOT leave a corrupt metadata file on
+    disk (PR 5.2 self-review fix).
+
+    Forces a validation failure by passing a cover image that is too
+    small for Kaggle's 560×280 floor.  Asserts the metadata path
+    doesn't materialise and ``outcome.errors`` is populated.
+    """
+
+    tiny_cover = tmp_path / "tiny.png"
+    Image.new("RGB", (10, 10), (0, 0, 0)).save(tiny_cover)
+    out_dir = tmp_path / "kaggle"
+    outcome = packager.run_packager(_RELEASE_DIR, kaggle_dir=out_dir, cover_image=tiny_cover)
+    assert outcome.errors, "expected at least one validation error"
+    assert not (out_dir / "dataset-metadata.json").exists(), (
+        "metadata file must not be written when validation fails"
+    )
+    assert outcome.assembled is False
 
 
 def test_main_reports_missing_release_dir(
