@@ -37,6 +37,34 @@ SUBTITLE: Final[str] = "Synthetic B2B CRM funnel data for lead scoring"
 EXPECTED_UPDATE_FREQUENCY: Final[str] = "never"
 LICENSE_NAME: Final[str] = "MIT"
 IMAGE_FILENAME: Final[str] = "dataset-cover-image.png"
+GITHUB_BLOB_BASE: Final[str] = "https://github.com/leadforge-dev/leadforge/blob/main"
+KAGGLE_TREE_BLOCK: Final[str] = """```
+release/
+├── intro/ intermediate/ advanced/    # student_public bundles, one per difficulty tier
+│   ├── manifest.json                 # provenance + file hashes
+│   ├── dataset_card.md               # auto-rendered per-bundle card
+│   ├── feature_dictionary.csv        # authoritative column spec
+│   ├── lead_scoring.csv              # flat convenience CSV (all splits)
+│   ├── tables/*.parquet              # 7 snapshot-safe relational tables
+│   └── tasks/converted_within_90_days/{train,valid,test}.parquet
+├── intermediate_instructor/          # research companion: full-horizon tables + metadata/
+├── notebooks/01_baseline_lead_scoring.ipynb
+└── validation/                       # validation_report.{json,md} + figures
+```"""
+KAGGLE_UPLOAD_TREE_BLOCK: Final[str] = """```
+.
+├── intro/ intermediate/ advanced/    # student_public bundles, one per difficulty tier
+│   ├── manifest.json                 # provenance + file hashes
+│   ├── dataset_card.md               # auto-rendered per-bundle card
+│   ├── feature_dictionary.csv        # authoritative column spec
+│   ├── lead_scoring.csv              # flat convenience CSV (all splits)
+│   ├── tables/*.parquet              # 7 snapshot-safe relational tables
+│   └── tasks/converted_within_90_days/{train,valid,test}.parquet
+├── dataset-metadata.json             # Kaggle dataset metadata
+├── dataset-cover-image.png           # Kaggle cover image
+├── README.md                         # Kaggle package README
+└── LICENSE
+```"""
 
 KEYWORDS: Final[tuple[str, ...]] = (
     "synthetic-data",
@@ -213,9 +241,19 @@ def discover_resources(
     return tuple(resources)
 
 
+def _kaggle_readme_text(readme: str) -> str:
+    text = readme.replace(KAGGLE_TREE_BLOCK, KAGGLE_UPLOAD_TREE_BLOCK)
+    text = re.sub(r"\]\(\.\./([^)]+)\)", rf"]({GITHUB_BLOB_BASE}/\1)", text)
+    text = text.replace(
+        "](validation/validation_report.md)",
+        f"]({GITHUB_BLOB_BASE}/release/validation/validation_report.md)",
+    )
+    return text
+
+
 def _read_release_description(release_dir: Path) -> str:
     readme = (release_dir / "README.md").read_text(encoding="utf-8")
-    return readme.replace("../", "https://github.com/leadforge-dev/leadforge/blob/main/")
+    return _kaggle_readme_text(readme)
 
 
 def _resource_to_json(resource: KaggleResource) -> dict[str, Any]:
@@ -311,6 +349,10 @@ def _copy_path(src: Path, dst: Path) -> None:
     shutil.copy2(src, dst)
 
 
+def _write_kaggle_readme(src: Path, dst: Path) -> None:
+    dst.write_text(_kaggle_readme_text(src.read_text(encoding="utf-8")), encoding="utf-8")
+
+
 def _normalize_text_eofs(root: Path) -> None:
     text_suffixes = {".csv", ".json", ".md"}
     for path in root.rglob("*"):
@@ -330,12 +372,13 @@ def build_upload_dir(
     *,
     tiers: tuple[str, ...] = DEFAULT_TIERS,
 ) -> None:
+    _validate_out_dir_safe(out_dir, release_dir)
     if out_dir.exists():
         shutil.rmtree(out_dir)
     out_dir.mkdir(parents=True)
 
-    for filename in ("README.md", "LICENSE"):
-        _copy_path(release_dir / filename, out_dir / filename)
+    _write_kaggle_readme(release_dir / "README.md", out_dir / "README.md")
+    _copy_path(release_dir / "LICENSE", out_dir / "LICENSE")
     _copy_path(cover_image, out_dir / IMAGE_FILENAME)
 
     for tier in tiers:
@@ -343,6 +386,18 @@ def build_upload_dir(
         tier_dst = out_dir / tier
         shutil.copytree(tier_src, tier_dst)
     _normalize_text_eofs(out_dir)
+
+
+def _validate_out_dir_safe(out_dir: Path, release_dir: Path) -> None:
+    resolved = out_dir.resolve()
+    blocked = {
+        Path(resolved.anchor),
+        Path.cwd().resolve(),
+        release_dir.resolve(),
+        release_dir.resolve().parent,
+    }
+    if resolved in blocked:
+        raise ValueError(f"refusing to delete unsafe --out-dir: {out_dir}")
 
 
 def validate_metadata(metadata: dict[str, Any]) -> list[str]:
@@ -434,7 +489,12 @@ def package_release(
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--release-dir", type=Path, default=DEFAULT_RELEASE_DIR)
-    parser.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR)
+    parser.add_argument(
+        "--out-dir",
+        type=Path,
+        default=DEFAULT_OUT_DIR,
+        help="Generated upload directory; if it exists, this directory is deleted first.",
+    )
     parser.add_argument("--cover-image", type=Path, default=DEFAULT_COVER_IMAGE)
     parser.add_argument(
         "--dry-run",

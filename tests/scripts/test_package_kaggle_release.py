@@ -14,6 +14,7 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 _SCRIPT_PATH = Path(__file__).resolve().parents[2] / "scripts" / "package_kaggle_release.py"
@@ -112,6 +113,31 @@ def test_package_release_writes_upload_directory(tmp_path: Path) -> None:
     assert (out_dir / packager.IMAGE_FILENAME).exists()
     assert (out_dir / "intro" / "lead_scoring.csv").exists()
     assert packager.validate_upload_dir(out_dir, metadata) == []
+
+
+def test_package_release_rewrites_kaggle_readme_links(tmp_path: Path) -> None:
+    out_dir = tmp_path / "kaggle"
+    cover = tmp_path / "dataset-cover-image.png"
+
+    metadata = packager.package_release(_RELEASE_SOURCE_DIR, out_dir, cover)
+    readme = (out_dir / "README.md").read_text(encoding="utf-8")
+
+    assert "intermediate_instructor/" not in readme
+    assert "notebooks/01_baseline_lead_scoring.ipynb" not in readme
+    assert "](validation/validation_report.md)" not in readme
+    assert "](../" not in readme
+    assert (
+        "github.com/leadforge-dev/leadforge/blob/main/release/validation/validation_report.md"
+        in readme
+    )
+    assert "](validation/validation_report.md)" not in metadata["description"]
+
+
+def test_package_release_rejects_unsafe_out_dir(tmp_path: Path) -> None:
+    cover = tmp_path / "dataset-cover-image.png"
+
+    with pytest.raises(ValueError, match="refusing to delete unsafe --out-dir"):
+        packager.package_release(_RELEASE_SOURCE_DIR, _RELEASE_SOURCE_DIR.parent, cover)
 
 
 def test_main_reports_missing_release_dir(tmp_path: Path, capsys) -> None:
