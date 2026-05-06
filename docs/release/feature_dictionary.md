@@ -15,8 +15,9 @@ in `metadata/`; it does not change the feature list.
 | Category | Columns | Modelling default |
 |---|---|---|
 | Lead identity & timing | 4 | drop `lead_id`; keep `lead_created_at` for cohort splits, drop for production |
-| Firmographics | 6 | keep all |
-| Personographics | 4 | keep all (categorical encoders welcome) |
+| Lead source & channel | 2 | keep both |
+| Firmographics | 5 | keep all |
+| Personographics | 3 | keep all (categorical encoders welcome) |
 | Engagement (snapshot-window) | 10 | keep all |
 | Funnel & sales-process | 4 | keep all |
 | Value | 2 | keep all |
@@ -32,12 +33,33 @@ in `metadata/`; it does not change the feature list.
 | `contact_id` | string | identity | Foreign key into `tables/contacts.parquet`. Same warning. |
 | `lead_created_at` | string (ISO-8601) | simulation clock | Lead birthday; useful for cohort/time-shift evaluation (see `docs/release/v1_acceptance_gates.md` G6.4). Drop or bin it for production models — feeding raw timestamps to a linear model is rarely what you want. |
 
+## Lead source and channel
+
+Two columns describe how each lead entered the funnel. They are
+populated from the recipe's GTM-motion mix
+(`inbound_marketing` 45%, `sdr_outbound` 35%, `partner_referral`
+20%) and are identical between the two columns in v1 — both encode
+the same origination channel under different field names.
+
+| Column | Dtype | Why it might matter |
+|---|---|---|
+| `lead_source` | string | Origination channel; one of `inbound_marketing` / `sdr_outbound` / `partner_referral`. |
+| `first_touch_channel` | string | Marketing channel of the first recorded touch. Always equals `lead_source` in v1; the field exists to support post-v1 work where origination and first-touch can diverge. |
+
+**Caveat.** Per [`docs/release/channel_signal_audit.md`](channel_signal_audit.md),
+v1's channel signal is weak: per-channel rate spread ≤ 0.043 and
+univariate AUC ≤ 0.521 across all tiers, well below the G2 /
+Gemini v2 industry MQL→SQL band (SEO ~51%, PPC ~26%, Email <1%).
+Expect modest feature importance from these columns; do not expect
+channel to be a top-tier predictor in v1.
+
 ## Firmographics (account-level)
 
 These describe the buying organisation. They come from the recipe's
 narrative spec (industry, region, employee bands, revenue bands)
-and from latent traits sampled per account. Six columns; all are
-fair to use.
+and from latent traits sampled per account. Five columns plus the
+`account_id` foreign key listed under "Lead identity and timing"
+above; all five are fair to use as features.
 
 | Column | Dtype | Why it might matter |
 |---|---|---|
@@ -45,13 +67,13 @@ fair to use.
 | `region` | string | `US` / `UK`. Currently a low-signal axis — the simulator does not model channel-by-region interactions. |
 | `employee_band` | string | Bands are aligned with the ICP range (200–2,000 employees, plus tails). Larger accounts trend toward higher expected ACV. |
 | `estimated_revenue_band` | string | Bands span `$1M-$10M` to `$200M+`; correlated with `employee_band` by design. |
-| `process_maturity_band` | string | A bandage of the latent `process_maturity` trait — *visible* signal of `motif_family.fit_dominant`'s "fit beats engagement" story. |
+| `process_maturity_band` | string | A discretisation of the latent `process_maturity` trait — *visible* signal of `motif_family.fit_dominant`'s "fit beats engagement" story. |
 
 ## Personographics (contact-level)
 
-These describe the primary contact attached to the lead.
-Three categorical features plus the buyer-role label; all four
-are fair to use.
+These describe the primary contact attached to the lead. Three
+categorical features (the `contact_id` foreign key is listed
+under "Lead identity and timing"); all three are fair to use.
 
 | Column | Dtype | Why it might matter |
 |---|---|---|
