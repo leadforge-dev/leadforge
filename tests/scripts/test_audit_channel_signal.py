@@ -241,35 +241,26 @@ def test_release_audit_is_deterministic(tmp_path: Path) -> None:
     """Two back-to-back runs against the committed release bundle must
     produce byte-identical JSON and markdown output."""
 
-    out_md_a = tmp_path / "a.md"
-    out_json_a = tmp_path / "a.json"
-    out_md_b = tmp_path / "b.md"
-    out_json_b = tmp_path / "b.json"
+    out_md = tmp_path / "audit.md"
+    out_json = tmp_path / "audit.json"
+    cli_args = [
+        "--release-dir",
+        str(_REPO_ROOT / "release"),
+        "--out-md",
+        str(out_md),
+        "--out-json",
+        str(out_json),
+    ]
+    assert audit_module.main(cli_args) == 0
+    bytes_md_a = out_md.read_bytes()
+    bytes_json_a = out_json.read_bytes()
 
-    rc_a = audit_module.main(
-        [
-            "--release-dir",
-            str(_REPO_ROOT / "release"),
-            "--out-md",
-            str(out_md_a),
-            "--out-json",
-            str(out_json_a),
-        ]
-    )
-    rc_b = audit_module.main(
-        [
-            "--release-dir",
-            str(_REPO_ROOT / "release"),
-            "--out-md",
-            str(out_md_b),
-            "--out-json",
-            str(out_json_b),
-        ]
-    )
-    assert rc_a == 0
-    assert rc_b == 0
-    assert out_md_a.read_bytes() == out_md_b.read_bytes()
-    assert out_json_a.read_bytes() == out_json_b.read_bytes()
+    assert audit_module.main(cli_args) == 0
+    bytes_md_b = out_md.read_bytes()
+    bytes_json_b = out_json.read_bytes()
+
+    assert bytes_md_a == bytes_md_b
+    assert bytes_json_a == bytes_json_b
 
 
 def test_main_reports_missing_release_dir(
@@ -348,8 +339,12 @@ def test_committed_audit_artifacts_match_fresh_regeneration(
     # default (relative) ``release`` argument.
     monkeypatch.chdir(_REPO_ROOT)
 
-    out_md = tmp_path / "audit.md"
-    out_json = tmp_path / "audit.json"
+    # The committed markdown links the JSON sibling by relative
+    # filename (rendered from --out-md and --out-json being siblings),
+    # so re-run with the same basenames so the byte comparison covers
+    # the full file including the link line.
+    out_md = tmp_path / "channel_signal_audit.md"
+    out_json = tmp_path / "channel_signal_audit.json"
     rc = audit_module.main(
         [
             "--out-md",

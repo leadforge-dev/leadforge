@@ -150,10 +150,15 @@ class AuditReport:
 
 
 def _label_to_int(series: pd.Series) -> pd.Series:
-    """Coerce a (possibly nullable boolean) label to ``int``."""
+    """Coerce a label column to ``int``.
 
-    if series.dtype == "bool":
-        return series.astype(int)
+    Handles three dtypes the v1 bundles actually carry: numpy ``bool``,
+    pandas nullable ``BooleanDtype`` (used by the parquet schema), and
+    plain numeric.  Other dtypes raise via ``pd.to_numeric``.
+    """
+
+    if pd.api.types.is_bool_dtype(series):
+        return series.astype("Int64").astype(int)
     return pd.to_numeric(series, errors="raise").astype(int)
 
 
@@ -387,15 +392,40 @@ def _group_identical_columns(audits: Sequence[ChannelAudit]) -> list[ChannelGrou
     return groups
 
 
-def render_markdown(report: AuditReport) -> str:
-    """Render the audit report as Markdown."""
+def render_markdown(
+    report: AuditReport,
+    *,
+    md_path: Path | None = None,
+    json_path: Path | None = None,
+) -> str:
+    """Render the audit report as Markdown.
+
+    The inline "see also" link to the machine-readable sibling adapts
+    to the actual output paths: when ``md_path`` and ``json_path`` are
+    given, the link is the JSON path expressed *relative to the
+    markdown file's directory* so it works whether the artifacts are
+    written to the canonical ``docs/release/`` location, a tmp
+    directory, or anywhere a CI script overrides.  When neither is
+    given, the link is the canonical ``channel_signal_audit.json``
+    filename.
+    """
+
+    if md_path is not None and json_path is not None:
+        try:
+            json_link = str(Path(json_path).relative_to(Path(md_path).parent))
+        except ValueError:
+            # Different drive roots — keep the markdown readable by
+            # falling back to the caller's path verbatim.
+            json_link = str(json_path)
+    else:
+        json_link = DEFAULT_OUT_JSON.name
 
     lines: list[str] = []
     lines.append("# Channel-signal audit — leadforge-lead-scoring-v1")
     lines.append("")
     lines.append(
         "Audit produced by `scripts/audit_channel_signal.py`; see "
-        "`docs/release/channel_signal_audit.json` for the machine-readable form."
+        f"`{json_link}` for the machine-readable form."
     )
     lines.append("")
     lines.append(
@@ -473,19 +503,22 @@ def render_markdown(report: AuditReport) -> str:
     lines.append("Two empirical observations a reader can make from the numbers above:")
     lines.append("")
     lines.append(
-        "1. **The out-of-sample univariate AUC reproduces the `source_only` baseline** in "
-        "`release/validation/validation_report.json` (HistGBM trained on `lead_source` + "
-        "`first_touch_channel` against the same test split). For seed 42 the OOS numbers "
-        "below match the report cell-for-cell. The in-sample number is biased upward by "
-        "construction — small at v1's N but visible — so the OOS number is the one to "
-        "compare against any external baseline."
+        "1. **The out-of-sample univariate AUC is the comparable number** for any "
+        "external baseline. It uses train-derived rates scored against held-out test "
+        "labels — the same shape as the `source_only` HistGBM baseline reported in "
+        "`release/validation/validation_report.json`, which is built on the same task "
+        "splits with `lead_source` + `first_touch_channel` as the only features. The "
+        "in-sample number is biased upward by construction — small at v1's N but "
+        "visible — and is reported here for transparency rather than comparison."
     )
     lines.append(
-        "2. **Out-of-sample univariate AUC is close to chance** in every tier and the "
-        "per-channel conversion-rate spread is small (≤0.05). Channel alone is a weak "
-        "feature in v1 — consistent with the design: the simulator drives conversion "
-        "through motif-family hazards keyed off latent traits, not channel-conditional "
-        "probabilities. Channel-conditional encoding is tracked as post-v1 work in "
+        "2. **The numerical conclusion is bundle-specific.** When the per-channel rate "
+        "spread is small and the OOS univariate AUC is close to chance, channel alone "
+        "is a weak feature for the bundle this audit was run against. v1's bundles "
+        "currently produce that outcome (see the per-tier sections above) — consistent "
+        "with the design: the simulator drives conversion through motif-family hazards "
+        "keyed off latent traits, not channel-conditional probabilities. "
+        "Channel-conditional encoding is tracked as post-v1 work in "
         "`docs/release/post_v1_roadmap.md`."
     )
     lines.append("")
@@ -573,13 +606,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"error: required column missing: {exc}", file=sys.stderr)
         return 2
 
-    md = render_markdown(report)
+    md = render_markdown(report, md_path=args.out_md, json_path=args.out_json)
     js = render_json(report)
 
     args.out_md.parent.mkdir(parents=True, exist_ok=True)
     args.out_json.parent.mkdir(parents=True, exist_ok=True)
-    args.out_md.write_text(md)
-    args.out_json.write_text(js)
+    # Pin UTF-8 explicitly so the audit output is byte-identical across
+    # operating systems and locale configurations.
+    args.out_md.write_text(md, encoding="utf-8")
+    args.out_json.write_text(js, encoding="utf-8")
 
     if args.print:
         sys.stdout.write(md)

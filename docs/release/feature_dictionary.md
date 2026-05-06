@@ -99,8 +99,8 @@ features cannot encode events that drove the late-window outcome.
 | `pricing_page_views` | Int64 | Cumulative pricing-page views across sessions. |
 | `demo_page_views` | Int64 | Cumulative demo-page views across sessions. |
 | `total_session_duration_seconds` | Int64 | Cumulative seconds across all sessions. |
-| `touches_week_1` | Int64 | Touches in days 0–6 (early urgency proxy). |
-| `touches_last_7_days` | Int64 | Touches in days 24–30 (late-window momentum proxy). |
+| `touches_week_1` | Int64 | Touches in days 0–7 inclusive (early urgency proxy; the snapshot builder uses `_day <= 7`, which is 8 day values). |
+| `touches_last_7_days` | Int64 | Touches in the last 7 days of the snapshot window — for `snapshot_day=30`, days 24–30 inclusive (the snapshot builder uses `_day > snapshot_day - 7`). |
 | `days_since_first_touch` | Float64 | NaN if the lead has had zero touches by snapshot day. |
 
 ## Funnel and sales-process

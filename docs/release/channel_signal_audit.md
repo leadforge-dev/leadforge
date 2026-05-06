@@ -1,6 +1,6 @@
 # Channel-signal audit — leadforge-lead-scoring-v1
 
-Audit produced by `scripts/audit_channel_signal.py`; see `docs/release/channel_signal_audit.json` for the machine-readable form.
+Audit produced by `scripts/audit_channel_signal.py`; see `channel_signal_audit.json` for the machine-readable form.
 
 **Scope.** For every tier we compute per-channel conversion rates on the train split and the univariate AUC of channel against `converted_within_90_days`, scored as the empirical positive rate per channel (a 1-D Bayes classifier). Two AUCs are reported: an **in-sample** number (train rates → train labels — biased upward by construction) and an **out-of-sample** number (train rates → test labels — directly comparable to the `source_only` baselines in `release/validation/validation_report.json`).
 
@@ -62,5 +62,5 @@ The numbers above answer one question: *how strongly does channel alone signal 9
 
 Two empirical observations a reader can make from the numbers above:
 
-1. **The out-of-sample univariate AUC reproduces the `source_only` baseline** in `release/validation/validation_report.json` (HistGBM trained on `lead_source` + `first_touch_channel` against the same test split). For seed 42 the OOS numbers below match the report cell-for-cell. The in-sample number is biased upward by construction — small at v1's N but visible — so the OOS number is the one to compare against any external baseline.
-2. **Out-of-sample univariate AUC is close to chance** in every tier and the per-channel conversion-rate spread is small (≤0.05). Channel alone is a weak feature in v1 — consistent with the design: the simulator drives conversion through motif-family hazards keyed off latent traits, not channel-conditional probabilities. Channel-conditional encoding is tracked as post-v1 work in `docs/release/post_v1_roadmap.md`.
+1. **The out-of-sample univariate AUC is the comparable number** for any external baseline. It uses train-derived rates scored against held-out test labels — the same shape as the `source_only` HistGBM baseline reported in `release/validation/validation_report.json`, which is built on the same task splits with `lead_source` + `first_touch_channel` as the only features. The in-sample number is biased upward by construction — small at v1's N but visible — and is reported here for transparency rather than comparison.
+2. **The numerical conclusion is bundle-specific.** When the per-channel rate spread is small and the OOS univariate AUC is close to chance, channel alone is a weak feature for the bundle this audit was run against. v1's bundles currently produce that outcome (see the per-tier sections above) — consistent with the design: the simulator drives conversion through motif-family hazards keyed off latent traits, not channel-conditional probabilities. Channel-conditional encoding is tracked as post-v1 work in `docs/release/post_v1_roadmap.md`.

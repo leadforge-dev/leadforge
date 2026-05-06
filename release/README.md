@@ -55,9 +55,13 @@ df = pd.read_csv("intermediate/lead_scoring.csv")
 train = pd.read_parquet("intermediate/tasks/converted_within_90_days/train.parquet")
 test  = pd.read_parquet("intermediate/tasks/converted_within_90_days/test.parquet")
 
-# Relational tables (feature engineering)
+# Relational tables (feature engineering — example)
 leads   = pd.read_parquet("intermediate/tables/leads.parquet")
 touches = pd.read_parquet("intermediate/tables/touches.parquet")
+my_touch_count = (
+    touches.groupby("lead_id").size().rename("my_touch_count").reset_index()
+)
+features = leads.merge(my_touch_count, on="lead_id", how="left")
 
 # Reproduce from source
 # pip install leadforge
