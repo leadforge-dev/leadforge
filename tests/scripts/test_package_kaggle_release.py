@@ -4,23 +4,27 @@ Locks the Phase 5 Kaggle packaging contract:
 
 * every Kaggle field constraint surfaced in chatgpt v2 §19 (G11.1)
 * the cover-image dimension floor (G11.2)
-* schema-fields-in-column-order for every tabular resource — both
-  flat CSVs (driven by ``feature_dictionary.csv``) and parquet files
-  (driven by the Arrow schema)
 * the README link-rewriting that lets the published dataset card on
   Kaggle keep working ``../`` links (rewritten to GitHub blob URLs)
-  and a directory diagram that reflects the upload layout
-* byte-equality between the committed ``release/kaggle/dataset-metadata.json``
-  and a fresh regeneration (audit-artifact-sync pattern from PR 4.1)
+  and a directory diagram that reflects the upload layout, plus a
+  guard that the source ``KAGGLE_TREE_BLOCK`` is still present
+  verbatim in the README (silent-failure trap)
+* the assembled upload tree resolves every declared resource path
+  (so ``kaggle datasets create`` can find each file)
+* the safety net that refuses to assemble into ``cwd`` /
+  ``release_dir`` / its parent
+* byte-equality + content-shape between the committed
+  ``release/kaggle/dataset-metadata.json`` and a fresh regeneration
+  (audit-artifact-sync pattern from PR 4.1)
 """
 
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
-import pyarrow.parquet as pq
 import pytest
 from PIL import Image
 
@@ -72,6 +76,12 @@ def _minimal_metadata() -> packager.DatasetMetadata:
             ),
         ),
     )
+
+
+def _make_valid_cover(path: Path) -> None:
+    """Write a minimum-Kaggle-acceptable cover image at ``path``."""
+
+    Image.new("RGB", (1280, 640), (0, 0, 0)).save(path)
 
 
 # ---------------------------------------------------------------------------
@@ -175,37 +185,17 @@ def test_validate_cover_image_reports_missing_file(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Schema fields — column-order parity for tabular resources
+# Schema fields — derive-from-source contract
+#
+# The flat-CSV schema is built by iterating the CSV header, so column-
+# order parity with the CSV is a construction-time invariant.  The
+# parquet schema comes straight from ``pq.read_schema``, same story.
+# Re-checking either via a separate validator is tautological — the
+# real coverage is the audit-artifact-sync test below
+# (``test_committed_kaggle_metadata_matches_fresh_regeneration``),
+# which fails the moment any tier's CSV header or parquet schema
+# drifts without a matching metadata regeneration.
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.skipif(not _RELEASE_BUNDLES_PRESENT, reason="release bundles not present")
-def test_lead_scoring_resource_schema_follows_csv_column_order() -> None:
-    """Field order in the metadata matches the flat CSV's column order
-    for every tier (the constraint Kaggle's schema spec calls out)."""
-
-    for tier in packager.DEFAULT_TIERS:
-        resources = packager.build_tier_resources(_RELEASE_DIR, tier)
-        flat = next(r for r in resources if r.path == f"{tier}/lead_scoring.csv")
-        assert flat.schema is not None
-        names = [f.name for f in flat.schema.fields]
-        assert names[0] == "split"
-        assert names[1] == "account_id"
-        assert names[-1] == "converted_within_90_days"
-
-
-@pytest.mark.skipif(not _RELEASE_BUNDLES_PRESENT, reason="release bundles not present")
-def test_parquet_resource_schemas_match_arrow_column_order() -> None:
-    """Parquet schemas in the metadata match the parquet file itself."""
-
-    resources = packager.build_tier_resources(_RELEASE_DIR, "intro")
-    train = next(
-        r for r in resources if r.path.endswith("/tasks/converted_within_90_days/train.parquet")
-    )
-    assert train.schema is not None
-    train_path = _RELEASE_DIR / "intro" / "tasks" / "converted_within_90_days" / "train.parquet"
-    expected = list(pq.read_schema(train_path).names)
-    assert [f.name for f in train.schema.fields] == expected
 
 
 # ---------------------------------------------------------------------------
@@ -234,25 +224,88 @@ def test_kaggle_readme_text_rewrites_links_and_tree_diagram() -> None:
 
 
 @pytest.mark.skipif(not _RELEASE_BUNDLES_PRESENT, reason="release bundles not present")
+def test_kaggle_tree_block_is_present_in_release_readme() -> None:
+    """Silent-failure guard.
+
+    ``_kaggle_readme_text`` substitutes ``KAGGLE_TREE_BLOCK`` →
+    ``KAGGLE_UPLOAD_TREE_BLOCK`` via plain string replace.  If anyone
+    tweaks the README's tree diagram by even one whitespace
+    character, the substitution silently no-ops and the published
+    Kaggle dataset card carries the source-repo tree.  This guard
+    fires loudly the moment the constants drift apart.
+    """
+
+    readme = (_RELEASE_DIR / "README.md").read_text(encoding="utf-8")
+    assert packager.KAGGLE_TREE_BLOCK in readme, (
+        "scripts/package_kaggle_release.py KAGGLE_TREE_BLOCK no longer matches "
+        "the tree diagram in release/README.md — reconcile the two before "
+        "the next release-metadata regeneration."
+    )
+
+
+@pytest.mark.skipif(not _RELEASE_BUNDLES_PRESENT, reason="release bundles not present")
+def test_validate_readme_substitution_flags_drift(tmp_path: Path) -> None:
+    """``_validate_readme_substitution`` is wired into the run-time
+    validator, not just the static guard above."""
+
+    fake_release = tmp_path / "release"
+    fake_release.mkdir()
+    (fake_release / "README.md").write_text("# Some unrelated README\n", encoding="utf-8")
+    errors = packager._validate_readme_substitution(fake_release)
+    assert errors
+    assert errors[0].field == "release/README.md"
+    assert "KAGGLE_TREE_BLOCK" in errors[0].message
+
+    # Sanity: the real release README does NOT trigger the validator.
+    assert packager._validate_readme_substitution(_RELEASE_DIR) == []
+
+
+@pytest.mark.skipif(not _RELEASE_BUNDLES_PRESENT, reason="release bundles not present")
 def test_assembled_upload_dir_writes_rewritten_readme_copy(tmp_path: Path) -> None:
-    """The README inside ``release/kaggle/`` is a real file (not a
-    symlink) and carries the rewrites — Kaggle reads this verbatim
-    on the dataset page."""
+    """The README inside the upload tree is a real file with the
+    rewrites — Kaggle reads this verbatim on the dataset page."""
 
     kaggle_dir = tmp_path / "kaggle"
     cover_image = tmp_path / "cover.png"
-    Image.new("RGB", (1280, 640), (0, 0, 0)).save(cover_image)
-    packager.run_packager(
-        _RELEASE_DIR,
-        kaggle_dir=kaggle_dir,
-        cover_image=cover_image,
-    )
+    _make_valid_cover(cover_image)
+    packager.run_packager(_RELEASE_DIR, kaggle_dir=kaggle_dir, cover_image=cover_image)
+
     kaggle_readme = kaggle_dir / "README.md"
-    assert kaggle_readme.exists()
+    assert kaggle_readme.is_file()
     assert not kaggle_readme.is_symlink()
     contents = kaggle_readme.read_text(encoding="utf-8")
     assert "](../" not in contents
     assert packager.GITHUB_BLOB_BASE in contents
+
+
+@pytest.mark.skipif(not _RELEASE_BUNDLES_PRESENT, reason="release bundles not present")
+def test_assembled_upload_dir_resolves_every_declared_resource(tmp_path: Path) -> None:
+    """Every ``resources[].path`` declared in the metadata must resolve
+    to a real file (not a symlink, not a missing path) under the
+    assembled upload directory.  Kaggle's CLI walks the directory at
+    upload time; a declared resource that doesn't materialise is a
+    silent upload-time failure.
+    """
+
+    kaggle_dir = tmp_path / "kaggle"
+    cover_image = tmp_path / "cover.png"
+    _make_valid_cover(cover_image)
+    outcome = packager.run_packager(_RELEASE_DIR, kaggle_dir=kaggle_dir, cover_image=cover_image)
+
+    # Every resource path resolves to a real file.
+    for resource in outcome.metadata.resources:
+        target = kaggle_dir / resource.path
+        assert target.is_file(), f"declared resource missing from upload tree: {resource.path}"
+        assert not target.is_symlink(), (
+            f"declared resource is a symlink, not a real file: {resource.path} — "
+            f"Kaggle's CLI may skip symlinked entries on upload"
+        )
+
+    # Top-level required artefacts.
+    assert (kaggle_dir / "dataset-metadata.json").is_file()
+    assert (kaggle_dir / "README.md").is_file()
+    assert (kaggle_dir / cover_image.name).is_file()
+    assert not (kaggle_dir / cover_image.name).is_symlink()
 
 
 # ---------------------------------------------------------------------------
@@ -269,6 +322,45 @@ def test_assemble_upload_dir_rejects_unsafe_kaggle_dir(tmp_path: Path) -> None:
         packager.assemble_upload_dir(fake_release, fake_release)
     with pytest.raises(ValueError, match="unsafe"):
         packager.assemble_upload_dir(fake_release, fake_release.parent)
+
+
+def test_assemble_upload_dir_rejects_kaggle_dir_equal_to_cwd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Refuse to assemble into the current working directory.
+
+    A user passing ``--kaggle-dir .`` (or running from inside the
+    intended ``kaggle_dir``) would otherwise rmtree-then-recopy
+    arbitrary cwd contents.  This is the most-likely-to-trigger
+    safety case and was missing test coverage in the initial PR.
+    """
+
+    fake_release = tmp_path / "release"
+    fake_release.mkdir()
+    cwd = tmp_path / "workdir"
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)
+    with pytest.raises(ValueError, match="unsafe"):
+        packager.assemble_upload_dir(fake_release, cwd)
+
+
+def test_assemble_upload_dir_idempotent_against_existing_tree(tmp_path: Path) -> None:
+    """Re-running the assembly over an already-populated upload tree
+    succeeds — the previous PR's symlink-vs-file confusion is no
+    longer possible because both passes call the same copy helpers."""
+
+    if not _RELEASE_BUNDLES_PRESENT:
+        pytest.skip("release bundles not present")
+
+    kaggle_dir = tmp_path / "kaggle"
+    cover_image = tmp_path / "cover.png"
+    _make_valid_cover(cover_image)
+    packager.run_packager(_RELEASE_DIR, kaggle_dir=kaggle_dir, cover_image=cover_image)
+    # Second pass against the same kaggle_dir.
+    outcome = packager.run_packager(_RELEASE_DIR, kaggle_dir=kaggle_dir, cover_image=cover_image)
+    assert outcome.errors == ()
+    for resource in outcome.metadata.resources:
+        assert (kaggle_dir / resource.path).is_file()
 
 
 # ---------------------------------------------------------------------------
@@ -306,7 +398,7 @@ def test_run_packager_metadata_is_byte_deterministic(tmp_path: Path) -> None:
     produce byte-identical metadata files."""
 
     cover = tmp_path / "cover.png"
-    Image.new("RGB", (1280, 640), (0, 0, 0)).save(cover)
+    _make_valid_cover(cover)
 
     out_a = tmp_path / "a"
     out_b = tmp_path / "b"
@@ -317,26 +409,128 @@ def test_run_packager_metadata_is_byte_deterministic(tmp_path: Path) -> None:
     ).read_bytes()
 
 
+def test_render_metadata_emits_literal_unicode_not_escapes() -> None:
+    """``ensure_ascii=False`` keeps em-dashes, ``×``, smart quotes etc.
+    rendered literally so the committed JSON stays diffable."""
+
+    metadata = _minimal_metadata()
+    rendered = packager.render_metadata_json(
+        packager.DatasetMetadata(**{**metadata.__dict__, "description": "a — b × c"})
+    )
+    assert "a — b × c" in rendered
+    assert "\\u2014" not in rendered
+    assert "\\u00d7" not in rendered
+
+
+def test_render_metadata_keywords_are_sorted_at_render_time() -> None:
+    """Keywords are sorted in the rendered JSON regardless of the
+    order they were declared on the metadata object — locks the
+    determinism contract independent of the ``DEFAULT_KEYWORDS``
+    constant ordering."""
+
+    base = _minimal_metadata()
+    shuffled = packager.DatasetMetadata(
+        **{**base.__dict__, "keywords": ("zebra", "alpha", "mango")},
+    )
+    parsed = json.loads(packager.render_metadata_json(shuffled))
+    assert parsed["keywords"] == ["alpha", "mango", "zebra"]
+
+
+# ---------------------------------------------------------------------------
+# Kaggle CLI shape validation (G11.3) — gated, opt-in
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(not _RELEASE_BUNDLES_PRESENT, reason="release bundles not present")
+def test_kaggle_cli_accepts_assembled_metadata(tmp_path: Path) -> None:
+    """G11.3 — feed the assembled tree to the actual Kaggle metadata
+    validator and assert it accepts the shape.
+
+    Skipped unless the optional ``kaggle`` package is installed
+    (``pip install -e '.[publish]'``); we deliberately don't make
+    that a hard dependency because the kaggle SDK pulls in a long
+    transitive tail.  The Kaggle SDK exposes a metadata validator
+    via ``kaggle.api.validate_dataset_metadata`` (path varies by
+    version); we look it up dynamically and skip if absent rather
+    than hard-couple to one CLI version.
+    """
+
+    kaggle = pytest.importorskip("kaggle", reason="kaggle SDK not installed")
+    kaggle_dir = tmp_path / "kaggle"
+    cover = tmp_path / "cover.png"
+    _make_valid_cover(cover)
+    packager.run_packager(_RELEASE_DIR, kaggle_dir=kaggle_dir, cover_image=cover)
+
+    # Search for a metadata-validator entry point on the kaggle API.
+    api = kaggle.api
+    candidates = [
+        getattr(api, name, None)
+        for name in (
+            "validate_dataset_metadata",
+            "_validate_dataset_metadata",
+            "process_resources",
+        )
+    ]
+    validator = next((c for c in candidates if callable(c)), None)
+    if validator is None:
+        pytest.skip("no Kaggle metadata-validator entry point found on the installed SDK")
+
+    # Different Kaggle SDK versions expose different signatures; try
+    # the most common shapes.  We're treating "no exception raised"
+    # as acceptance.
+    try:
+        validator(str(kaggle_dir))
+    except TypeError:
+        validator(str(kaggle_dir / "dataset-metadata.json"))
+
+
 @pytest.mark.skipif(
     not (_RELEASE_BUNDLES_PRESENT and _COMMITTED_METADATA.exists()),
     reason="release bundles or committed metadata missing",
 )
 def test_committed_kaggle_metadata_matches_fresh_regeneration(tmp_path: Path) -> None:
     """A fresh metadata regeneration must match the committed
-    ``release/kaggle/dataset-metadata.json`` byte-for-byte.
+    ``release/kaggle/dataset-metadata.json`` byte-for-byte AND have
+    a non-degenerate description / id / image.
 
     If this fails, ``release/`` drifted without re-running
-    ``scripts/package_kaggle_release.py``.  Regenerate via that script
-    from the repo root and commit the new metadata alongside the
-    bundle change.
+    ``scripts/package_kaggle_release.py``.  Regenerate via that
+    script from the repo root and commit the new metadata alongside
+    the bundle change.
     """
 
     cover = _COMMITTED_COVER if _COMMITTED_COVER.exists() else tmp_path / "cover.png"
     if not _COMMITTED_COVER.exists():
-        Image.new("RGB", (1280, 640), (0, 0, 0)).save(cover)
+        _make_valid_cover(cover)
 
     fresh_dir = tmp_path / "kaggle"
     packager.run_packager(_RELEASE_DIR, kaggle_dir=fresh_dir, cover_image=cover, dry_run=True)
-    fresh = (fresh_dir / "dataset-metadata.json").read_bytes()
-    committed = _COMMITTED_METADATA.read_bytes()
-    assert fresh == committed
+    fresh_bytes = (fresh_dir / "dataset-metadata.json").read_bytes()
+    committed_bytes = _COMMITTED_METADATA.read_bytes()
+    assert fresh_bytes == committed_bytes
+
+    # Positive content assertions — guard against the failure mode
+    # where a code change accidentally produces empty / minimal
+    # content that we then re-commit, leaving the byte-equality
+    # check passing on broken output.
+    parsed = json.loads(fresh_bytes)
+    assert parsed["id"] == f"{packager.DEFAULT_USER_SLUG}/{packager.DEFAULT_DATASET_SLUG}"
+    assert parsed["image"] == "dataset-cover-image.png"
+    description = parsed["description"]
+    # The description should carry the rewritten dataset card, not be
+    # empty or stub content.
+    assert "What's inside" in description
+    assert "Why lead scoring matters" in description
+    assert "Known limitations" in description
+    # Rewrites fired (no source-tree leaks, no broken relative links).
+    assert "intermediate_instructor/" not in description
+    assert "](../" not in description
+    assert "github.com/leadforge-dev/leadforge/blob/main" in description
+    # Resources are non-trivial.
+    assert len(parsed["resources"]) >= 30
+    # Every flat CSV has a schema with the canonical 33-column shape.
+    flat_csvs = [r for r in parsed["resources"] if r["path"].endswith("/lead_scoring.csv")]
+    assert len(flat_csvs) == len(packager.DEFAULT_TIERS)
+    for r in flat_csvs:
+        assert r["schema"]["fields"][0]["name"] == "split"
+        assert r["schema"]["fields"][-1]["name"] == "converted_within_90_days"

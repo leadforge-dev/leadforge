@@ -21,10 +21,12 @@ release roadmap.  This script:
    (audit-artifact-sync pattern; guarded by
    ``tests/scripts/test_package_kaggle_release.py``).
 4. Optionally assembles a Kaggle-CLI-shaped upload directory under
-   ``release/kaggle/`` using relative symlinks into the per-tier
-   bundles plus a rewritten copy of ``release/README.md`` whose
-   directory diagram and ``../`` links resolve correctly when read on
-   the Kaggle dataset page.
+   ``release/kaggle/`` as real-file copies of the per-tier bundles
+   plus a rewritten copy of ``release/README.md`` whose directory
+   diagram and ``../`` links resolve correctly when read on the
+   Kaggle dataset page.  An earlier draft used symlinks; we copy
+   instead because Kaggle's CLI walks the upload directory with
+   ``followlinks=False`` in some versions.
 
 The actual ``kaggle datasets create`` upload lives in PR 7.2; this
 script is intentionally publish-free.  ``--dry-run`` validates and
@@ -40,11 +42,11 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
+import shutil
 import sys
 from collections.abc import Sequence
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final
 
@@ -112,15 +114,29 @@ DEFAULT_KEYWORDS: Final[tuple[str, ...]] = (
     "tabular",
 )
 
-DEFAULT_USER_SOURCES: Final[tuple[dict[str, str], ...]] = (
-    {
-        "title": "leadforge source repository",
-        "url": "https://github.com/leadforge-dev/leadforge",
-    },
-    {
-        "title": "v1 release validation report",
-        "url": "https://github.com/leadforge-dev/leadforge/tree/main/release/validation",
-    },
+
+@dataclass(frozen=True)
+class UserSource:
+    """One entry under ``userSpecifiedSources``.
+
+    Defined alongside the constants so ``DEFAULT_USER_SOURCES`` below
+    can reference it without a forward declaration; the rest of the
+    metadata dataclasses live further down in their own section.
+    """
+
+    title: str
+    url: str
+
+
+DEFAULT_USER_SOURCES: Final[tuple[UserSource, ...]] = (
+    UserSource(
+        title="leadforge source repository",
+        url="https://github.com/leadforge-dev/leadforge",
+    ),
+    UserSource(
+        title="v1 release validation report",
+        url="https://github.com/leadforge-dev/leadforge/tree/main/release/validation",
+    ),
 )
 
 DEFAULT_LICENSE_NAME: Final[str] = "MIT"
@@ -289,9 +305,22 @@ class LicenseSpec:
     name: str
 
 
+# ``UserSource`` is defined above (next to ``DEFAULT_USER_SOURCES``) so
+# the constant can reference it without forward-declaration tricks.
+
+
 @dataclass(frozen=True)
 class DatasetMetadata:
-    """Top-level Kaggle metadata payload."""
+    """Top-level Kaggle metadata payload.
+
+    These dataclasses are typed records, not invariants — construction
+    is unchecked.  Callers MUST run :func:`validate_metadata` before
+    relying on the metadata being well-formed; that function is the
+    authoritative gate for every Kaggle field constraint.  Doing the
+    validation eagerly in ``__post_init__`` would prevent tests from
+    constructing deliberately bad payloads to exercise the validator,
+    which is why the discipline lives in the validator instead.
+    """
 
     title: str
     id: str
@@ -302,7 +331,7 @@ class DatasetMetadata:
     keywords: tuple[str, ...]
     collaborators: tuple[str, ...]
     expectedUpdateFrequency: str  # noqa: N815 — Kaggle field name
-    userSpecifiedSources: tuple[dict[str, str], ...]  # noqa: N815 — Kaggle field name
+    userSpecifiedSources: tuple[UserSource, ...]  # noqa: N815 — Kaggle field name
     image: str
     resources: tuple[Resource, ...] = field(default_factory=tuple)
 
@@ -462,41 +491,6 @@ def validate_cover_image(path: Path) -> list[ValidationError]:
                 message=(
                     f"cover image {width}x{height} below Kaggle minimum "
                     f"{COVER_IMAGE_MIN_WIDTH}x{COVER_IMAGE_MIN_HEIGHT}"
-                ),
-            )
-        )
-    return errors
-
-
-def validate_fields_match_csv(
-    fields: Sequence[FieldDescriptor], csv_path: Path
-) -> list[ValidationError]:
-    """Verify schema field order matches the CSV's column order.
-
-    Kaggle's verified spec (chatgpt v2 §19) requires
-    ``resources[].schema.fields`` to be listed in column order.  Drift
-    between the schema and the actual CSV header is a release-day
-    bug — we catch it here.
-    """
-
-    errors: list[ValidationError] = []
-    if not csv_path.exists():
-        errors.append(
-            ValidationError(
-                field=f"resources[{csv_path.name}]",
-                message=f"flat CSV not found at {csv_path}",
-            )
-        )
-        return errors
-    csv_columns = list(pd.read_csv(csv_path, nrows=0).columns)
-    field_names = [f.name for f in fields]
-    if csv_columns != field_names:
-        errors.append(
-            ValidationError(
-                field=f"resources[{csv_path.name}].schema.fields",
-                message=(
-                    f"schema field order does not match CSV column order; "
-                    f"CSV={csv_columns!r} vs fields={field_names!r}"
                 ),
             )
         )
@@ -689,7 +683,7 @@ def build_metadata(
     *,
     tiers: Sequence[str] = DEFAULT_TIERS,
     task: str = DEFAULT_TASK,
-    user_slug: str = DEFAULT_USER_SLUG,
+    owner: str = DEFAULT_USER_SLUG,
     dataset_slug: str = DEFAULT_DATASET_SLUG,
     title: str = DEFAULT_TITLE,
     subtitle: str = DEFAULT_SUBTITLE,
@@ -697,7 +691,7 @@ def build_metadata(
     keywords: Sequence[str] = DEFAULT_KEYWORDS,
     license_name: str = DEFAULT_LICENSE_NAME,
     update_frequency: str = DEFAULT_UPDATE_FREQUENCY,
-    user_sources: Sequence[dict[str, str]] = DEFAULT_USER_SOURCES,
+    user_sources: Sequence[UserSource] = DEFAULT_USER_SOURCES,
     cover_image: Path = DEFAULT_COVER_IMAGE,
 ) -> DatasetMetadata:
     """Assemble a ``DatasetMetadata`` from the release tree.
@@ -718,7 +712,7 @@ def build_metadata(
 
     return DatasetMetadata(
         title=title,
-        id=f"{user_slug}/{dataset_slug}",
+        id=f"{owner}/{dataset_slug}",
         subtitle=subtitle,
         description=description,
         isPrivate=True,
@@ -737,6 +731,13 @@ def build_metadata(
 # ---------------------------------------------------------------------------
 
 
+def _field_to_dict(fd: FieldDescriptor) -> dict[str, Any]:
+    payload: dict[str, Any] = {"name": fd.name, "type": fd.type}
+    if fd.description is not None:
+        payload["description"] = fd.description
+    return payload
+
+
 def _resource_to_dict(resource: Resource) -> dict[str, Any]:
     """Serialise a ``Resource`` to a JSON-primitive dict.
 
@@ -750,27 +751,56 @@ def _resource_to_dict(resource: Resource) -> dict[str, Any]:
         "description": resource.description,
     }
     if resource.schema is not None:
-        payload["schema"] = {
-            "fields": [
-                {k: v for k, v in fd_dict.items() if v is not None}
-                for fd_dict in (asdict(fd) for fd in resource.schema.fields)
-            ]
-        }
+        payload["schema"] = {"fields": [_field_to_dict(fd) for fd in resource.schema.fields]}
     return payload
 
 
 def metadata_to_dict(metadata: DatasetMetadata) -> dict[str, Any]:
-    """Convert ``DatasetMetadata`` to a JSON-primitive dict."""
+    """Convert ``DatasetMetadata`` to a JSON-primitive dict.
 
-    payload = asdict(metadata)
-    payload["resources"] = [_resource_to_dict(r) for r in metadata.resources]
-    return payload
+    Built field-by-field rather than via ``asdict()`` so resource
+    serialisation goes through one path (``_resource_to_dict``) and
+    the keywords array is sorted at render time — making the
+    determinism contract explicit rather than relying on the
+    ``DEFAULT_KEYWORDS`` constant happening to be alphabetised.
+    """
+
+    return {
+        "title": metadata.title,
+        "id": metadata.id,
+        "subtitle": metadata.subtitle,
+        "description": metadata.description,
+        "isPrivate": metadata.isPrivate,
+        "licenses": [{"name": lic.name} for lic in metadata.licenses],
+        "keywords": sorted(metadata.keywords),
+        "collaborators": list(metadata.collaborators),
+        "expectedUpdateFrequency": metadata.expectedUpdateFrequency,
+        "userSpecifiedSources": [
+            {"title": s.title, "url": s.url} for s in metadata.userSpecifiedSources
+        ],
+        "image": metadata.image,
+        "resources": [_resource_to_dict(r) for r in metadata.resources],
+    }
 
 
 def render_metadata_json(metadata: DatasetMetadata) -> str:
-    """Render the metadata as a deterministic JSON string."""
+    """Render the metadata as a deterministic JSON string.
 
-    return json.dumps(metadata_to_dict(metadata), indent=2, sort_keys=True) + "\n"
+    ``ensure_ascii=False`` keeps non-ASCII content (em-dashes, the ×
+    multiplication sign, smart quotes from the inlined README)
+    rendered literally rather than escaped to ``\\u2013`` etc., which
+    is essential for ``git diff`` readability when the README evolves.
+    """
+
+    return (
+        json.dumps(
+            metadata_to_dict(metadata),
+            indent=2,
+            sort_keys=True,
+            ensure_ascii=False,
+        )
+        + "\n"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -781,10 +811,10 @@ def render_metadata_json(metadata: DatasetMetadata) -> str:
 def _validate_kaggle_dir_safe(kaggle_dir: Path, release_dir: Path) -> None:
     """Refuse to assemble into a path that aliases something dangerous.
 
-    The packager replaces children of ``kaggle_dir`` (symlinks plus a
-    rewritten README); pointing it at ``cwd`` / ``release_dir`` /
-    their parents would clobber unrelated content.  Mirrors the safety
-    check from the Phase-5 packager design discussion.
+    The packager replaces children of ``kaggle_dir`` (rmtree + recopy)
+    so pointing it at ``cwd`` / ``release_dir`` / their parents / the
+    filesystem anchor would clobber unrelated content.  This guard
+    fires before any disk write.
     """
 
     resolved = kaggle_dir.resolve()
@@ -798,26 +828,26 @@ def _validate_kaggle_dir_safe(kaggle_dir: Path, release_dir: Path) -> None:
         raise ValueError(f"refusing to assemble into unsafe --kaggle-dir: {kaggle_dir}")
 
 
-def _replace_link(target: Path, link: Path) -> None:
-    """Replace ``link`` with a relative symlink pointing at ``target``.
+def _replace_file(src: Path, dst: Path) -> None:
+    """Copy ``src`` → ``dst``, replacing any existing entry at ``dst``."""
 
-    Idempotent — re-running against a populated ``kaggle_dir`` is
-    safe.  The symlink target is computed as a relative path so the
-    assembled directory is portable across machines.
-    """
+    if dst.is_symlink() or dst.is_file():
+        dst.unlink()
+    elif dst.exists() and dst.is_dir():
+        shutil.rmtree(dst)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dst)
 
-    if link.is_symlink() or link.is_file():
-        link.unlink()
-    elif link.exists() and link.is_dir():
-        # Replace a pre-existing real directory; ``release/kaggle/`` is
-        # a generated artefact so this is safe.  Only triggered when an
-        # earlier run used a different assembly mode (e.g. copytree).
-        import shutil
 
-        shutil.rmtree(link)
-    link.parent.mkdir(parents=True, exist_ok=True)
-    rel_target = os.path.relpath(target, start=link.parent)
-    link.symlink_to(rel_target)
+def _replace_dir(src: Path, dst: Path) -> None:
+    """Copy directory ``src`` → ``dst``, replacing any existing entry."""
+
+    if dst.is_symlink() or dst.is_file():
+        dst.unlink()
+    elif dst.exists() and dst.is_dir():
+        shutil.rmtree(dst)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(src, dst)
 
 
 def assemble_upload_dir(
@@ -829,46 +859,52 @@ def assemble_upload_dir(
 ) -> None:
     """Assemble ``kaggle_dir`` for ``kaggle datasets create`` to consume.
 
-    Strategy: relative symlinks for the heavy bundle directories +
-    cover image + LICENSE, but a real file copy for ``README.md``
-    (which is rewritten on the way in so its ``../`` links and tree
-    diagram render correctly on the Kaggle dataset page).
+    The output tree is a self-contained directory of real files:
+    cover image, LICENSE, the rewritten README, and full copies of
+    each tier bundle.  Symlinks were considered (and tried in an
+    earlier draft) but Kaggle's CLI walks the upload directory with
+    ``followlinks=False`` in some versions, silently skipping symlinked
+    children — switching to copies removes that fragility at the cost
+    of ~15 MB of disk per assembly run, which is gitignored anyway.
 
-    The README rewriting cannot be expressed as a symlink, so it is
-    the one node in the upload tree that holds a fresh copy of the
-    bytes.  Re-running the assembly is idempotent.
+    Re-running the assembly is idempotent: ``_replace_file`` and
+    ``_replace_dir`` rmtree-then-copy any existing entry.  The README
+    is the one file rewritten on the way in (tree diagram + ``../``
+    links).  ``--dry-run`` skips this whole function.
     """
 
     _validate_kaggle_dir_safe(kaggle_dir, release_dir)
     kaggle_dir.mkdir(parents=True, exist_ok=True)
 
-    # Cover image (symlink).
-    cover_target = (release_dir / cover_image.name).resolve()
-    if not cover_target.exists():
-        cover_target = cover_image.resolve()
-    _replace_link(cover_target, kaggle_dir / cover_image.name)
+    # Cover image.
+    cover_src = release_dir / cover_image.name
+    if not cover_src.exists():
+        cover_src = cover_image
+    _replace_file(cover_src, kaggle_dir / cover_image.name)
 
-    # LICENSE — symlink straight through (no rewriting required).
-    license_src = (release_dir / "LICENSE").resolve()
+    # LICENSE — straight copy, no rewriting.
+    license_src = release_dir / "LICENSE"
     if license_src.exists():
-        _replace_link(license_src, kaggle_dir / "LICENSE")
+        _replace_file(license_src, kaggle_dir / "LICENSE")
 
-    # README.md — real copy with link rewriting.  Drop any prior
-    # symlink first so we don't overwrite the source README.
+    # README.md — real copy with link rewriting so ``../`` links and
+    # the directory diagram resolve correctly on the Kaggle dataset
+    # page.
     kaggle_readme = kaggle_dir / "README.md"
-    if kaggle_readme.is_symlink():
+    if kaggle_readme.is_symlink() or kaggle_readme.is_file():
         kaggle_readme.unlink()
     readme_src = release_dir / "README.md"
     if readme_src.exists():
+        kaggle_readme.parent.mkdir(parents=True, exist_ok=True)
         kaggle_readme.write_text(
             _kaggle_readme_text(readme_src.read_text(encoding="utf-8")),
             encoding="utf-8",
         )
 
-    # Per-tier bundles — symlink whole directories.
+    # Per-tier bundles — full directory copies.
     for tier in tiers:
-        tier_target = (release_dir / tier).resolve()
-        _replace_link(tier_target, kaggle_dir / tier)
+        tier_src = release_dir / tier
+        _replace_dir(tier_src, kaggle_dir / tier)
 
 
 # ---------------------------------------------------------------------------
@@ -892,7 +928,7 @@ def run_packager(
     kaggle_dir: Path = DEFAULT_KAGGLE_DIR,
     tiers: Sequence[str] = DEFAULT_TIERS,
     task: str = DEFAULT_TASK,
-    user_slug: str = DEFAULT_USER_SLUG,
+    owner: str = DEFAULT_USER_SLUG,
     dataset_slug: str = DEFAULT_DATASET_SLUG,
     title: str = DEFAULT_TITLE,
     subtitle: str = DEFAULT_SUBTITLE,
@@ -900,7 +936,7 @@ def run_packager(
     keywords: Sequence[str] = DEFAULT_KEYWORDS,
     license_name: str = DEFAULT_LICENSE_NAME,
     update_frequency: str = DEFAULT_UPDATE_FREQUENCY,
-    user_sources: Sequence[dict[str, str]] = DEFAULT_USER_SOURCES,
+    user_sources: Sequence[UserSource] = DEFAULT_USER_SOURCES,
     cover_image: Path = DEFAULT_COVER_IMAGE,
     dry_run: bool = False,
 ) -> PackagerOutcome:
@@ -908,16 +944,20 @@ def run_packager(
 
     With ``dry_run=False`` (the default) the packager additionally
     assembles the Kaggle-CLI-shaped upload directory under
-    ``kaggle_dir`` via relative symlinks.  ``dry_run=True`` skips the
-    assembly step — useful for shape iteration and for environments
-    where symlink creation is restricted.
+    ``kaggle_dir`` (real-file copies of the per-tier bundles + cover
+    image + LICENSE + the rewritten README).  ``dry_run=True`` skips
+    the assembly step entirely — useful for fast shape iteration when
+    only the metadata content matters.
     """
+
+    if not release_dir.exists():
+        raise FileNotFoundError(f"release directory not found: {release_dir}")
 
     metadata = build_metadata(
         release_dir,
         tiers=tiers,
         task=task,
-        user_slug=user_slug,
+        owner=owner,
         dataset_slug=dataset_slug,
         title=title,
         subtitle=subtitle,
@@ -932,15 +972,7 @@ def run_packager(
     errors: list[ValidationError] = []
     errors.extend(validate_metadata(metadata))
     errors.extend(validate_cover_image(cover_image))
-
-    # Cross-check: schema fields for every flat CSV resource match
-    # the actual CSV's column order.
-    for tier in tiers:
-        flat_csv = release_dir / tier / "lead_scoring.csv"
-        for res in metadata.resources:
-            if res.path == f"{tier}/lead_scoring.csv" and res.schema is not None:
-                errors.extend(validate_fields_match_csv(res.schema.fields, flat_csv))
-                break
+    errors.extend(_validate_readme_substitution(release_dir))
 
     metadata_path = kaggle_dir / "dataset-metadata.json"
     metadata_path.parent.mkdir(parents=True, exist_ok=True)
@@ -955,6 +987,37 @@ def run_packager(
         errors=tuple(errors),
         assembled=not dry_run,
     )
+
+
+def _validate_readme_substitution(release_dir: Path) -> list[ValidationError]:
+    """Guard against silent drift between the README's tree diagram
+    and ``KAGGLE_TREE_BLOCK``.
+
+    ``_kaggle_readme_text`` substitutes the source-repo tree diagram
+    for the upload-tree diagram via plain string replace.  If the
+    README's tree changes by even one whitespace character, the
+    substitution silently no-ops and the published Kaggle dataset
+    card shows the source-repo tree (with ``intermediate_instructor/``,
+    ``notebooks/``, ``validation/``).  We catch that case here.
+    """
+
+    readme = release_dir / "README.md"
+    if not readme.exists():
+        return []  # No README is itself a release-day issue, but not this validator's concern.
+    if KAGGLE_TREE_BLOCK not in readme.read_text(encoding="utf-8"):
+        return [
+            ValidationError(
+                field="release/README.md",
+                message=(
+                    "KAGGLE_TREE_BLOCK not found verbatim in release/README.md; "
+                    "the source-repo tree diagram in the README has drifted from "
+                    "the constant in scripts/package_kaggle_release.py — the "
+                    "Kaggle description rewrite will silently no-op until the "
+                    "README and KAGGLE_TREE_BLOCK are reconciled."
+                ),
+            )
+        ]
+    return []
 
 
 # ---------------------------------------------------------------------------
@@ -987,9 +1050,9 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         help="limit packaging to one tier (repeatable; default: intro/intermediate/advanced)",
     )
     parser.add_argument(
-        "--user-slug",
+        "--owner",
         default=DEFAULT_USER_SLUG,
-        help="Kaggle username prefix on the dataset id (default: %(default)s)",
+        help="Kaggle owner (user or organisation) prefix on the dataset id (default: %(default)s)",
     )
     parser.add_argument(
         "--dataset-slug",
@@ -1007,33 +1070,22 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         action="store_true",
         help="validate + write metadata only; skip assembling the upload directory",
     )
-    parser.add_argument(
-        "--print",
-        action="store_true",
-        help="print the rendered metadata JSON to stdout in addition to writing it",
-    )
     return parser.parse_args(argv)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
-    release_dir: Path = args.release_dir
     kaggle_dir: Path = args.kaggle_dir
-    cover_image: Path = args.cover_image
     tiers: tuple[str, ...] = tuple(args.tiers) if args.tiers else DEFAULT_TIERS
-
-    if not release_dir.exists():
-        print(f"error: release directory not found: {release_dir}", file=sys.stderr)
-        return 2
 
     try:
         outcome = run_packager(
-            release_dir,
+            args.release_dir,
             kaggle_dir=kaggle_dir,
             tiers=tiers,
-            user_slug=args.user_slug,
+            owner=args.owner,
             dataset_slug=args.dataset_slug,
-            cover_image=cover_image,
+            cover_image=args.cover_image,
             dry_run=args.dry_run,
         )
     except FileNotFoundError as exc:
@@ -1043,19 +1095,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
-    print(f"wrote {outcome.metadata_path}", file=sys.stderr)
-    if outcome.assembled:
-        print(f"assembled upload tree under {kaggle_dir}", file=sys.stderr)
-
-    if args.print:
-        sys.stdout.write(render_metadata_json(outcome.metadata))
-
     if outcome.errors:
         print("validation failed:", file=sys.stderr)
         for err in outcome.errors:
             print(f"  - {err.field}: {err.message}", file=sys.stderr)
         return 1
 
+    print(f"wrote {outcome.metadata_path}", file=sys.stderr)
+    if outcome.assembled:
+        print(f"assembled upload tree under {kaggle_dir}", file=sys.stderr)
     return 0
 
 
