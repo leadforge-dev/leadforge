@@ -63,6 +63,7 @@ from _release_common import (  # noqa: E402,F401 — must follow sys.path insert
     load_manifest,
     replace_dir,
     replace_file,
+    resolve_cover_image_path,
     rewrite_release_links,
     validate_cover_image,
     validate_readme_substitution,
@@ -685,12 +686,11 @@ def assemble_upload_dir(
         readme_path.unlink()
     readme_path.write_text(rendered_readme, encoding="utf-8")
 
-    # Cover image — reuse the one ``release/`` already ships.
-    cover_src = release_dir / cover_image.name
-    if not cover_src.exists():
-        cover_src = cover_image
-    if cover_src.exists():
-        replace_file(cover_src, upload_dir / cover_image.name)
+    # Cover image — copy the resolved path as-is.  Path resolution
+    # happens once in ``run_packager`` via ``resolve_cover_image_path``
+    # so the validator and the assembler agree on which file to use.
+    if cover_image.exists():
+        replace_file(cover_image, upload_dir / cover_image.name)
 
     # LICENSE — straight copy, no rewriting.
     license_src = release_dir / "LICENSE"
@@ -754,6 +754,21 @@ def run_packager(
     if not release_dir.exists():
         raise FileNotFoundError(f"release directory not found: {release_dir}")
 
+    # Hoist the upload-dir safety check BEFORE any mkdir or write —
+    # including the dry-run path (Copilot review on PR #72).  The
+    # earlier draft only checked inside ``assemble_upload_dir``, so a
+    # dry run with ``--huggingface-dir .`` would happily write a
+    # README into ``cwd`` before the safety guard ever ran.
+    # ``assemble_upload_dir`` retains its own call as defence-in-depth
+    # for callers that bypass ``run_packager``.
+    kind = "huggingface" if variant == "public" else "huggingface-instructor"
+    validate_upload_dir_safe(huggingface_dir, release_dir, kind=kind)
+
+    # Resolve cover image once — the same path is used for validation
+    # and assembly so the two cannot disagree (Copilot review on
+    # PR #72).
+    resolved_cover = resolve_cover_image_path(cover_image, release_dir)
+
     card = build_card(
         release_dir,
         variant=variant,
@@ -764,7 +779,7 @@ def run_packager(
 
     errors: list[ValidationError] = []
     errors.extend(validate_card(card))
-    errors.extend(validate_cover_image(cover_image))
+    errors.extend(validate_cover_image(resolved_cover))
     if variant == "public":
         # The instructor body doesn't substitute SOURCE_TREE_BLOCK —
         # it's a self-contained markdown — so the substitution guard
@@ -795,7 +810,7 @@ def run_packager(
             huggingface_dir,
             variant=variant,
             rendered_readme=rendered,
-            cover_image=cover_image,
+            cover_image=resolved_cover,
         )
 
     return PackagerOutcome(

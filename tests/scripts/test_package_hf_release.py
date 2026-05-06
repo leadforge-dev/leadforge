@@ -443,6 +443,95 @@ def test_main_reports_missing_release_dir(
 
 
 @pytest.mark.skipif(not _RELEASE_BUNDLES_PRESENT, reason="release bundles not present")
+def test_run_packager_rejects_unsafe_huggingface_dir_in_dry_run(tmp_path: Path) -> None:
+    """Copilot review on PR #72 item #1.
+
+    The earlier draft only checked ``--huggingface-dir`` safety
+    inside ``assemble_upload_dir``, which the dry-run path skips.
+    A user passing ``--huggingface-dir release`` (i.e. ``release_dir``
+    itself) in dry-run mode would write a README into ``release/``
+    before the safety net fired.
+
+    With the hoisted check, dry-run mode also raises ``ValueError``
+    BEFORE any mkdir or write.
+    """
+
+    sentinel = _RELEASE_DIR / "README.md"
+    pre = sentinel.read_bytes() if sentinel.exists() else None
+
+    with pytest.raises(ValueError, match="unsafe"):
+        packager.run_packager(
+            _RELEASE_DIR,
+            huggingface_dir=_RELEASE_DIR,  # release_dir itself — unsafe
+            cover_image=_COMMITTED_COVER,
+            dry_run=True,
+        )
+
+    # The release README must not have been clobbered by a write that
+    # raced past the (previously absent) safety check.
+    if pre is not None:
+        assert sentinel.read_bytes() == pre
+
+
+def test_main_rejects_unsafe_huggingface_dir_via_cli(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Same as the test above but via the ``main()`` CLI entry point.
+
+    Confirms the CLI returns rc=2 for an unsafe ``--huggingface-dir``
+    in dry-run mode (the FileNotFoundError / ValueError handler in
+    ``main`` catches the hoisted ValueError).
+    """
+
+    fake_release = tmp_path / "release"
+    fake_release.mkdir()
+    rc = packager.main(
+        [
+            "--release-dir",
+            str(fake_release),
+            "--huggingface-dir",
+            str(fake_release),  # release_dir itself
+            "--cover-image",
+            str(_COMMITTED_COVER) if _COMMITTED_COVER.exists() else str(tmp_path / "cover.png"),
+            "--dry-run",
+        ]
+    )
+    captured = capsys.readouterr()
+    assert rc == 2
+    assert "unsafe" in captured.err
+
+
+@pytest.mark.skipif(not _RELEASE_BUNDLES_PRESENT, reason="release bundles not present")
+def test_run_packager_resolves_cover_image_via_release_fallback(tmp_path: Path) -> None:
+    """Copilot review on PR #72 item #2.
+
+    A user passing a bare basename that exists under ``release/`` but
+    not at cwd should succeed: ``resolve_cover_image_path`` falls back
+    to the release-dir sibling, and the validator + assembler both
+    use that resolved path.
+    """
+
+    upload_dir = tmp_path / "huggingface"
+    bare = Path(_COMMITTED_COVER.name)  # bare basename
+
+    # Sanity: the bare path doesn't exist at cwd (or wherever pytest
+    # runs from); it MUST resolve via the release-dir fallback.
+    assert not bare.is_absolute()
+
+    outcome = packager.run_packager(
+        _RELEASE_DIR,
+        huggingface_dir=upload_dir,
+        cover_image=bare,
+        dry_run=True,
+    )
+    assert outcome.errors == ()
+    # The README mentions the cover image filename — a smoke check
+    # that the resolved path went through the rest of the pipeline.
+    written = (upload_dir / "README.md").read_text(encoding="utf-8")
+    assert _COMMITTED_COVER.name in written
+
+
+@pytest.mark.skipif(not _RELEASE_BUNDLES_PRESENT, reason="release bundles not present")
 def test_run_packager_does_not_write_on_validation_failure(tmp_path: Path) -> None:
     """Validation failure must NOT leave a corrupt README on disk
     (PR 5.2 self-review #1).

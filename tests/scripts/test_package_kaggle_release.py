@@ -369,6 +369,60 @@ def test_assemble_upload_dir_idempotent_against_existing_tree(tmp_path: Path) ->
 
 
 @pytest.mark.skipif(not _RELEASE_BUNDLES_PRESENT, reason="release bundles not present")
+def test_run_packager_rejects_unsafe_kaggle_dir_in_dry_run(tmp_path: Path) -> None:
+    """Copilot review on PR #72 item #1.
+
+    The earlier draft only checked ``--kaggle-dir`` safety inside
+    ``assemble_upload_dir``, which dry-run skips.  A user passing
+    ``--kaggle-dir release`` (i.e. ``release_dir`` itself) in dry-run
+    would write ``dataset-metadata.json`` into ``release/`` before
+    the safety net fired.  With the hoisted check, dry-run also
+    raises ``ValueError`` BEFORE any mkdir or write.
+    """
+
+    cover = tmp_path / "cover.png"
+    Image.new("RGB", (1280, 640), (0, 0, 0)).save(cover)
+
+    with pytest.raises(ValueError, match="unsafe"):
+        packager.run_packager(
+            _RELEASE_DIR,
+            kaggle_dir=_RELEASE_DIR,  # release_dir itself
+            cover_image=cover,
+            dry_run=True,
+        )
+
+    # ``release/dataset-metadata.json`` must not exist at the top
+    # level (it's gitignored anyway, but a stray write would still
+    # show up in ``git status``).
+    assert not (_RELEASE_DIR / "dataset-metadata.json").exists()
+
+
+@pytest.mark.skipif(not _RELEASE_BUNDLES_PRESENT, reason="release bundles not present")
+def test_run_packager_resolves_cover_image_via_release_fallback(tmp_path: Path) -> None:
+    """Copilot review on PR #72 item #2.
+
+    A bare-basename ``--cover-image`` that exists under ``release/``
+    must validate (via ``resolve_cover_image_path`` fallback) and
+    materialise into the assembled metadata's ``image`` field.
+    """
+
+    out_dir = tmp_path / "kaggle"
+    bare = Path(_COMMITTED_COVER.name)
+    assert not bare.is_absolute()
+
+    outcome = packager.run_packager(
+        _RELEASE_DIR,
+        kaggle_dir=out_dir,
+        cover_image=bare,
+        dry_run=True,
+    )
+    assert outcome.errors == ()
+    # Metadata's ``image`` field carries the resolved filename.
+    parsed = json.loads((out_dir / "dataset-metadata.json").read_text(encoding="utf-8"))
+    assert parsed["image"] == _COMMITTED_COVER.name
+
+
+@pytest.mark.skipif(not _RELEASE_BUNDLES_PRESENT, reason="release bundles not present")
 def test_run_packager_does_not_write_on_validation_failure(tmp_path: Path) -> None:
     """A failed validation must NOT leave a corrupt metadata file on
     disk (PR 5.2 self-review fix).

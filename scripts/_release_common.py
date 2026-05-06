@@ -146,6 +146,37 @@ COVER_IMAGE_MIN_WIDTH: Final[int] = 560
 COVER_IMAGE_MIN_HEIGHT: Final[int] = 280
 
 
+def resolve_cover_image_path(cover_image: Path, release_dir: Path) -> Path:
+    """Resolve the effective cover-image path used by the packagers.
+
+    The packagers run a validator against the cover image and a copy
+    step against the same image; the earlier draft did the path
+    resolution in the assembler only, which meant validate + assemble
+    could disagree about WHICH file to use (Copilot review on PR #72,
+    addressed in self-review pass #2).
+
+    Resolution rule — explicit-wins, with a release-dir fallback:
+
+    1. If ``cover_image`` exists at the path given, return it as-is.
+    2. Otherwise, if ``release_dir / cover_image.name`` exists, return
+       that — lets users pass a bare basename when the file lives
+       under ``release/``.
+    3. Otherwise return ``cover_image`` unchanged so the cover-image
+       validator surfaces a clean ``not found at <path>`` error.
+
+    Two paths sharing a basename DO NOT cause the release-dir copy to
+    silently shadow the explicit path — the explicit path's existence
+    is the first check and wins.
+    """
+
+    if cover_image.exists():
+        return cover_image
+    fallback = release_dir / cover_image.name
+    if fallback.exists():
+        return fallback
+    return cover_image
+
+
 def validate_cover_image(path: Path) -> list[ValidationError]:
     """Validate that ``path`` exists and meets the dimension floor."""
 

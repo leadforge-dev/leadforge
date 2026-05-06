@@ -72,6 +72,7 @@ from _release_common import (  # noqa: E402,F401 — must follow sys.path insert
     load_manifest,
     replace_dir,
     replace_file,
+    resolve_cover_image_path,
     rewrite_release_links,
     validate_cover_image,
     validate_readme_substitution,
@@ -791,11 +792,11 @@ def assemble_upload_dir(
     validate_upload_dir_safe(kaggle_dir, release_dir, kind="kaggle")
     kaggle_dir.mkdir(parents=True, exist_ok=True)
 
-    # Cover image.
-    cover_src = release_dir / cover_image.name
-    if not cover_src.exists():
-        cover_src = cover_image
-    replace_file(cover_src, kaggle_dir / cover_image.name)
+    # Cover image — copy the resolved path as-is.  Path resolution
+    # happens once in ``run_packager`` via ``resolve_cover_image_path``
+    # so the validator and the assembler agree on which file to use.
+    if cover_image.exists():
+        replace_file(cover_image, kaggle_dir / cover_image.name)
 
     # LICENSE — straight copy, no rewriting.
     license_src = release_dir / "LICENSE"
@@ -868,6 +869,20 @@ def run_packager(
     if not release_dir.exists():
         raise FileNotFoundError(f"release directory not found: {release_dir}")
 
+    # Hoist the upload-dir safety check BEFORE any mkdir or write —
+    # including the dry-run path (Copilot review on PR #72).  The
+    # earlier draft only checked inside ``assemble_upload_dir``, so a
+    # dry run with ``--kaggle-dir .`` would happily write
+    # ``dataset-metadata.json`` into ``cwd`` before the safety guard
+    # ever ran.  ``assemble_upload_dir`` retains its own call as
+    # defence-in-depth for callers that bypass ``run_packager``.
+    validate_upload_dir_safe(kaggle_dir, release_dir, kind="kaggle")
+
+    # Resolve cover image once — the same path is used for validation,
+    # the metadata's ``image`` field, and the upload-tree copy so they
+    # cannot disagree (Copilot review on PR #72).
+    resolved_cover = resolve_cover_image_path(cover_image, release_dir)
+
     metadata = build_metadata(
         release_dir,
         tiers=tiers,
@@ -881,12 +896,12 @@ def run_packager(
         license_name=license_name,
         update_frequency=update_frequency,
         user_sources=user_sources,
-        cover_image=cover_image,
+        cover_image=resolved_cover,
     )
 
     errors: list[ValidationError] = []
     errors.extend(validate_metadata(metadata))
-    errors.extend(validate_cover_image(cover_image))
+    errors.extend(validate_cover_image(resolved_cover))
     errors.extend(validate_readme_substitution(release_dir, packager_name="Kaggle"))
 
     metadata_path = kaggle_dir / "dataset-metadata.json"
@@ -909,7 +924,7 @@ def run_packager(
     metadata_path.write_text(render_metadata_json(metadata), encoding="utf-8")
 
     if not dry_run:
-        assemble_upload_dir(release_dir, kaggle_dir, tiers=tiers, cover_image=cover_image)
+        assemble_upload_dir(release_dir, kaggle_dir, tiers=tiers, cover_image=resolved_cover)
 
     return PackagerOutcome(
         metadata=metadata,
