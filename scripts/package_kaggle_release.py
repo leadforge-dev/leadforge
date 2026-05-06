@@ -242,7 +242,6 @@ def build_metadata(
     release_dir: Path,
     resources: tuple[KaggleResource, ...],
 ) -> dict[str, Any]:
-    manifests = {tier: _read_json(release_dir / tier / "manifest.json") for tier in DEFAULT_TIERS}
     return {
         "title": TITLE,
         "subtitle": SUBTITLE,
@@ -263,22 +262,6 @@ def build_metadata(
         ],
         "image": IMAGE_FILENAME,
         "resources": [_resource_to_json(resource) for resource in resources],
-        "leadforge": {
-            "datasetSlug": DATASET_ID,
-            "recipe": manifests["intermediate"]["recipe_id"],
-            "packageVersion": manifests["intermediate"]["package_version"],
-            "bundleSchemaVersion": manifests["intermediate"]["bundle_schema_version"],
-            "tiers": {
-                tier: {
-                    "difficulty": manifest["difficulty"],
-                    "seed": manifest["seed"],
-                    "nLeads": manifest["n_leads"],
-                    "snapshotDay": manifest["snapshot_day"],
-                    "primaryTask": manifest["primary_task"],
-                }
-                for tier, manifest in manifests.items()
-            },
-        },
     }
 
 

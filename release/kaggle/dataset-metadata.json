@@ -13,35 +13,6 @@
     "marketing-analytics",
     "sales-analytics"
   ],
-  "leadforge": {
-    "bundleSchemaVersion": "5",
-    "datasetSlug": "leadforge-lead-scoring-v1",
-    "packageVersion": "1.0.0",
-    "recipe": "b2b_saas_procurement_v1",
-    "tiers": {
-      "advanced": {
-        "difficulty": "advanced",
-        "nLeads": 5000,
-        "primaryTask": "converted_within_90_days",
-        "seed": 42,
-        "snapshotDay": 30
-      },
-      "intermediate": {
-        "difficulty": "intermediate",
-        "nLeads": 5000,
-        "primaryTask": "converted_within_90_days",
-        "seed": 42,
-        "snapshotDay": 30
-      },
-      "intro": {
-        "difficulty": "intro",
-        "nLeads": 5000,
-        "primaryTask": "converted_within_90_days",
-        "seed": 42,
-        "snapshotDay": 30
-      }
-    }
-  },
   "licenses": [
     {
       "name": "MIT"
