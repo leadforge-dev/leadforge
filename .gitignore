@@ -218,3 +218,9 @@ release/intermediate_instructor/
 release/LICENSE
 release/_determinism/
 release/_release_quality/
+
+# Generated Kaggle upload tree (PR 5.1) — only dataset-metadata.json is
+# committed; the rest is reassembled on demand via
+# scripts/package_kaggle_release.py from release/{intro,intermediate,advanced}/.
+release/kaggle/*
+!release/kaggle/dataset-metadata.json
