@@ -175,7 +175,7 @@ def test_validate_cover_image_rejects_too_small_image(tmp_path: Path) -> None:
     errors = packager.validate_cover_image(tiny)
     assert errors
     assert errors[0].field == "cover_image"
-    assert "below Kaggle minimum" in errors[0].message
+    assert "below minimum" in errors[0].message
 
 
 def test_validate_cover_image_reports_missing_file(tmp_path: Path) -> None:

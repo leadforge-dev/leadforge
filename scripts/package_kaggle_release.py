@@ -53,7 +53,30 @@ from typing import Any, Final
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
-from PIL import Image
+
+# Make ``scripts/`` importable regardless of how this file is loaded
+# (CLI ``python scripts/package_kaggle_release.py``, or
+# ``importlib.util.spec_from_file_location`` from the test suite).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+# Shared release-packaging primitives extracted in PR 5.2 so the HF
+# packager can reuse the link-rewriter, the dir-safety guard, and the
+# cover-image validator without duplicating logic.
+from _release_common import (  # noqa: E402 — must follow sys.path insert
+    GITHUB_BLOB_BASE,
+    ValidationError,
+    validate_cover_image,
+    validate_upload_dir_safe,
+)
+from _release_common import (
+    PARENT_RELATIVE_LINK_RE as _PARENT_RELATIVE_LINK,
+)
+from _release_common import (
+    VALIDATION_REPORT_LINK as _VALIDATION_REPORT_LINK,
+)
+from _release_common import (
+    VALIDATION_REPORT_URL as _VALIDATION_REPORT_URL,
+)
 
 # ---------------------------------------------------------------------------
 # Kaggle field constraints (chatgpt v2 §19, verified from official docs)
@@ -74,11 +97,6 @@ APPROVED_UPDATE_FREQUENCIES: Final[tuple[str, ...]] = (
     "daily",
     "hourly",
 )
-
-#: Cover-image minimum dimensions per G11.2: 560 × 280 minimum, with
-#: 2:1 header / 1:1 thumbnail crops in mind.
-COVER_IMAGE_MIN_WIDTH: Final[int] = 560
-COVER_IMAGE_MIN_HEIGHT: Final[int] = 280
 
 #: Allowed cover-image extensions per Kaggle docs.
 ALLOWED_COVER_IMAGE_SUFFIXES: Final[tuple[str, ...]] = (
@@ -190,8 +208,12 @@ SPLIT_COLUMN_DESCRIPTION: Final[str] = (
 # ---------------------------------------------------------------------------
 # Description / README rewriting
 # ---------------------------------------------------------------------------
-
-GITHUB_BLOB_BASE: Final[str] = "https://github.com/leadforge-dev/leadforge/blob/main"
+#
+# ``GITHUB_BLOB_BASE``, the ``](../foo)`` regex, and the validation-
+# report link rewrite live in ``_release_common`` (PR 5.2). Tree-block
+# substitution stays local because the upload tree differs per
+# platform (Kaggle ships ``dataset-metadata.json`` + cover image at
+# the top; HF does not).
 
 #: The "What's inside" tree diagram in ``release/README.md``.  The
 #: published README on Kaggle should describe the *upload* layout
@@ -226,19 +248,6 @@ KAGGLE_UPLOAD_TREE_BLOCK: Final[str] = """```
 ├── README.md                         # Kaggle package README
 └── LICENSE
 ```"""
-
-#: Inline relative link ``](../foo)`` → ``](GITHUB_BLOB_BASE/foo)``
-#: for any markdown link that escapes the bundle root.
-_PARENT_RELATIVE_LINK: Final[re.Pattern[str]] = re.compile(r"\]\(\.\./([^)]+)\)")
-
-#: The README points at ``validation/validation_report.md`` (a path
-#: that lives under ``release/`` but not under the Kaggle upload
-#: directory).  Rewrite to a GitHub blob URL so the link works on
-#: Kaggle.
-_VALIDATION_REPORT_LINK: Final[str] = "](validation/validation_report.md)"
-_VALIDATION_REPORT_URL: Final[str] = (
-    f"]({GITHUB_BLOB_BASE}/release/validation/validation_report.md)"
-)
 
 
 def _kaggle_readme_text(readme: str) -> str:
@@ -338,15 +347,10 @@ class DatasetMetadata:
 
 # ---------------------------------------------------------------------------
 # Validation
+#
+# ``ValidationError`` is imported from ``_release_common`` (PR 5.2);
+# the dataclass is identical to what lived here in PR 5.1.
 # ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class ValidationError:
-    """One field-level validation failure."""
-
-    field: str
-    message: str
 
 
 def _validate_length(name: str, value: str, lo: int, hi: int) -> ValidationError | None:
@@ -467,33 +471,6 @@ def validate_metadata(metadata: DatasetMetadata) -> list[ValidationError]:
                     )
                 )
 
-    return errors
-
-
-def validate_cover_image(path: Path) -> list[ValidationError]:
-    """Validate that ``path`` exists and meets Kaggle's dimension floor."""
-
-    errors: list[ValidationError] = []
-    if not path.exists():
-        errors.append(
-            ValidationError(
-                field="cover_image",
-                message=f"cover image not found at {path}",
-            )
-        )
-        return errors
-    with Image.open(path) as img:
-        width, height = img.size
-    if width < COVER_IMAGE_MIN_WIDTH or height < COVER_IMAGE_MIN_HEIGHT:
-        errors.append(
-            ValidationError(
-                field="cover_image",
-                message=(
-                    f"cover image {width}x{height} below Kaggle minimum "
-                    f"{COVER_IMAGE_MIN_WIDTH}x{COVER_IMAGE_MIN_HEIGHT}"
-                ),
-            )
-        )
     return errors
 
 
@@ -811,21 +788,13 @@ def render_metadata_json(metadata: DatasetMetadata) -> str:
 def _validate_kaggle_dir_safe(kaggle_dir: Path, release_dir: Path) -> None:
     """Refuse to assemble into a path that aliases something dangerous.
 
-    The packager replaces children of ``kaggle_dir`` (rmtree + recopy)
-    so pointing it at ``cwd`` / ``release_dir`` / their parents / the
-    filesystem anchor would clobber unrelated content.  This guard
-    fires before any disk write.
+    Thin wrapper that forwards to ``_release_common.validate_upload_dir_safe``
+    with ``kind="kaggle"`` so the error message identifies which packager
+    refused.  The standalone function is kept for the test in
+    ``tests/scripts/test_package_kaggle_release.py`` that imports it directly.
     """
 
-    resolved = kaggle_dir.resolve()
-    blocked = {
-        Path(resolved.anchor),
-        Path.cwd().resolve(),
-        release_dir.resolve(),
-        release_dir.resolve().parent,
-    }
-    if resolved in blocked:
-        raise ValueError(f"refusing to assemble into unsafe --kaggle-dir: {kaggle_dir}")
+    validate_upload_dir_safe(kaggle_dir, release_dir, kind="kaggle")
 
 
 def _replace_file(src: Path, dst: Path) -> None:

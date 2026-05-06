@@ -224,3 +224,12 @@ release/_release_quality/
 # scripts/package_kaggle_release.py from release/{intro,intermediate,advanced}/.
 release/kaggle/*
 !release/kaggle/dataset-metadata.json
+
+# Generated HuggingFace upload tree (PR 5.2) — only README.md is
+# committed; the rest is reassembled on demand via
+# scripts/package_hf_release.py.  Same pattern for the instructor
+# companion under release/huggingface-instructor/.
+release/huggingface/*
+!release/huggingface/README.md
+release/huggingface-instructor/*
+!release/huggingface-instructor/README.md
