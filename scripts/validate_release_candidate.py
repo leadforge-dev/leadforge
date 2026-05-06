@@ -62,7 +62,6 @@ import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import pandas as pd
 
@@ -85,9 +84,6 @@ from leadforge.validation.release_quality import (
     regenerate_tier_for_seeds,
 )
 from leadforge.validation.reporting import render_report
-
-if TYPE_CHECKING:
-    pass
 
 # ---------------------------------------------------------------------------
 # Defaults
