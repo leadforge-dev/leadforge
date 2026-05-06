@@ -25,7 +25,13 @@ packager = importlib.util.module_from_spec(_spec)
 sys.modules["package_kaggle_release"] = packager
 _spec.loader.exec_module(packager)
 
-_RELEASE_BUNDLES_PRESENT = (_REPO_ROOT / "release" / "intro" / "manifest.json").exists()
+_LOCAL_RELEASE_DIR = _REPO_ROOT / "release"
+_COMMITTED_KAGGLE_DIR = _REPO_ROOT / "release" / "kaggle"
+_RELEASE_SOURCE_DIR = (
+    _LOCAL_RELEASE_DIR
+    if (_LOCAL_RELEASE_DIR / "intro" / "manifest.json").exists()
+    else _COMMITTED_KAGGLE_DIR
+)
 
 
 def _minimal_metadata() -> dict[str, object]:
@@ -85,8 +91,7 @@ def test_cover_image_generation_meets_kaggle_minimum(tmp_path: Path) -> None:
 
 
 def test_lead_scoring_resource_schema_follows_csv_column_order() -> None:
-    release_dir = _REPO_ROOT / "release"
-    resources = packager.discover_resources(release_dir, tiers=("intro",))
+    resources = packager.discover_resources(_RELEASE_SOURCE_DIR, tiers=("intro",))
     lead_scoring = next(
         resource for resource in resources if resource.path == "intro/lead_scoring.csv"
     )
@@ -101,7 +106,7 @@ def test_package_release_writes_upload_directory(tmp_path: Path) -> None:
     out_dir = tmp_path / "kaggle"
     cover = tmp_path / "dataset-cover-image.png"
 
-    metadata = packager.package_release(_REPO_ROOT / "release", out_dir, cover)
+    metadata = packager.package_release(_RELEASE_SOURCE_DIR, out_dir, cover)
 
     assert (out_dir / "dataset-metadata.json").exists()
     assert (out_dir / packager.IMAGE_FILENAME).exists()
@@ -131,7 +136,7 @@ def test_committed_kaggle_metadata_matches_fresh_regeneration(tmp_path: Path) ->
     out_dir = tmp_path / "kaggle"
     cover = tmp_path / "dataset-cover-image.png"
 
-    metadata = packager.package_release(_REPO_ROOT / "release", out_dir, cover)
+    metadata = packager.package_release(_RELEASE_SOURCE_DIR, out_dir, cover)
 
     committed = json.loads(
         (_REPO_ROOT / "release" / "kaggle" / "dataset-metadata.json").read_text()
