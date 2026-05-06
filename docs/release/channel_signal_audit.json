@@ -1,0 +1,217 @@
+{
+  "channel_columns": [
+    "lead_source",
+    "first_touch_channel"
+  ],
+  "industry_mql_to_sql_benchmarks": {
+    "Email": 0.005,
+    "PPC": 0.26,
+    "SEO": 0.51
+  },
+  "label_column": "converted_within_90_days",
+  "release_dir": "release",
+  "task": "converted_within_90_days",
+  "tiers": [
+    {
+      "columns": [
+        {
+          "channels": [
+            {
+              "conversion_rate": 0.43439490445859874,
+              "n": 1570,
+              "n_converted": 682,
+              "name": "inbound_marketing",
+              "share": 0.44857142857142857
+            },
+            {
+              "conversion_rate": 0.39111747851002865,
+              "n": 698,
+              "n_converted": 273,
+              "name": "partner_referral",
+              "share": 0.19942857142857143
+            },
+            {
+              "conversion_rate": 0.4025974025974026,
+              "n": 1232,
+              "n_converted": 496,
+              "name": "sdr_outbound",
+              "share": 0.352
+            }
+          ],
+          "column": "lead_source",
+          "n_total": 3500,
+          "overall_conversion_rate": 0.4145714285714286,
+          "rate_spread": 0.04327742594857009,
+          "univariate_auc": 0.5199794894149169
+        },
+        {
+          "channels": [
+            {
+              "conversion_rate": 0.43439490445859874,
+              "n": 1570,
+              "n_converted": 682,
+              "name": "inbound_marketing",
+              "share": 0.44857142857142857
+            },
+            {
+              "conversion_rate": 0.39111747851002865,
+              "n": 698,
+              "n_converted": 273,
+              "name": "partner_referral",
+              "share": 0.19942857142857143
+            },
+            {
+              "conversion_rate": 0.4025974025974026,
+              "n": 1232,
+              "n_converted": 496,
+              "name": "sdr_outbound",
+              "share": 0.352
+            }
+          ],
+          "column": "first_touch_channel",
+          "n_total": 3500,
+          "overall_conversion_rate": 0.4145714285714286,
+          "rate_spread": 0.04327742594857009,
+          "univariate_auc": 0.5199794894149169
+        }
+      ],
+      "conversion_rate_overall": 0.4145714285714286,
+      "n_leads": 3500,
+      "tier": "intro"
+    },
+    {
+      "columns": [
+        {
+          "channels": [
+            {
+              "conversion_rate": 0.21273885350318472,
+              "n": 1570,
+              "n_converted": 334,
+              "name": "inbound_marketing",
+              "share": 0.44857142857142857
+            },
+            {
+              "conversion_rate": 0.17621776504297995,
+              "n": 698,
+              "n_converted": 123,
+              "name": "partner_referral",
+              "share": 0.19942857142857143
+            },
+            {
+              "conversion_rate": 0.2012987012987013,
+              "n": 1232,
+              "n_converted": 248,
+              "name": "sdr_outbound",
+              "share": 0.352
+            }
+          ],
+          "column": "lead_source",
+          "n_total": 3500,
+          "overall_conversion_rate": 0.20142857142857143,
+          "rate_spread": 0.03652108846020477,
+          "univariate_auc": 0.5212431012826857
+        },
+        {
+          "channels": [
+            {
+              "conversion_rate": 0.21273885350318472,
+              "n": 1570,
+              "n_converted": 334,
+              "name": "inbound_marketing",
+              "share": 0.44857142857142857
+            },
+            {
+              "conversion_rate": 0.17621776504297995,
+              "n": 698,
+              "n_converted": 123,
+              "name": "partner_referral",
+              "share": 0.19942857142857143
+            },
+            {
+              "conversion_rate": 0.2012987012987013,
+              "n": 1232,
+              "n_converted": 248,
+              "name": "sdr_outbound",
+              "share": 0.352
+            }
+          ],
+          "column": "first_touch_channel",
+          "n_total": 3500,
+          "overall_conversion_rate": 0.20142857142857143,
+          "rate_spread": 0.03652108846020477,
+          "univariate_auc": 0.5212431012826857
+        }
+      ],
+      "conversion_rate_overall": 0.20142857142857143,
+      "n_leads": 3500,
+      "tier": "intermediate"
+    },
+    {
+      "columns": [
+        {
+          "channels": [
+            {
+              "conversion_rate": 0.08152866242038216,
+              "n": 1570,
+              "n_converted": 128,
+              "name": "inbound_marketing",
+              "share": 0.44857142857142857
+            },
+            {
+              "conversion_rate": 0.07593123209169055,
+              "n": 698,
+              "n_converted": 53,
+              "name": "partner_referral",
+              "share": 0.19942857142857143
+            },
+            {
+              "conversion_rate": 0.07792207792207792,
+              "n": 1232,
+              "n_converted": 96,
+              "name": "sdr_outbound",
+              "share": 0.352
+            }
+          ],
+          "column": "lead_source",
+          "n_total": 3500,
+          "overall_conversion_rate": 0.07914285714285714,
+          "rate_spread": 0.005597430328691616,
+          "univariate_auc": 0.5083011208921436
+        },
+        {
+          "channels": [
+            {
+              "conversion_rate": 0.08152866242038216,
+              "n": 1570,
+              "n_converted": 128,
+              "name": "inbound_marketing",
+              "share": 0.44857142857142857
+            },
+            {
+              "conversion_rate": 0.07593123209169055,
+              "n": 698,
+              "n_converted": 53,
+              "name": "partner_referral",
+              "share": 0.19942857142857143
+            },
+            {
+              "conversion_rate": 0.07792207792207792,
+              "n": 1232,
+              "n_converted": 96,
+              "name": "sdr_outbound",
+              "share": 0.352
+            }
+          ],
+          "column": "first_touch_channel",
+          "n_total": 3500,
+          "overall_conversion_rate": 0.07914285714285714,
+          "rate_spread": 0.005597430328691616,
+          "univariate_auc": 0.5083011208921436
+        }
+      ],
+      "conversion_rate_overall": 0.07914285714285714,
+      "n_leads": 3500,
+      "tier": "advanced"
+    }
+  ]
+}
