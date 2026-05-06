@@ -1,7 +1,7 @@
 # leadforge-lead-scoring-v1 — release quality report
 
 **Package version:** `1.0.0`
-**Generated:** `2026-05-06T06:12:04+00:00`
+**Generated:** `2026-05-06T07:38:31+00:00`
 **Seeds:** [42, 43, 44, 45, 46]
 Every value below cites the JSON field that backs it; see `validation_report.json` for the machine-readable form.
 

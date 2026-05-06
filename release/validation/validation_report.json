@@ -51,7 +51,7 @@
     "precision_at_100_intermediate_gt_advanced": true,
     "precision_at_100_intro_gt_intermediate": true
   },
-  "generation_timestamp": "2026-05-06T06:12:04+00:00",
+  "generation_timestamp": "2026-05-06T07:38:31+00:00",
   "package_version": "1.0.0",
   "release_id": "leadforge-lead-scoring-v1",
   "seeds": [

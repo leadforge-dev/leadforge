@@ -131,9 +131,13 @@ leakage_probes:
   # ~0.49–0.51 with max 0.56; band 0.60 admits stratified-CV variance
   # without green-lighting genuine ID-encoded leakage.
   id_only_max_auc: 0.60
-  # G6.* split label drift max delta.  IID train/test splits should
-  # rarely drift more than a couple of percentage points; allow 10%
-  # since `valid` is small (15% of leads).
+  # Split-label-drift max delta.  Not numbered as a distinct gate in
+  # v1_acceptance_gates.md (G6.1/.2/.3/.4 cover ID overlap / near-dups /
+  # cohort-time-shift); split-label-drift findings surface under the
+  # generic ``leakage:split_label_drift`` channel id rather than a G6.x.
+  # IID train/test splits should rarely drift more than a couple of
+  # percentage points; 10% allows for the small `valid` split (15% of
+  # leads) without flagging routine sampling variance.
   label_drift_max: 0.10
   # G5.1 — post-snapshot aggregates as a feature subset.  Just
   # `total_touches_all` for v1 (the deliberate pedagogical trap).

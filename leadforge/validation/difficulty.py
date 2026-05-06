@@ -435,9 +435,12 @@ def _check_per_tier_bands(
     for tier_name, tier_bands in bands.per_tier.items():
         csm = report.tiers.get(tier_name)
         if csm is None:
+            # _GATE_PREFIX_BY_TIER values already include the leading "G7." —
+            # don't prepend a second one.  Unknown tiers fall back to a
+            # tier-named id so the failure stays identifiable.
             failures.append(
                 GateFailure(
-                    gate=f"G7.{_GATE_PREFIX_BY_TIER.get(tier_name, tier_name)}",
+                    gate=_GATE_PREFIX_BY_TIER.get(tier_name, f"G7.{tier_name}"),
                     tier=tier_name,
                     message=(
                         f"tier '{tier_name}' is declared in bands but absent from "
@@ -633,10 +636,15 @@ def _check_leakage_reports(
         "id_only_baseline": "G5.3",
         # Bonus relational model (G4.5).
         "bonus_model": "G4.5",
-        # Split-leakage.
+        # Split-leakage.  Note: ``split_label_drift`` does NOT collide with
+        # the cohort/time-shift G6.4 gate — it falls through to the generic
+        # ``leakage:split_label_drift`` channel id below because v1
+        # acceptance gates do not number per-split label-rate drift as a
+        # distinct gate.  Mapping it to G6.4 would group unrelated
+        # failures (cohort AUC degradation vs. cross-split label drift)
+        # under one id.
         "split_id_overlap": "G6.1",
         "split_near_duplicate": "G6.3",
-        "split_label_drift": "G6.4",
     }
     for tier, lr in leakage_reports.items():
         for finding in lr.findings:

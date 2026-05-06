@@ -416,8 +416,16 @@ class TestPerTierBands:
         gates = {(f.gate, f.tier) for f in failures}
         # Missing intro and advanced surface as their gate id with the
         # "absent from report" message.
-        assert any("intro" == t for _, t in gates)
-        assert any("advanced" == t for _, t in gates)
+        assert any(t == "intro" for _, t in gates)
+        assert any(t == "advanced" for _, t in gates)
+        # Regression guard: the missing-tier gate id must not double-prefix
+        # ``G7.``.  Earlier code computed ``f"G7.{_GATE_PREFIX_BY_TIER.get(t)}"``
+        # which yielded ``G7.G7.1`` because the prefix dict already carries
+        # the leading ``G7.``.
+        assert not any(g.startswith("G7.G7") for g, _ in gates)
+        # The missing-tier gate id is exactly the tier's G7.* prefix.
+        assert ("G7.1", "intro") in gates
+        assert ("G7.3", "advanced") in gates
 
 
 # ---------------------------------------------------------------------------
@@ -635,6 +643,40 @@ class TestLeakageReports:
         assert len(leakage_failures) == 1
         assert leakage_failures[0].tier == "intermediate"
         assert "id_only_baseline" in leakage_failures[0].message
+
+    def test_split_label_drift_does_not_collide_with_g6_4(
+        self, passing_bands: AcceptanceBands
+    ) -> None:
+        """``split_label_drift`` findings must NOT be mapped to G6.4.
+
+        G6.4 is the cohort/time-shift AUC degradation gate.  Earlier
+        code mapped split-label-drift findings to G6.4 too, which would
+        group unrelated failures under one gate id and confuse the CLI
+        output.  The mapping was removed; the channel now falls through
+        to ``leakage:split_label_drift``.
+        """
+        report = _make_report(
+            intro=_make_cross_seed("intro", [42], lr_ap=0.78, p_at_100=0.85, rate=0.42),
+            intermediate=_make_cross_seed(
+                "intermediate", [42], lr_ap=0.55, p_at_100=0.65, rate=0.20
+            ),
+            advanced=_make_cross_seed("advanced", [42], lr_ap=0.30, p_at_100=0.40, rate=0.08),
+        )
+        leak = {
+            "intermediate": LeakageReport(
+                findings=(
+                    LeakageFinding(
+                        channel="split_label_drift",
+                        detail="train↔test",
+                        message="drift 0.15",
+                    ),
+                )
+            )
+        }
+        failures = check_release_bands(report, passing_bands, leakage_reports=leak)
+        gates = {f.gate for f in failures}
+        assert "G6.4" not in gates  # Reserved for cohort-shift gate.
+        assert "leakage:split_label_drift" in gates
 
 
 # ---------------------------------------------------------------------------

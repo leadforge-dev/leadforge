@@ -137,6 +137,24 @@ class TestParseArgs:
         config = driver._config_from_args(args)
         assert config.cohort_canonical_seed == 10  # smallest seed in sweep.
 
+    def test_canonical_seed_fallback_independent_of_input_order(self) -> None:
+        """``--seeds 11 10`` must produce the same canonical fallback as
+        ``--seeds 10 11`` — the fallback was previously order-dependent
+        via ``seeds[0]`` and could yield different cohort/leakage results
+        for equivalent invocations."""
+        ascending = driver._config_from_args(
+            driver.parse_args(["--seeds", "10", "11", "--cohort-canonical-seed", "99"])
+        )
+        descending = driver._config_from_args(
+            driver.parse_args(["--seeds", "11", "10", "--cohort-canonical-seed", "99"])
+        )
+        assert ascending.cohort_canonical_seed == descending.cohort_canonical_seed == 10
+        assert ascending.seeds == descending.seeds == (10, 11)
+
+    def test_seeds_deduplicated(self) -> None:
+        config = driver._config_from_args(driver.parse_args(["--seeds", "42", "42", "43", "43"]))
+        assert config.seeds == (42, 43)
+
     def test_tiers_subset(self) -> None:
         args = driver.parse_args(["--tiers", "intermediate"])
         assert args.tiers == ["intermediate"]
@@ -278,6 +296,48 @@ class TestFormatting:
         assert text.count("[G7.1.2]") == 1
         assert "intro" in text
         assert "intermediate" in text
+
+    def test_format_failures_sorts_within_gate(self) -> None:
+        """Within a single gate, failures must be sorted by (tier, message).
+
+        The docstring promises "groups by gate id, then sorts within
+        each gate" — input order is unstable (per-tier checks emit in
+        YAML iteration order; cross-tier checks emit in code order),
+        so the renderer must impose its own ordering.
+        """
+        from leadforge.validation.difficulty import GateFailure
+
+        # Input deliberately in reverse order — should be re-sorted.
+        text = driver.format_failures(
+            [
+                GateFailure(gate="G7.1.2", tier="intro", message="zeta"),
+                GateFailure(gate="G7.1.2", tier="intro", message="alpha"),
+                GateFailure(gate="G7.1.2", tier="advanced", message="msg"),
+                GateFailure(gate="G7.1.2", tier="intermediate", message="msg"),
+            ]
+        )
+        # ``advanced`` < ``intermediate`` < ``intro`` alphabetically; within
+        # ``intro`` the messages sort ``alpha`` < ``zeta``.
+        adv = text.index("advanced")
+        inter = text.index("intermediate")
+        intro_alpha = text.index("alpha")
+        intro_zeta = text.index("zeta")
+        assert adv < inter < intro_alpha < intro_zeta
+
+    def test_format_failures_cross_tier_sorted_last_within_gate(self) -> None:
+        """A cross-tier failure (``tier=None``) sorts before per-tier ones
+        because ``""`` is the smallest string — locked in for output
+        determinism."""
+        from leadforge.validation.difficulty import GateFailure
+
+        text = driver.format_failures(
+            [
+                GateFailure(gate="G7.4.4", tier="intro", message="per-tier msg"),
+                GateFailure(gate="G7.4.4", tier=None, message="cross-tier msg"),
+            ]
+        )
+        # Cross-tier (None → "") sorts before per-tier "intro".
+        assert text.index("(all tiers)") < text.index("intro")
 
     def test_format_failures_empty(self) -> None:
         assert driver.format_failures([]) == ""

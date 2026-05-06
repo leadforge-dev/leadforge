@@ -230,14 +230,18 @@ class DriverConfig:
 
 
 def _config_from_args(args: argparse.Namespace) -> DriverConfig:
-    seeds = tuple(QUICK_SEEDS if args.quick else args.seeds)
+    # Sort + dedup so the seed list is independent of user input order; the
+    # cohort_canonical_seed fallback below has to be deterministic across
+    # equivalent invocations (e.g. ``--seeds 11 10`` vs ``--seeds 10 11``).
+    seeds_input = QUICK_SEEDS if args.quick else args.seeds
+    seeds = tuple(sorted(set(seeds_input)))
     canonical = args.cohort_canonical_seed
     if canonical not in seeds:
         # Fall back to the smallest seed in the sweep; PR 3.2 already does
         # this internally, but surfacing the substitution at config-time
         # keeps the CLI deterministic and the JSON ``seeds`` field
         # consistent with the cohort_shift result.
-        canonical = seeds[0]
+        canonical = min(seeds)
     return DriverConfig(
         release_dir=args.release_dir,
         workdir=args.workdir,
@@ -436,7 +440,10 @@ def run_validation(config: DriverConfig) -> DriverResult:
 def format_failures(failures: Sequence[GateFailure]) -> str:
     """Render a list of :class:`GateFailure` for stderr.
 
-    Groups by gate id, then by tier, then prints one line per message.
+    Groups by gate id, then sorts within each gate by ``(tier, message)``
+    so the output is stable across runs regardless of the order in which
+    individual band checks emit their failures (per-tier checks emit
+    in YAML iteration order; cross-tier checks emit in code order).
     """
     if not failures:
         return ""
@@ -446,7 +453,9 @@ def format_failures(failures: Sequence[GateFailure]) -> str:
     lines: list[str] = ["Acceptance-band failures:"]
     for gate in sorted(by_gate):
         lines.append(f"  [{gate}]")
-        for f in by_gate[gate]:
+        # ``tier`` is ``None`` for cross-tier gates; bucket those last by
+        # using the empty string as the sort key for "no tier".
+        for f in sorted(by_gate[gate], key=lambda x: (x.tier or "", x.message)):
             scope = f.tier or "(all tiers)"
             lines.append(f"    - {scope}: {f.message}")
     return "\n".join(lines) + "\n"
