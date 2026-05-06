@@ -132,7 +132,7 @@ ships.
 
 | Column | Dtype | Why it ships |
 |---|---|---|
-| `total_touches_all` | Int64 | Counts touches across the full 90-day horizon — not the snapshot window. Flagged `leakage_risk=True` and `is_leakage_trap=True` in the CSV; documented in `release/README.md`. The gap `total_touches_all − touch_count` carries label-correlated signal because high-converting leads accumulate more late-window touches in the simulator. **Drop this column from your features unless you are explicitly demonstrating leakage detection.** |
+| `total_touches_all` | Int64 | Counts touches across the full 90-day horizon — not the snapshot window. Flagged `leakage_risk=True` in the CSV (the per-bundle dictionary has columns `name,dtype,description,category,is_target,leakage_risk`); documented in `release/README.md`. The gap `total_touches_all − touch_count` carries label-correlated signal because high-converting leads accumulate more late-window touches in the simulator. **Drop this column from your features unless you are explicitly demonstrating leakage detection.** |
 
 ## Target
 
@@ -166,27 +166,35 @@ cross-seed × cross-tier metrics panel.
 
 ## Recommended modelling defaults
 
-A short opinionated checklist for a first model:
+A short opinionated checklist for a first model. Note: the flat
+`lead_scoring.csv` and the per-task Parquet splits ship every column
+in the table above, including the IDs — the recommendation is what to
+**use as features**, not what's in the file.
 
-1. Drop `lead_id`. Drop or bin `lead_created_at`. Drop
-   `total_touches_all`. Drop `account_id` / `contact_id` unless
-   you're joining the relational tables on purpose.
-2. One-hot or target-encode the categorical columns
-   (`industry`, `region`, `employee_band`,
-   `estimated_revenue_band`, `process_maturity_band`,
-   `role_function`, `seniority`, `buyer_role`,
-   `lead_source`, `first_touch_channel`).
-3. Keep all snapshot-window engagement and funnel features; the
-   `Float64` columns carry NaN for "no event in window", which is
-   itself a signal — encode missingness explicitly rather than
-   imputing to zero blindly.
-4. For value-aware ranking, use `expected_acv` over
-   `opportunity_estimated_acv` since the latter is missing for
-   leads without an opportunity. Multiply by your model's predicted
+1. **Identifiers — drop before fitting.** `lead_id` is opaque and
+   carries no signal; drop it. `account_id` / `contact_id` are joinable
+   keys, useful only when you're computing cross-table aggregates;
+   drop from the feature matrix unless you actually use them. Drop or
+   bin `lead_created_at` — feeding raw timestamps to a linear model
+   is rarely what you want; use it as the cohort key for time-shift
+   evaluation instead.
+2. **Trap — drop.** `total_touches_all` is the deliberate leakage
+   trap. Drop unless you're demonstrating leakage detection.
+3. **Categoricals — encode.** One-hot or target-encode `industry`,
+   `region`, `employee_band`, `estimated_revenue_band`,
+   `process_maturity_band`, `role_function`, `seniority`,
+   `buyer_role`, `lead_source`, `first_touch_channel`. The two
+   channel columns carry identical values in v1; pick one.
+4. **Engagement and funnel — keep all.** The `Float64` columns carry
+   NaN for "no event in window", which is itself a signal — encode
+   missingness explicitly rather than imputing to zero blindly.
+5. **Value-aware ranking.** Use `expected_acv` over
+   `opportunity_estimated_acv`; the latter is missing for leads
+   without an opportunity. Multiply by your model's predicted
    probability for a default value-weighted ranker.
-5. For cohort/time-shift evaluation, sort by `lead_created_at` and
-   split chronologically; the random-split AUC is *not* the
-   right number to report if your downstream use is forecasting.
+6. **Cohort evaluation.** Sort by `lead_created_at` and split
+   chronologically; the random-split AUC is *not* the right number to
+   report if your downstream use is forecasting.
 
 ## See also
 

@@ -153,26 +153,14 @@ declared in `docs/release/v1_acceptance_gates_bands.yaml`.
   free-text-job-title messiness). Both are tracked as post-v1
   scope in `docs/release/post_v1_roadmap.md`.
 
-## Where the code lives
-
-| Layer | Module |
-|---|---|
-| Recipe loader, config resolution | `leadforge/api/recipes.py` |
-| Public API entry point | `leadforge/api/generator.py` |
-| Hidden world DAG | `leadforge/structure/{graph,motifs,rewiring,sampler}.py` |
-| Mechanism assignment | `leadforge/mechanisms/{policies,hazards,transitions,counts,categorical}.py` |
-| Population draw | `leadforge/simulation/population.py` |
-| 90-day daily simulator | `leadforge/simulation/engine.py` |
-| Snapshot rendering | `leadforge/render/snapshots.py` |
-| Snapshot-safe relational writer | `leadforge/render/relational_snapshot_safe.py` |
-| Exposure-mode filtering | `leadforge/exposure/{modes,filters,metadata}.py` |
-| Bundle writer | `leadforge/api/bundle.py` |
-| Validation contract | `leadforge/validation/{bundle_checks,leakage_probes,release_quality,reporting,difficulty}.py` |
+## Further reading
 
 For the deeper design rationale — why a DAG, why motif families,
 why event-derived labels, why public-vs-instructor — see
 [`docs/leadforge_design_doc.md`] and
-[`docs/leadforge_architecture_spec.md`].
+[`docs/leadforge_architecture_spec.md`]. Both documents are aimed at
+contributors and document the package internals; this doc stays at
+the conceptual level external readers need.
 
 [`docs/leadforge_design_doc.md`]: ../leadforge_design_doc.md
 [`docs/leadforge_architecture_spec.md`]: ../leadforge_architecture_spec.md
