@@ -1,16 +1,25 @@
 #!/usr/bin/env python3
-"""Generate the deterministic Kaggle cover image for ``leadforge-lead-scoring-v1``.
+"""Generate the Kaggle cover image for ``leadforge-lead-scoring-v1``.
 
 The cover image is rendered programmatically rather than hand-designed
 or licensed so that:
 
-* the asset is reproducible — re-running this script produces a
-  byte-identical PNG, guarded by a determinism test in
-  ``tests/scripts/test_generate_cover_image.py`` (matches the
-  audit-artifact-sync pattern from PR 4.1);
+* re-running this script on the same machine produces byte-identical
+  output, guarded by ``test_render_cover_is_byte_deterministic`` —
+  enough for local regression detection;
 * the source-of-truth for what the image *says* sits in version
   control, not in a designer's file or a stock-photo licence;
 * there is no licensing question.
+
+**Cross-platform byte equality is NOT guaranteed.** The committed
+``release/dataset-cover-image.png`` was rendered on whichever machine
+last ran this script; Pillow + FreeType produce slightly different
+glyph rasterisation between macOS and Linux (different FreeType
+versions, different font-hinting tables).  The committed PNG is
+therefore one valid render — checked into git so a fresh clone has a
+usable cover image without first running this script — not a
+hash-locked artefact.  Tests assert dimensions and per-machine
+determinism, not committed-vs-fresh byte equality.
 
 Output: ``release/dataset-cover-image.png`` at 1280 × 640 px (2:1
 aspect, well above Kaggle's 560 × 280 minimum, with a 1:1 thumbnail
@@ -19,7 +28,7 @@ dev / scripts extra), so this script does not require any new
 dependency.
 
 Headline metrics — conversion rates and LR AUC values — are pinned
-literals sourced from the cross-seed medians (seeds 42-46) reported in
+literals sourced from the cross-seed medians (seeds 42–46) reported in
 ``release/validation/validation_report.md``. They are not recomputed
 at render time: the cover image is intentionally a documentation-grade
 artefact that lags by one validation cycle, not a live metric panel.
