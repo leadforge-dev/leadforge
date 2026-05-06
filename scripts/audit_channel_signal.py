@@ -3,15 +3,23 @@
 
 Companion analysis for PR 4.1 (recommendation #8 v1 scope from
 ``docs/external_review/summaries/recommendations_pass.md``).  For every
-tier in a release bundle family we compute:
+tier in a release bundle family we compute, separately for ``lead_source``
+and ``first_touch_channel``:
 
-* conversion rate by channel (``lead_source`` and ``first_touch_channel``)
-* the univariate AUC of channel against ``converted_within_90_days``,
-  scored as the empirical positive rate per channel (a 1-D Bayes
-  classifier; equivalent to a saturated logistic regression on one-hot
-  channel features)
+* per-channel conversion rate, share, and counts on the **train** split
+* the **in-sample** univariate AUC: per-channel rates derived on train
+  and scored against train labels (a 1-D Bayes classifier; biased upward
+  for small categorical alphabets)
+* the **out-of-sample** univariate AUC: per-channel rates derived on
+  train and scored against **test** labels — directly comparable to the
+  ``source_only`` baselines in ``release/validation/validation_report.json``
 
-and compare those to the G2 / Gemini v2 industry MQL→SQL benchmarks.
+The script does not assign a categorical "weak / moderate / strong"
+verdict.  Industry MQL→SQL benchmarks are surfaced for context only;
+they measure a different funnel transition (single MQL→SQL step, not
+the 90-day closed-won label v1 reports), so a hard comparison would be
+a category error.  The audit doc states the v1 numbers and an explicit
+caveat; readers draw the comparison.
 
 Outputs (defaults are pinned via the v1 acceptance gates):
 
@@ -19,8 +27,8 @@ Outputs (defaults are pinned via the v1 acceptance gates):
 * ``docs/release/channel_signal_audit.json`` — machine-readable sibling
 
 The script is deterministic given a fixed bundle: it reads
-``train.parquet`` only, derives empirical rates, and uses
-``sklearn.metrics.roc_auc_score`` with no fit-time randomness.
+``train.parquet`` and ``test.parquet`` only, derives empirical rates,
+and uses ``sklearn.metrics.roc_auc_score`` with no fit-time randomness.
 """
 
 from __future__ import annotations
@@ -28,7 +36,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Final
@@ -46,27 +54,19 @@ DEFAULT_TIERS: Final[tuple[str, ...]] = ("intro", "intermediate", "advanced")
 DEFAULT_TASK: Final[str] = "converted_within_90_days"
 
 #: G2 industry MQL→SQL conversion rates surfaced in
-#: ``gemini_v2_summary.md`` (recommendation #8).  These are not directly
-#: comparable to v1's 90-day closed-won label, but they are the closest
-#: public anchor for "how much should channel matter" and the audit
-#: reports the comparison band rather than asserting a hard match.
-INDUSTRY_MQL_TO_SQL_BENCHMARKS: Final[Mapping[str, float]] = {
-    "SEO": 0.51,
-    "PPC": 0.26,
-    "Email": 0.005,
-}
+#: ``docs/external_review/summaries/gemini_v2_summary.md`` (recommendation #8).
+#: They measure a single MQL→SQL transition, NOT v1's 90-day closed-won
+#: label.  Stored as a tuple of pairs so the dataclass field is genuinely
+#: immutable; converted to a plain dict at JSON-render time.
+INDUSTRY_MQL_TO_SQL_BENCHMARKS: Final[tuple[tuple[str, float], ...]] = (
+    ("Email", 0.005),
+    ("PPC", 0.26),
+    ("SEO", 0.51),
+)
 
 DEFAULT_RELEASE_DIR: Final[Path] = Path("release")
 DEFAULT_OUT_MD: Final[Path] = Path("docs/release/channel_signal_audit.md")
 DEFAULT_OUT_JSON: Final[Path] = Path("docs/release/channel_signal_audit.json")
-
-#: Bands used to label the verdict for each channel column.  Tuned to
-#: surface "weak / moderate / strong" against G2-style benchmarks where
-#: SEO vs Email differs by ~50 percentage points.  Bands operate on the
-#: per-channel max-min conversion-rate spread.
-SIGNAL_BAND_WEAK_MAX: Final[float] = 0.05
-SIGNAL_BAND_MODERATE_MAX: Final[float] = 0.15
-AUC_NEAR_CHANCE_MAX: Final[float] = 0.55
 
 
 # ---------------------------------------------------------------------------
@@ -76,7 +76,7 @@ AUC_NEAR_CHANCE_MAX: Final[float] = 0.55
 
 @dataclass(frozen=True)
 class ChannelStats:
-    """Per-channel rollup for one channel column in one tier."""
+    """Per-channel rollup for one channel column on the train split."""
 
     name: str
     n: int
@@ -87,14 +87,37 @@ class ChannelStats:
 
 @dataclass(frozen=True)
 class ChannelAudit:
-    """Audit results for one channel column in one tier."""
+    """Audit results for one channel column in one tier.
+
+    Per-channel statistics come from the train split.
+    ``univariate_auc_in_sample`` re-uses train labels (bias-prone but
+    matches the historical 1-D Bayes-classifier interpretation);
+    ``univariate_auc_out_of_sample`` scores the train-derived rates
+    against the held-out test split.
+    """
 
     column: str
-    n_total: int
-    overall_conversion_rate: float
+    n_train: int
+    n_test: int
+    train_conversion_rate: float
+    test_conversion_rate: float
     channels: tuple[ChannelStats, ...]
     rate_spread: float
-    univariate_auc: float
+    univariate_auc_in_sample: float
+    univariate_auc_out_of_sample: float
+
+
+@dataclass(frozen=True)
+class ChannelGroup:
+    """One or more channel columns with byte-identical audit values.
+
+    v1's ``lead_source`` and ``first_touch_channel`` produce identical
+    numbers in every tier — this dataclass lets the markdown renderer
+    collapse them into one section without losing information.
+    """
+
+    columns: tuple[str, ...]
+    audit: ChannelAudit
 
 
 @dataclass(frozen=True)
@@ -102,8 +125,10 @@ class TierAudit:
     """Audit results for one tier across every channel column."""
 
     tier: str
-    n_leads: int
-    conversion_rate_overall: float
+    n_train: int
+    n_test: int
+    train_conversion_rate: float
+    test_conversion_rate: float
     columns: tuple[ChannelAudit, ...]
 
 
@@ -116,7 +141,7 @@ class AuditReport:
     label_column: str
     channel_columns: tuple[str, ...]
     tiers: tuple[TierAudit, ...]
-    industry_mql_to_sql_benchmarks: Mapping[str, float]
+    industry_mql_to_sql_benchmarks: tuple[tuple[str, float], ...]
 
 
 # ---------------------------------------------------------------------------
@@ -132,33 +157,50 @@ def _label_to_int(series: pd.Series) -> pd.Series:
     return pd.to_numeric(series, errors="raise").astype(int)
 
 
+def _conversion_rate(df: pd.DataFrame, label_col: str) -> float:
+    if len(df) == 0:
+        return 0.0
+    return float(int(_label_to_int(df[label_col]).sum()) / len(df))
+
+
+def _auc_or_chance(y: pd.Series, scores: pd.Series) -> float:
+    """ROC AUC, falling back to ``0.5`` when undefined (single class)."""
+
+    if y.nunique() < 2:
+        return 0.5
+    return float(roc_auc_score(y.to_numpy(), scores.to_numpy()))
+
+
 def audit_channel(
-    df: pd.DataFrame,
+    train: pd.DataFrame,
     channel_col: str,
+    *,
+    test: pd.DataFrame,
     label_col: str = LABEL_COLUMN,
 ) -> ChannelAudit:
-    """Per-channel stats + univariate AUC for a single channel column.
+    """Per-channel stats and univariate AUCs (in-sample + OOS).
 
-    ``univariate_auc`` is the AUC obtained by replacing each row's
-    channel value with that channel's empirical positive rate.  This is
-    a 1-D Bayes classifier, equivalent (up to ties) to a saturated
-    logistic regression on one-hot channel features and stable across
-    sklearn versions.  Returns ``0.5`` when the label has only one
-    class, since AUC is undefined.
+    Both AUCs use the same scoring function: the per-channel positive
+    rate derived from the train split.  The "in-sample" AUC scores
+    that against train labels (biased upward by construction); the
+    "out-of-sample" AUC scores it against held-out test labels and
+    is directly comparable to the ``source_only`` baselines in
+    ``release/validation/validation_report.json``.
     """
 
-    if channel_col not in df.columns:
-        raise KeyError(f"channel column {channel_col!r} not present")
-    if label_col not in df.columns:
-        raise KeyError(f"label column {label_col!r} not present")
+    for df_name, df in (("train", train), ("test", test)):
+        if channel_col not in df.columns:
+            raise KeyError(f"channel column {channel_col!r} not present in {df_name}")
+        if label_col not in df.columns:
+            raise KeyError(f"label column {label_col!r} not present in {df_name}")
 
-    y = _label_to_int(df[label_col])
-    n_total = len(df)
-    n_converted_total = int(y.sum())
-    overall_rate = float(n_converted_total / n_total) if n_total else 0.0
+    y_train = _label_to_int(train[label_col])
+    n_train = len(train)
+    n_test = len(test)
+    train_rate = float(int(y_train.sum()) / n_train) if n_train else 0.0
+    test_rate = _conversion_rate(test, label_col)
 
-    # Per-channel rollup, sorted by name for determinism.
-    grouped = df.assign(_y=y).groupby(channel_col, dropna=False)
+    grouped = train.assign(_y=y_train).groupby(channel_col, dropna=False)
     rows: list[ChannelStats] = []
     for name, sub in sorted(grouped, key=lambda kv: str(kv[0])):
         n = len(sub)
@@ -167,7 +209,7 @@ def audit_channel(
             ChannelStats(
                 name=str(name),
                 n=n,
-                share=float(n / n_total) if n_total else 0.0,
+                share=float(n / n_train) if n_train else 0.0,
                 n_converted=n_conv,
                 conversion_rate=float(n_conv / n) if n else 0.0,
             )
@@ -177,51 +219,67 @@ def audit_channel(
         max(c.conversion_rate for c in rows) - min(c.conversion_rate for c in rows) if rows else 0.0
     )
 
-    if y.nunique() < 2 or len(rows) < 2:
-        univariate_auc = 0.5
+    if len(rows) < 2:
+        in_sample_auc = 0.5
+        oos_auc = 0.5
     else:
         rate_lookup = {c.name: c.conversion_rate for c in rows}
-        scores = df[channel_col].astype(str).map(rate_lookup).astype(float)
-        univariate_auc = float(roc_auc_score(y.to_numpy(), scores.to_numpy()))
+        train_scores = train[channel_col].astype(str).map(rate_lookup).astype(float)
+        in_sample_auc = _auc_or_chance(y_train, train_scores)
+
+        # Test-set channels are scored using the train-derived rates;
+        # any channel value unseen on train falls back to the train
+        # base rate so the AUC stays well-defined.
+        test_scores = (
+            test[channel_col].astype(str).map(rate_lookup).fillna(train_rate).astype(float)
+        )
+        y_test = _label_to_int(test[label_col])
+        oos_auc = _auc_or_chance(y_test, test_scores)
 
     return ChannelAudit(
         column=channel_col,
-        n_total=n_total,
-        overall_conversion_rate=overall_rate,
+        n_train=n_train,
+        n_test=n_test,
+        train_conversion_rate=train_rate,
+        test_conversion_rate=test_rate,
         channels=tuple(rows),
         rate_spread=float(rate_spread),
-        univariate_auc=univariate_auc,
+        univariate_auc_in_sample=in_sample_auc,
+        univariate_auc_out_of_sample=oos_auc,
     )
 
 
 def audit_tier(
-    df: pd.DataFrame,
+    train: pd.DataFrame,
     tier: str,
     *,
+    test: pd.DataFrame,
     channel_columns: Sequence[str] = CHANNEL_COLUMNS,
     label_col: str = LABEL_COLUMN,
 ) -> TierAudit:
     """Run :func:`audit_channel` for every channel column on one tier."""
 
-    y = _label_to_int(df[label_col])
-    n = len(df)
-    overall_rate = float(int(y.sum()) / n) if n else 0.0
-
-    columns = tuple(audit_channel(df, col, label_col=label_col) for col in channel_columns)
+    train_rate = _conversion_rate(train, label_col)
+    test_rate = _conversion_rate(test, label_col)
+    columns = tuple(
+        audit_channel(train, col, test=test, label_col=label_col) for col in channel_columns
+    )
     return TierAudit(
         tier=tier,
-        n_leads=n,
-        conversion_rate_overall=overall_rate,
+        n_train=len(train),
+        n_test=len(test),
+        train_conversion_rate=train_rate,
+        test_conversion_rate=test_rate,
         columns=columns,
     )
 
 
-def load_train_df(release_dir: Path, tier: str, task: str = DEFAULT_TASK) -> pd.DataFrame:
-    """Load ``release_dir/<tier>/tasks/<task>/train.parquet``."""
+def load_split(release_dir: Path, tier: str, split: str, task: str = DEFAULT_TASK) -> pd.DataFrame:
+    """Load ``release_dir/<tier>/tasks/<task>/<split>.parquet``."""
 
-    path = release_dir / tier / "tasks" / task / "train.parquet"
+    path = release_dir / tier / "tasks" / task / f"{split}.parquet"
     if not path.exists():
-        raise FileNotFoundError(f"missing train split for tier {tier!r}: {path}")
+        raise FileNotFoundError(f"missing {split} split for tier {tier!r}: {path}")
     return pd.read_parquet(path)
 
 
@@ -237,11 +295,13 @@ def build_report(
 
     tier_audits: list[TierAudit] = []
     for tier in tiers:
-        df = load_train_df(release_dir, tier, task=task)
+        train = load_split(release_dir, tier, "train", task=task)
+        test = load_split(release_dir, tier, "test", task=task)
         tier_audits.append(
             audit_tier(
-                df,
+                train,
                 tier=tier,
+                test=test,
                 channel_columns=channel_columns,
                 label_col=label_col,
             )
@@ -253,67 +313,7 @@ def build_report(
         label_column=label_col,
         channel_columns=tuple(channel_columns),
         tiers=tuple(tier_audits),
-        industry_mql_to_sql_benchmarks=dict(INDUSTRY_MQL_TO_SQL_BENCHMARKS),
-    )
-
-
-# ---------------------------------------------------------------------------
-# Verdict
-# ---------------------------------------------------------------------------
-
-
-def _classify_signal(audit: ChannelAudit) -> str:
-    """Map (rate spread, univariate AUC) to one of weak/moderate/strong."""
-
-    if audit.univariate_auc < AUC_NEAR_CHANCE_MAX and audit.rate_spread < SIGNAL_BAND_WEAK_MAX:
-        return "weak"
-    if audit.rate_spread < SIGNAL_BAND_MODERATE_MAX:
-        return "moderate"
-    return "strong"
-
-
-def _verdict_paragraph(report: AuditReport) -> str:
-    """One-paragraph human-readable verdict."""
-
-    rows = [
-        (tier.tier, col.column, col.rate_spread, col.univariate_auc, _classify_signal(col))
-        for tier in report.tiers
-        for col in tier.columns
-    ]
-    strengths = {row[4] for row in rows}
-    max_spread = max((row[2] for row in rows), default=0.0)
-    max_auc = max((row[3] for row in rows), default=0.5)
-
-    seo_minus_email = (
-        INDUSTRY_MQL_TO_SQL_BENCHMARKS["SEO"] - INDUSTRY_MQL_TO_SQL_BENCHMARKS["Email"]
-    )
-
-    if strengths <= {"weak"}:
-        verdict = "weak"
-        intent = (
-            "well below the G2 / Gemini v2 industry MQL→SQL benchmark band, where SEO leads "
-            f"convert {seo_minus_email * 100:.0f} percentage points more than Email leads."
-        )
-    elif "strong" in strengths:
-        verdict = "strong"
-        intent = (
-            "comparable to or stronger than the G2 / Gemini v2 industry benchmark band — "
-            "channel-conditional encoding may already be implicit in v1."
-        )
-    else:
-        verdict = "moderate"
-        intent = (
-            "below the G2 / Gemini v2 industry benchmark band — channel signal is present but "
-            "weaker than published MQL→SQL spreads."
-        )
-
-    return (
-        f"v1's channel signal is **{verdict}**: across all tiers and both channel columns the "
-        f"largest per-channel conversion-rate spread is {max_spread:.3f} and the largest "
-        f"univariate AUC is {max_auc:.3f}. That is {intent} v1 drives conversion through "
-        "motif-family hazards keyed off latent traits, not channel-conditional probabilities, "
-        "so this is the expected outcome; channel-conditional encoding is tracked as post-v1 "
-        "work in `docs/release/post_v1_roadmap.md`."
+        industry_mql_to_sql_benchmarks=INDUSTRY_MQL_TO_SQL_BENCHMARKS,
     )
 
 
@@ -323,7 +323,13 @@ def _verdict_paragraph(report: AuditReport) -> str:
 
 
 def report_to_dict(report: AuditReport) -> dict[str, Any]:
-    """Convert the report to a JSON-primitive dict (deterministic)."""
+    """Convert the report to a JSON-primitive dict.
+
+    The dataclass stores ``industry_mql_to_sql_benchmarks`` as a tuple
+    of pairs (immutability); this helper converts it back into a
+    ``{name: rate}`` mapping for the JSON output, where a dict shape
+    is more ergonomic for downstream tooling.
+    """
 
     payload = asdict(report)
     payload["industry_mql_to_sql_benchmarks"] = dict(report.industry_mql_to_sql_benchmarks)
@@ -340,6 +346,47 @@ def _format_pct(x: float) -> str:
     return f"{x * 100:.2f}%"
 
 
+def _audit_signature(audit: ChannelAudit) -> tuple[Any, ...]:
+    """Hashable signature used to group columns whose audits are identical."""
+
+    return (
+        audit.n_train,
+        audit.n_test,
+        audit.train_conversion_rate,
+        audit.test_conversion_rate,
+        tuple(_stats_signature(c) for c in audit.channels),
+        audit.rate_spread,
+        audit.univariate_auc_in_sample,
+        audit.univariate_auc_out_of_sample,
+    )
+
+
+def _stats_signature(stats: ChannelStats) -> tuple[Any, ...]:
+    """Hashable tuple representing one ``ChannelStats``."""
+
+    return (stats.name, stats.n, stats.share, stats.n_converted, stats.conversion_rate)
+
+
+def _group_identical_columns(audits: Sequence[ChannelAudit]) -> list[ChannelGroup]:
+    """Collapse columns whose audit values are byte-identical."""
+
+    groups: list[ChannelGroup] = []
+    seen_signatures: dict[tuple[Any, ...], int] = {}
+    for audit in audits:
+        sig = _audit_signature(audit)
+        if sig in seen_signatures:
+            idx = seen_signatures[sig]
+            existing = groups[idx]
+            groups[idx] = ChannelGroup(
+                columns=existing.columns + (audit.column,),
+                audit=existing.audit,
+            )
+        else:
+            seen_signatures[sig] = len(groups)
+            groups.append(ChannelGroup(columns=(audit.column,), audit=audit))
+    return groups
+
+
 def render_markdown(report: AuditReport) -> str:
     """Render the audit report as Markdown."""
 
@@ -347,31 +394,34 @@ def render_markdown(report: AuditReport) -> str:
     lines.append("# Channel-signal audit — leadforge-lead-scoring-v1")
     lines.append("")
     lines.append(
-        "Audit produced by `scripts/audit_channel_signal.py`; see also "
+        "Audit produced by `scripts/audit_channel_signal.py`; see "
         "`docs/release/channel_signal_audit.json` for the machine-readable form."
     )
     lines.append("")
     lines.append(
-        "**Scope.** For every tier we compute per-channel conversion rates and the univariate "
-        "AUC of channel against `converted_within_90_days`, scored as the empirical positive "
-        "rate per channel (a 1-D Bayes classifier, equivalent to a saturated logistic "
-        "regression on one-hot channel features). Compared against the G2 / Gemini v2 industry "
-        "MQL→SQL benchmark band (SEO ~51%, PPC ~26%, Email <1%, surfaced in "
-        "`docs/external_review/summaries/recommendations_pass.md` recommendation #8)."
+        "**Scope.** For every tier we compute per-channel conversion rates on the train "
+        "split and the univariate AUC of channel against `converted_within_90_days`, "
+        "scored as the empirical positive rate per channel (a 1-D Bayes classifier). Two "
+        "AUCs are reported: an **in-sample** number (train rates → train labels — biased "
+        "upward by construction) and an **out-of-sample** number (train rates → test labels "
+        "— directly comparable to the `source_only` baselines in "
+        "`release/validation/validation_report.json`)."
     )
     lines.append("")
     lines.append(
-        "**Caveat.** Industry benchmarks are MQL→SQL rates, not 90-day closed-won rates. They "
-        "are the closest public anchor for *how much* channel ought to matter; use them as a "
-        "band of reference, not a hard target."
+        "**Caveat on the industry benchmark.** The G2 / Gemini v2 numbers below are "
+        "single-step **MQL→SQL** rates (recommendation #8 in "
+        "`docs/external_review/summaries/recommendations_pass.md`). v1's label is "
+        "**90-day closed-won**, the entire funnel resolved. The two metrics are not "
+        "directly comparable; the table is reproduced for context only."
     )
     lines.append("")
 
-    lines.append("## Industry benchmark band")
+    lines.append("## Industry benchmark (context, not target)")
     lines.append("")
     lines.append("| Channel | MQL→SQL conversion rate |")
     lines.append("|---|---|")
-    for name, rate in sorted(report.industry_mql_to_sql_benchmarks.items()):
+    for name, rate in report.industry_mql_to_sql_benchmarks:
         lines.append(f"| {name} | {_format_pct(rate)} |")
     lines.append("")
 
@@ -379,32 +429,65 @@ def render_markdown(report: AuditReport) -> str:
         lines.append(f"## Tier: `{tier.tier}`")
         lines.append("")
         lines.append(
-            f"`n_leads = {tier.n_leads}`, overall 90-day conversion rate "
-            f"{_format_pct(tier.conversion_rate_overall)}."
+            f"`n_train = {tier.n_train}` (90-day conversion rate "
+            f"{_format_pct(tier.train_conversion_rate)}); "
+            f"`n_test = {tier.n_test}` (rate "
+            f"{_format_pct(tier.test_conversion_rate)})."
         )
         lines.append("")
 
-        for col in tier.columns:
-            lines.append(f"### Column: `{col.column}`")
+        groups = _group_identical_columns(tier.columns)
+        for group in groups:
+            cols_label = ", ".join(f"`{c}`" for c in group.columns)
+            if len(group.columns) > 1:
+                heading = f"### Columns: {cols_label} (audit values identical)"
+            else:
+                heading = f"### Column: {cols_label}"
+            lines.append(heading)
             lines.append("")
             lines.append(
-                f"Univariate AUC: **{col.univariate_auc:.4f}**  ·  "
-                f"Per-channel rate spread (max − min): **{col.rate_spread:.4f}**  ·  "
-                f"Verdict: **{_classify_signal(col)} signal**"
+                f"Per-channel rate spread (max − min): **{group.audit.rate_spread:.4f}**  ·  "
+                f"In-sample univariate AUC: **{group.audit.univariate_auc_in_sample:.4f}**  ·  "
+                f"Out-of-sample univariate AUC: **{group.audit.univariate_auc_out_of_sample:.4f}**"
             )
             lines.append("")
-            lines.append("| Channel | n | Share | Converted | Conversion rate |")
+            lines.append("| Channel | n (train) | Share (train) | Converted (train) | Train rate |")
             lines.append("|---|---:|---:|---:|---:|")
-            for ch in col.channels:
+            for ch in group.audit.channels:
                 lines.append(
                     f"| `{ch.name}` | {ch.n} | {_format_pct(ch.share)} | "
                     f"{ch.n_converted} | {_format_pct(ch.conversion_rate)} |"
                 )
             lines.append("")
 
-    lines.append("## Verdict")
+    lines.append("## Discussion")
     lines.append("")
-    lines.append(_verdict_paragraph(report))
+    lines.append(
+        "The numbers above answer one question: *how strongly does channel alone signal "
+        "90-day conversion in v1?* They do not answer *whether v1 matches industry channel "
+        "performance*, since the benchmarks measure a different funnel transition (single "
+        "MQL→SQL step) and v1 measures the entire funnel resolved over 90 days. Treat the "
+        "v1 numbers as an internal description of the simulator's channel signal."
+    )
+    lines.append("")
+    lines.append("Two empirical observations a reader can make from the numbers above:")
+    lines.append("")
+    lines.append(
+        "1. **The out-of-sample univariate AUC reproduces the `source_only` baseline** in "
+        "`release/validation/validation_report.json` (HistGBM trained on `lead_source` + "
+        "`first_touch_channel` against the same test split). For seed 42 the OOS numbers "
+        "below match the report cell-for-cell. The in-sample number is biased upward by "
+        "construction — small at v1's N but visible — so the OOS number is the one to "
+        "compare against any external baseline."
+    )
+    lines.append(
+        "2. **Out-of-sample univariate AUC is close to chance** in every tier and the "
+        "per-channel conversion-rate spread is small (≤0.05). Channel alone is a weak "
+        "feature in v1 — consistent with the design: the simulator drives conversion "
+        "through motif-family hazards keyed off latent traits, not channel-conditional "
+        "probabilities. Channel-conditional encoding is tracked as post-v1 work in "
+        "`docs/release/post_v1_roadmap.md`."
+    )
     lines.append("")
     return "\n".join(lines)
 

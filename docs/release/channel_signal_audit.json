@@ -39,10 +39,13 @@
             }
           ],
           "column": "lead_source",
-          "n_total": 3500,
-          "overall_conversion_rate": 0.4145714285714286,
+          "n_test": 750,
+          "n_train": 3500,
           "rate_spread": 0.04327742594857009,
-          "univariate_auc": 0.5199794894149169
+          "test_conversion_rate": 0.4266666666666667,
+          "train_conversion_rate": 0.4145714285714286,
+          "univariate_auc_in_sample": 0.5199794894149169,
+          "univariate_auc_out_of_sample": 0.5013517441860464
         },
         {
           "channels": [
@@ -69,15 +72,20 @@
             }
           ],
           "column": "first_touch_channel",
-          "n_total": 3500,
-          "overall_conversion_rate": 0.4145714285714286,
+          "n_test": 750,
+          "n_train": 3500,
           "rate_spread": 0.04327742594857009,
-          "univariate_auc": 0.5199794894149169
+          "test_conversion_rate": 0.4266666666666667,
+          "train_conversion_rate": 0.4145714285714286,
+          "univariate_auc_in_sample": 0.5199794894149169,
+          "univariate_auc_out_of_sample": 0.5013517441860464
         }
       ],
-      "conversion_rate_overall": 0.4145714285714286,
-      "n_leads": 3500,
-      "tier": "intro"
+      "n_test": 750,
+      "n_train": 3500,
+      "test_conversion_rate": 0.4266666666666667,
+      "tier": "intro",
+      "train_conversion_rate": 0.4145714285714286
     },
     {
       "columns": [
@@ -106,10 +114,13 @@
             }
           ],
           "column": "lead_source",
-          "n_total": 3500,
-          "overall_conversion_rate": 0.20142857142857143,
+          "n_test": 750,
+          "n_train": 3500,
           "rate_spread": 0.03652108846020477,
-          "univariate_auc": 0.5212431012826857
+          "test_conversion_rate": 0.22266666666666668,
+          "train_conversion_rate": 0.20142857142857143,
+          "univariate_auc_in_sample": 0.5212431012826857,
+          "univariate_auc_out_of_sample": 0.5139326835180411
         },
         {
           "channels": [
@@ -136,15 +147,20 @@
             }
           ],
           "column": "first_touch_channel",
-          "n_total": 3500,
-          "overall_conversion_rate": 0.20142857142857143,
+          "n_test": 750,
+          "n_train": 3500,
           "rate_spread": 0.03652108846020477,
-          "univariate_auc": 0.5212431012826857
+          "test_conversion_rate": 0.22266666666666668,
+          "train_conversion_rate": 0.20142857142857143,
+          "univariate_auc_in_sample": 0.5212431012826857,
+          "univariate_auc_out_of_sample": 0.5139326835180411
         }
       ],
-      "conversion_rate_overall": 0.20142857142857143,
-      "n_leads": 3500,
-      "tier": "intermediate"
+      "n_test": 750,
+      "n_train": 3500,
+      "test_conversion_rate": 0.22266666666666668,
+      "tier": "intermediate",
+      "train_conversion_rate": 0.20142857142857143
     },
     {
       "columns": [
@@ -173,10 +189,13 @@
             }
           ],
           "column": "lead_source",
-          "n_total": 3500,
-          "overall_conversion_rate": 0.07914285714285714,
+          "n_test": 750,
+          "n_train": 3500,
           "rate_spread": 0.005597430328691616,
-          "univariate_auc": 0.5083011208921436
+          "test_conversion_rate": 0.07866666666666666,
+          "train_conversion_rate": 0.07914285714285714,
+          "univariate_auc_in_sample": 0.5083011208921436,
+          "univariate_auc_out_of_sample": 0.5225784296892246
         },
         {
           "channels": [
@@ -203,15 +222,20 @@
             }
           ],
           "column": "first_touch_channel",
-          "n_total": 3500,
-          "overall_conversion_rate": 0.07914285714285714,
+          "n_test": 750,
+          "n_train": 3500,
           "rate_spread": 0.005597430328691616,
-          "univariate_auc": 0.5083011208921436
+          "test_conversion_rate": 0.07866666666666666,
+          "train_conversion_rate": 0.07914285714285714,
+          "univariate_auc_in_sample": 0.5083011208921436,
+          "univariate_auc_out_of_sample": 0.5225784296892246
         }
       ],
-      "conversion_rate_overall": 0.07914285714285714,
-      "n_leads": 3500,
-      "tier": "advanced"
+      "n_test": 750,
+      "n_train": 3500,
+      "test_conversion_rate": 0.07866666666666666,
+      "tier": "advanced",
+      "train_conversion_rate": 0.07914285714285714
     }
   ]
 }

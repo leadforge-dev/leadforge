@@ -1,12 +1,12 @@
 # Channel-signal audit — leadforge-lead-scoring-v1
 
-Audit produced by `scripts/audit_channel_signal.py`; see also `docs/release/channel_signal_audit.json` for the machine-readable form.
+Audit produced by `scripts/audit_channel_signal.py`; see `docs/release/channel_signal_audit.json` for the machine-readable form.
 
-**Scope.** For every tier we compute per-channel conversion rates and the univariate AUC of channel against `converted_within_90_days`, scored as the empirical positive rate per channel (a 1-D Bayes classifier, equivalent to a saturated logistic regression on one-hot channel features). Compared against the G2 / Gemini v2 industry MQL→SQL benchmark band (SEO ~51%, PPC ~26%, Email <1%, surfaced in `docs/external_review/summaries/recommendations_pass.md` recommendation #8).
+**Scope.** For every tier we compute per-channel conversion rates on the train split and the univariate AUC of channel against `converted_within_90_days`, scored as the empirical positive rate per channel (a 1-D Bayes classifier). Two AUCs are reported: an **in-sample** number (train rates → train labels — biased upward by construction) and an **out-of-sample** number (train rates → test labels — directly comparable to the `source_only` baselines in `release/validation/validation_report.json`).
 
-**Caveat.** Industry benchmarks are MQL→SQL rates, not 90-day closed-won rates. They are the closest public anchor for *how much* channel ought to matter; use them as a band of reference, not a hard target.
+**Caveat on the industry benchmark.** The G2 / Gemini v2 numbers below are single-step **MQL→SQL** rates (recommendation #8 in `docs/external_review/summaries/recommendations_pass.md`). v1's label is **90-day closed-won**, the entire funnel resolved. The two metrics are not directly comparable; the table is reproduced for context only.
 
-## Industry benchmark band
+## Industry benchmark (context, not target)
 
 | Channel | MQL→SQL conversion rate |
 |---|---|
@@ -16,23 +16,13 @@ Audit produced by `scripts/audit_channel_signal.py`; see also `docs/release/chan
 
 ## Tier: `intro`
 
-`n_leads = 3500`, overall 90-day conversion rate 41.46%.
+`n_train = 3500` (90-day conversion rate 41.46%); `n_test = 750` (rate 42.67%).
 
-### Column: `lead_source`
+### Columns: `lead_source`, `first_touch_channel` (audit values identical)
 
-Univariate AUC: **0.5200**  ·  Per-channel rate spread (max − min): **0.0433**  ·  Verdict: **weak signal**
+Per-channel rate spread (max − min): **0.0433**  ·  In-sample univariate AUC: **0.5200**  ·  Out-of-sample univariate AUC: **0.5014**
 
-| Channel | n | Share | Converted | Conversion rate |
-|---|---:|---:|---:|---:|
-| `inbound_marketing` | 1570 | 44.86% | 682 | 43.44% |
-| `partner_referral` | 698 | 19.94% | 273 | 39.11% |
-| `sdr_outbound` | 1232 | 35.20% | 496 | 40.26% |
-
-### Column: `first_touch_channel`
-
-Univariate AUC: **0.5200**  ·  Per-channel rate spread (max − min): **0.0433**  ·  Verdict: **weak signal**
-
-| Channel | n | Share | Converted | Conversion rate |
+| Channel | n (train) | Share (train) | Converted (train) | Train rate |
 |---|---:|---:|---:|---:|
 | `inbound_marketing` | 1570 | 44.86% | 682 | 43.44% |
 | `partner_referral` | 698 | 19.94% | 273 | 39.11% |
@@ -40,23 +30,13 @@ Univariate AUC: **0.5200**  ·  Per-channel rate spread (max − min): **0.0433*
 
 ## Tier: `intermediate`
 
-`n_leads = 3500`, overall 90-day conversion rate 20.14%.
+`n_train = 3500` (90-day conversion rate 20.14%); `n_test = 750` (rate 22.27%).
 
-### Column: `lead_source`
+### Columns: `lead_source`, `first_touch_channel` (audit values identical)
 
-Univariate AUC: **0.5212**  ·  Per-channel rate spread (max − min): **0.0365**  ·  Verdict: **weak signal**
+Per-channel rate spread (max − min): **0.0365**  ·  In-sample univariate AUC: **0.5212**  ·  Out-of-sample univariate AUC: **0.5139**
 
-| Channel | n | Share | Converted | Conversion rate |
-|---|---:|---:|---:|---:|
-| `inbound_marketing` | 1570 | 44.86% | 334 | 21.27% |
-| `partner_referral` | 698 | 19.94% | 123 | 17.62% |
-| `sdr_outbound` | 1232 | 35.20% | 248 | 20.13% |
-
-### Column: `first_touch_channel`
-
-Univariate AUC: **0.5212**  ·  Per-channel rate spread (max − min): **0.0365**  ·  Verdict: **weak signal**
-
-| Channel | n | Share | Converted | Conversion rate |
+| Channel | n (train) | Share (train) | Converted (train) | Train rate |
 |---|---:|---:|---:|---:|
 | `inbound_marketing` | 1570 | 44.86% | 334 | 21.27% |
 | `partner_referral` | 698 | 19.94% | 123 | 17.62% |
@@ -64,28 +44,23 @@ Univariate AUC: **0.5212**  ·  Per-channel rate spread (max − min): **0.0365*
 
 ## Tier: `advanced`
 
-`n_leads = 3500`, overall 90-day conversion rate 7.91%.
+`n_train = 3500` (90-day conversion rate 7.91%); `n_test = 750` (rate 7.87%).
 
-### Column: `lead_source`
+### Columns: `lead_source`, `first_touch_channel` (audit values identical)
 
-Univariate AUC: **0.5083**  ·  Per-channel rate spread (max − min): **0.0056**  ·  Verdict: **weak signal**
+Per-channel rate spread (max − min): **0.0056**  ·  In-sample univariate AUC: **0.5083**  ·  Out-of-sample univariate AUC: **0.5226**
 
-| Channel | n | Share | Converted | Conversion rate |
+| Channel | n (train) | Share (train) | Converted (train) | Train rate |
 |---|---:|---:|---:|---:|
 | `inbound_marketing` | 1570 | 44.86% | 128 | 8.15% |
 | `partner_referral` | 698 | 19.94% | 53 | 7.59% |
 | `sdr_outbound` | 1232 | 35.20% | 96 | 7.79% |
 
-### Column: `first_touch_channel`
+## Discussion
 
-Univariate AUC: **0.5083**  ·  Per-channel rate spread (max − min): **0.0056**  ·  Verdict: **weak signal**
+The numbers above answer one question: *how strongly does channel alone signal 90-day conversion in v1?* They do not answer *whether v1 matches industry channel performance*, since the benchmarks measure a different funnel transition (single MQL→SQL step) and v1 measures the entire funnel resolved over 90 days. Treat the v1 numbers as an internal description of the simulator's channel signal.
 
-| Channel | n | Share | Converted | Conversion rate |
-|---|---:|---:|---:|---:|
-| `inbound_marketing` | 1570 | 44.86% | 128 | 8.15% |
-| `partner_referral` | 698 | 19.94% | 53 | 7.59% |
-| `sdr_outbound` | 1232 | 35.20% | 96 | 7.79% |
+Two empirical observations a reader can make from the numbers above:
 
-## Verdict
-
-v1's channel signal is **weak**: across all tiers and both channel columns the largest per-channel conversion-rate spread is 0.043 and the largest univariate AUC is 0.521. That is well below the G2 / Gemini v2 industry MQL→SQL benchmark band, where SEO leads convert 50 percentage points more than Email leads. v1 drives conversion through motif-family hazards keyed off latent traits, not channel-conditional probabilities, so this is the expected outcome; channel-conditional encoding is tracked as post-v1 work in `docs/release/post_v1_roadmap.md`.
+1. **The out-of-sample univariate AUC reproduces the `source_only` baseline** in `release/validation/validation_report.json` (HistGBM trained on `lead_source` + `first_touch_channel` against the same test split). For seed 42 the OOS numbers below match the report cell-for-cell. The in-sample number is biased upward by construction — small at v1's N but visible — so the OOS number is the one to compare against any external baseline.
+2. **Out-of-sample univariate AUC is close to chance** in every tier and the per-channel conversion-rate spread is small (≤0.05). Channel alone is a weak feature in v1 — consistent with the design: the simulator drives conversion through motif-family hazards keyed off latent traits, not channel-conditional probabilities. Channel-conditional encoding is tracked as post-v1 work in `docs/release/post_v1_roadmap.md`.
