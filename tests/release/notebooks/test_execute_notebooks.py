@@ -37,6 +37,8 @@ _RELEASE_BUNDLES_PRESENT = (_REPO_ROOT / "release" / "intermediate" / "manifest.
 _NOTEBOOKS = [
     "01_baseline_lead_scoring.ipynb",
     "02_relational_feature_engineering.ipynb",
+    "03_leakage_and_time_windows.ipynb",
+    "04_lift_calibration_value_ranking.ipynb",
 ]
 
 

@@ -30,6 +30,8 @@ _NOTEBOOKS_DIR = _REPO_ROOT / "release" / "notebooks"
 _BUILDERS: list[tuple[str, str]] = [
     ("build_release_notebook_01.py", "01_baseline_lead_scoring.ipynb"),
     ("build_release_notebook_02.py", "02_relational_feature_engineering.ipynb"),
+    ("build_release_notebook_03.py", "03_leakage_and_time_windows.ipynb"),
+    ("build_release_notebook_04.py", "04_lift_calibration_value_ranking.ipynb"),
 ]
 
 
