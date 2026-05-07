@@ -1,5 +1,13 @@
 {
  "_doc": "Cross-seed-median metric values from release/validation/validation_report.json, sliced to the metrics the release notebooks pin via assert_within_tolerance. Audited against the report by tests/release/notebooks/test_release_targets_match_report.py — if you change a value here, the test will fail unless the corresponding median in the validation report changes to match.",
+ "cohort_shift": {
+  "_doc": "Per-tier cohort-shift metrics from validation_report.cohort_shift (single-seed values; the report runs cohort-shift only on seed 42). Notebook 04 reproduces these via a chronological resplit and pins them via assert_within_tolerance.",
+  "intermediate": {
+   "auc_degradation": -0.015458147938307687,
+   "cohort_split_auc": 0.8908394607843138,
+   "random_split_auc": 0.8753813128460061
+  }
+ },
  "intermediate": {
   "brier_score": 0.10963449613199748,
   "gbm_auc": 0.875461913160326,
