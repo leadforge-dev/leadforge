@@ -542,10 +542,12 @@ def cells() -> list[nbf.NotebookNode]:
                anywhere there's an event table to corroborate.
 
             A walkthrough of additional detection patterns
-            (column-name heuristics, isolation-via-residuals,
-            target-encoding leakage on test) lives in
-            `docs/release/break_me_guide.md` (coming in PR 6.3) — pair
-            it with this notebook for a more complete playbook.
+            (column-name heuristics, target-encoding leakage on
+            test, train-test contamination via account_id,
+            cohort-by-segment evaluation) lives in
+            [`docs/release/break_me_guide.md`](https://github.com/leadforge-dev/leadforge/blob/main/docs/release/break_me_guide.md) —
+            pair it with this notebook for a more complete
+            playbook.
 
             ## Next
 

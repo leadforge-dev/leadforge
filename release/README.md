@@ -35,7 +35,7 @@ release/
 │   ├── tables/*.parquet              # 7 snapshot-safe relational tables
 │   └── tasks/converted_within_90_days/{train,valid,test}.parquet
 ├── intermediate_instructor/          # research companion: full-horizon tables + metadata/
-├── notebooks/01_baseline_lead_scoring.ipynb
+├── notebooks/                        # 01 baseline · 02 relational · 03 leakage · 04 calibration
 └── validation/                       # validation_report.{json,md} + figures
 ```
 
@@ -211,11 +211,19 @@ intended difficulty axis (intro > intermediate > advanced).
 
 ## Maintenance, adversarial framing, license
 
-We *want* the dataset to be broken. Issue templates ship under
-`.github/ISSUE_TEMPLATE/` (Phase 6); the break-me guide lands as
-`docs/release/break_me_guide.md` (PR 6.3). Once Phase 6 ships,
-`docs/release/v2_decision_log.md` will track every accepted finding
-and the design call that came from it. File issues at
+We *want* the dataset to be broken. The
+[break-me guide](../docs/release/break_me_guide.md) catalogues
+nine adversarial patterns to look for (leakage, split
+contamination, ranking inversions, calibration drift) with
+worked-example pointers back into the notebooks. Issue
+templates ship under `.github/ISSUE_TEMPLATE/`: a
+[breakage report](../.github/ISSUE_TEMPLATE/dataset_breakage_report.yml)
+form for findings on the bundle itself, and a
+[realism feedback](../.github/ISSUE_TEMPLATE/realism_feedback.yml)
+form for distributional critiques. Accepted findings are
+logged in
+[`docs/release/v2_decision_log.md`](../docs/release/v2_decision_log.md).
+File issues at
 [leadforge-dev/leadforge](https://github.com/leadforge-dev/leadforge);
 PRs welcome.
 

@@ -843,11 +843,11 @@ def cells() -> list[nbf.NotebookNode]:
             2. If you have real ACV data, swap the `expected_acv`
                heuristic for it and recompute section 5 — the revenue
                capture story should sharpen.
-            3. The break-me playbook in `docs/release/break_me_guide.md`
-               (coming in PR 6.3) catalogues additional stress tests
-               (target-encoding leakage, train-test contamination,
-               cohort-by-segment) and how to detect each from a
-               single bundle.
+            3. The break-me playbook in
+               [`docs/release/break_me_guide.md`](https://github.com/leadforge-dev/leadforge/blob/main/docs/release/break_me_guide.md)
+               catalogues additional stress tests (target-encoding
+               leakage, train-test contamination, cohort-by-segment)
+               and how to detect each from a single bundle.
             """
         ),
     ]

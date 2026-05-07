@@ -101,7 +101,7 @@ release/
 │   ├── tables/*.parquet              # 7 snapshot-safe relational tables
 │   └── tasks/converted_within_90_days/{train,valid,test}.parquet
 ├── intermediate_instructor/          # research companion: full-horizon tables + metadata/
-├── notebooks/01_baseline_lead_scoring.ipynb
+├── notebooks/                        # 01 baseline · 02 relational · 03 leakage · 04 calibration
 └── validation/                       # validation_report.{json,md} + figures
 ```"""
 

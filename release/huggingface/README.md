@@ -256,11 +256,19 @@ intended difficulty axis (intro > intermediate > advanced).
 
 ## Maintenance, adversarial framing, license
 
-We *want* the dataset to be broken. Issue templates ship under
-`.github/ISSUE_TEMPLATE/` (Phase 6); the break-me guide lands as
-`docs/release/break_me_guide.md` (PR 6.3). Once Phase 6 ships,
-`docs/release/v2_decision_log.md` will track every accepted finding
-and the design call that came from it. File issues at
+We *want* the dataset to be broken. The
+[break-me guide](https://github.com/leadforge-dev/leadforge/blob/main/docs/release/break_me_guide.md) catalogues
+nine adversarial patterns to look for (leakage, split
+contamination, ranking inversions, calibration drift) with
+worked-example pointers back into the notebooks. Issue
+templates ship under `.github/ISSUE_TEMPLATE/`: a
+[breakage report](https://github.com/leadforge-dev/leadforge/blob/main/.github/ISSUE_TEMPLATE/dataset_breakage_report.yml)
+form for findings on the bundle itself, and a
+[realism feedback](https://github.com/leadforge-dev/leadforge/blob/main/.github/ISSUE_TEMPLATE/realism_feedback.yml)
+form for distributional critiques. Accepted findings are
+logged in
+[`docs/release/v2_decision_log.md`](https://github.com/leadforge-dev/leadforge/blob/main/docs/release/v2_decision_log.md).
+File issues at
 [leadforge-dev/leadforge](https://github.com/leadforge-dev/leadforge);
 PRs welcome.
 
