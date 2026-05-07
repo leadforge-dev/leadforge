@@ -94,12 +94,16 @@ in three lines of pandas; the column it surfaces is
 A feature can score ~0.5 AUC as a single-column ranker and
 still hand a tree model material lift once interactions with
 other columns are available. The validation report's
-`post_snapshot_aggregates` baseline (a fitted LR on the trap
-column alone) gives ~0.55 AUC — the trap "looks" innocuous on
-a standalone audit. Notebook 03 §5 then runs a full panel
-ablation and HistGBM extracts +0.032 AUC; LR with the same
-preprocessing only extracts +0.009 because it can't represent
-the relevant interaction.
+`post_snapshot_aggregates` baseline (HistGBM on the trap
+column alone, see
+[`leadforge/validation/release_quality.py`](https://github.com/leadforge-dev/leadforge/blob/main/leadforge/validation/release_quality.py))
+gives ~0.55 AUC on intermediate (median across seeds 42–46;
+0.52–0.61 across all tier × seed pairs) — the trap "looks"
+innocuous even when scored by a tree model on its own.
+Notebook 03 §5 then runs a full panel ablation and HistGBM
+extracts +0.032 AUC; LR with the same preprocessing only
+extracts +0.009 because it can't represent the relevant
+interaction.
 
 **How to detect on any dataset.** Don't audit leakage with
 single-feature AUC. For every column you flagged in pattern 1,
@@ -266,11 +270,13 @@ gives the canonical numbers across seeds.
 A `precision >= threshold` operating point and a `top-K by
 rank` operating point are not the same thing when probabilities
 have ties. Notebook 04 §6 picks a threshold that "should"
-admit 50 leads and reads back `actually_above` to surface
-when ties at the operating point inflate the slate beyond
-capacity. On a fresh seed this can quietly admit 70+ leads
-into a 50-lead capacity plan if several ties sit at the
-chosen probability.
+admit 50 leads and reads back `actually_above` as a defensive
+instrument — on the as-shipped intermediate bundle the realised
+count happens to match capacity, but the readout exists so a
+seed where ties cluster at the operating probability fails
+loud rather than silently inflating the slate. On a calibrated
+LR with continuous scores, ties are rare; on a coarse-grained
+GBM probability output they're routine.
 
 **How to detect on any dataset.** When you set a probability
 threshold for a fixed-capacity decision, always log the
@@ -296,11 +302,10 @@ probabilities.
 The validation report tracks `calibration_max_bin_error`
 per tier (`$.tiers.<tier>.medians.calibration_max_bin_error`)
 — intermediate ~0.25, intro ~0.25, advanced ~0.52. That's a
-single number per tier on a single split; it can mask
-segment-conditional miscalibration where the model is
-well-calibrated overall but consistently over-predicts on
-small-revenue accounts and under-predicts on large ones, or
-drifts late-in-cohort vs early. Notebook 04 §3 shows the
+single number per tier on a single split; in principle it can
+mask segment-conditional miscalibration. Whether v1 actually
+exhibits such drift is an open question — the per-segment
+audit is the way to find out. Notebook 04 §3 shows the
 tier-level reliability diagram on the public bundle; the
 analogous per-segment diagram is the next stress test.
 
@@ -325,9 +330,13 @@ doesn't ship a per-segment calibration audit; it's a
 ## What to do when you find one
 
 1. Reproduce the finding from a clean checkout against the
-   as-shipped bundle. Note the seed, tier, and `manifest.json`
-   `bundle_hash` (or a freshly computed file hash if your
-   build doesn't expose one).
+   as-shipped bundle. Note the seed, tier, and the test-split
+   sha256 from `manifest.json` — under
+   `tasks.converted_within_90_days.test_sha256`. That single
+   hash uniquely identifies the bundle the finding was
+   reproduced on; the manifest also carries per-table hashes
+   under `tables.<name>.sha256` if a table-specific hash is
+   the right anchor for the finding.
 2. Pick the issue template that fits — leakage / contamination
    / metric findings go in [`dataset_breakage_report.yml`](https://github.com/leadforge-dev/leadforge/blob/main/.github/ISSUE_TEMPLATE/dataset_breakage_report.yml);
    distributional / realism critiques go in

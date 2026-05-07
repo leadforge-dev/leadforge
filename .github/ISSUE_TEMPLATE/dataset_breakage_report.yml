@@ -14,12 +14,12 @@ body:
     id: tier
     attributes:
       label: Tier
-      description: Which bundle tier did you break? Pick `instructor` if the finding is on the `intermediate_instructor` companion.
+      description: Which bundle tier did you break? `intermediate_instructor` is the only instructor companion shipped in v1.
       options:
         - intro
         - intermediate
         - advanced
-        - instructor
+        - intermediate_instructor
         - multiple
     validations:
       required: true
@@ -38,8 +38,14 @@ body:
     id: bundle_hash
     attributes:
       label: Bundle hash
-      description: Paste a hash that identifies the exact bundle. Either `manifest.json` → `bundle_hash` (if your build records one), or a `sha256sum tasks/converted_within_90_days/test.parquet` from your local checkout. This makes the report unambiguous if we regenerate.
-      placeholder: "sha256:abc123… (or manifest.json bundle_hash)"
+      description: |
+        Paste a hash that identifies the exact bundle. Two equivalent forms:
+
+        - From `manifest.json` → `tasks.converted_within_90_days.test_sha256` (the test-split sha256 the bundle records; pinned at generation time).
+        - From a local `sha256sum tasks/converted_within_90_days/test.parquet`.
+
+        This makes the report unambiguous if we regenerate.
+      placeholder: "d428c07decc2b1fdf8b5f56a1a63c65799897f1e22b61afd9f5d517f74593f09"
     validations:
       required: true
 
