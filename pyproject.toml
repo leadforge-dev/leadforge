@@ -64,6 +64,12 @@ publish = [
 notebooks = [
     "nbclient>=0.10",
     "nbformat>=5.10",
+    # ``ipykernel`` provides the ``python3`` kernelspec that
+    # ``nbclient.NotebookClient(..., kernel_name="python3")`` looks up.
+    # Without it CI fails with ``NoSuchKernel: No such kernel named
+    # python3`` because the GitHub-hosted runner has no kernelspecs
+    # registered out of the box (local dev environments usually do).
+    "ipykernel>=6.0",
     "scikit-learn>=1.3",
     "matplotlib>=3.7",
 ]
