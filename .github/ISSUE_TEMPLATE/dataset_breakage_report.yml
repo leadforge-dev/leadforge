@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thank you for breaking the dataset on purpose. This template is for findings that affect *what's in the bundle* — leakage, split contamination, metric inversions, notebook failures. Distributional / realism critiques (e.g. "industry mix doesn't look like real procurement") belong in the [realism feedback template](realism_feedback.yml) instead.
+        Thank you for breaking the dataset on purpose. This template is for findings that affect *what's in the bundle* — leakage, split contamination, metric inversions, notebook failures. Distributional / realism critiques (e.g. "industry mix doesn't look like real procurement") belong in the [realism feedback template](https://github.com/leadforge-dev/leadforge/issues/new?template=realism_feedback.yml) instead.
 
         The [break-me guide](https://github.com/leadforge-dev/leadforge/blob/main/docs/release/break_me_guide.md) catalogues the patterns this template is shaped around.
 
@@ -136,7 +136,6 @@ body:
         scikit-learn==1.5.0
         pandas==2.2.2
         Python 3.11.9, macOS 14.5
-      render: text
     validations:
       required: false
 

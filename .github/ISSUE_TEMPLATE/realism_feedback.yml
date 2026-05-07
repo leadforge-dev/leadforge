@@ -55,7 +55,7 @@ body:
       label: Claim
       description: What does the dataset get wrong, and what would you expect instead? One paragraph.
       placeholder: |
-        The intermediate tier shows a 22% conversion rate on the manufacturing industry slice, identical (within noise) to the rate on healthcare and retail. In real procurement / AP automation, manufacturing typically converts ~1.5x healthcare because manufacturing already has discrete-item AP volume that benefits more from automation. The dataset's conversion rate should differ across industries by 1.3-2x, not be flat.
+        The intermediate tier shows a 22% conversion rate on the manufacturing industry slice, identical (within noise) to the rates on logistics, healthcare_non_clinical, and professional_services. In real procurement / AP automation, manufacturing typically converts ~1.5x healthcare_non_clinical because manufacturing already has discrete-item AP volume that benefits more from automation. The dataset's conversion rate should differ across industries by 1.3-2x, not be flat.
     validations:
       required: true
 
