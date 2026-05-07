@@ -1,0 +1,140 @@
+name: Dataset breakage report
+description: I broke leadforge-lead-scoring-v1 — leakage, train/test contamination, ranking surprise, or a notebook that won't execute. See docs/release/break_me_guide.md for the playbook this template is built around.
+title: "[breakage] "
+labels: ["dataset: leadforge-lead-scoring-v1", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for breaking the dataset on purpose. This template is for findings that affect *what's in the bundle* — leakage, split contamination, metric inversions, notebook failures. Distributional / realism critiques (e.g. "industry mix doesn't look like real procurement") belong in the [realism feedback template](realism_feedback.yml) instead.
+
+        The [break-me guide](https://github.com/leadforge-dev/leadforge/blob/main/docs/release/break_me_guide.md) catalogues the patterns this template is shaped around.
+
+  - type: dropdown
+    id: tier
+    attributes:
+      label: Tier
+      description: Which bundle tier did you break? Pick `instructor` if the finding is on the `intermediate_instructor` companion.
+      options:
+        - intro
+        - intermediate
+        - advanced
+        - instructor
+        - multiple
+    validations:
+      required: true
+
+  - type: input
+    id: seed
+    attributes:
+      label: Seed
+      description: Generation seed of the bundle you used. Default canonical seed is 42; the published cross-seed sweep covers 42–46.
+      placeholder: "42"
+      value: "42"
+    validations:
+      required: true
+
+  - type: input
+    id: bundle_hash
+    attributes:
+      label: Bundle hash
+      description: Paste a hash that identifies the exact bundle. Either `manifest.json` → `bundle_hash` (if your build records one), or a `sha256sum tasks/converted_within_90_days/test.parquet` from your local checkout. This makes the report unambiguous if we regenerate.
+      placeholder: "sha256:abc123… (or manifest.json bundle_hash)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: triage_label
+    attributes:
+      label: Suggested triage label
+      description: Best guess from the [triage table](https://github.com/leadforge-dev/leadforge/blob/main/docs/release/break_me_guide.md#triage-labels) at the top of the break-me guide. The maintainer applies the final label.
+      options:
+        - critical-leakage
+        - difficulty
+        - documentation
+        - notebook
+        - pedagogy
+        - platform
+        - v2-idea
+        - out-of-scope-v1
+        - I don't know
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity (your assessment)
+      description: |
+        - **high**: blocks v1 release or downstream usage (label reconstructed via undocumented path; notebook fails on a clean checkout).
+        - **medium**: meaningful for downstream users but workaround exists (segment-conditional miscalibration; ties at threshold inflate slate).
+        - **low**: cosmetic or pedagogical (documentation drift, missing footnote).
+      options:
+        - high
+        - medium
+        - low
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One paragraph. What did you find?
+      placeholder: |
+        On the intermediate tier I trained a HistGBM with `account_avg_touches` joined in via account_id and got AUC 0.97 vs the reported 0.886. The split has account_id collisions across train/test, so the engineered feature is leaking the test labels through the account.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: |
+        The smallest code or command sequence that reproduces the finding. Prefer runnable Python / shell over screenshots. If it's a notebook reproduction, name the notebook and section.
+      placeholder: |
+        ```python
+        # Run from release/notebooks/ against intermediate/
+        train = pd.read_parquet("../intermediate/tasks/converted_within_90_days/train.parquet")
+        test = pd.read_parquet("../intermediate/tasks/converted_within_90_days/test.parquet")
+        overlap = set(train["account_id"]) & set(test["account_id"])
+        print(f"shared accounts: {len(overlap)}")  # > 0 ⇒ this template applies
+        ```
+      render: markdown
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected_actual
+    attributes:
+      label: Expected vs actual
+      description: What did you expect, and what did you observe? Cite a `validation_report.json` JSON path or a notebook tolerance gate if relevant.
+      placeholder: |
+        Expected: `tiers.intermediate.medians.gbm_auc` ≈ 0.876 (validation_report.json).
+        Actual: 0.97 with the engineered feature, dropping to 0.88 under GroupKFold(account_id).
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Anything reproducibility-relevant — Python version, package versions, OS. `pip freeze | grep -E "leadforge|scikit|pandas"` is enough for most reports.
+      placeholder: |
+        leadforge==1.0.0
+        scikit-learn==1.5.0
+        pandas==2.2.2
+        Python 3.11.9, macOS 14.5
+      render: text
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Confirmations
+      options:
+        - label: I read the [break-me guide](https://github.com/leadforge-dev/leadforge/blob/main/docs/release/break_me_guide.md) and this finding isn't already an explicit v1 simplification documented there or in the dataset card.
+          required: true
+        - label: I'm reporting a finding on the as-shipped public bundle, not on a privately modified copy. (If you modified the bundle, open a `realism` issue or a discussion instead.)
+          required: true

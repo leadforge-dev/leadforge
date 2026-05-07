@@ -1,0 +1,116 @@
+name: Realism feedback
+description: A modelled distribution in leadforge-lead-scoring-v1 doesn't match what a domain expert would expect — industry mix, persona behaviour, funnel timing, channel attribution, pricing, etc. For *bundle-level* findings (leakage, contamination, ranking inversions), use the breakage report instead.
+title: "[realism] "
+labels: ["dataset: leadforge-lead-scoring-v1", "realism", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Realism feedback is one of the highest-value report types we can receive — the simulator can be calibrated against any concrete observation about the real B2B procurement world. Examples we welcome: "industry distribution overweights manufacturing", "VP Finance personas convert too fast", "expected_acv is uncorrelated with industry but should track it strongly".
+
+        We're particularly interested in findings backed by domain experience or public data. The dataset card already documents some intentional simplifications; please skim [`release/README.md`](https://github.com/leadforge-dev/leadforge/blob/main/release/README.md) and [`docs/release/generation_method.md`](https://github.com/leadforge-dev/leadforge/blob/main/docs/release/generation_method.md) before filing — if the issue is already listed under "Known limitations" or "Out-of-scope uses", a thumbs-up on an existing issue is more useful than a new one.
+
+  - type: dropdown
+    id: aspect
+    attributes:
+      label: Which aspect of the dataset?
+      options:
+        - industry mix / firmographics
+        - persona behaviour / personographics
+        - funnel timing (snapshot day, conversion horizon, stage progression)
+        - channel attribution (lead_source, first_touch_channel, conversion-by-channel)
+        - pricing / ACV distribution
+        - account-to-lead density (multi-lead accounts, lead/account ratio)
+        - regional distribution (US/UK split, regional conversion differences)
+        - other (please describe in the claim)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: tier
+    attributes:
+      label: Which tier(s) does this affect?
+      description: Realism findings often hold across all tiers because tiers differ in *signal strength*, not in the underlying simulator. Pick `all` if you didn't specifically check one tier.
+      options:
+        - intro
+        - intermediate
+        - advanced
+        - instructor companion
+        - all (didn't check tier-specifically)
+    validations:
+      required: true
+
+  - type: textarea
+    id: domain_experience
+    attributes:
+      label: Domain experience (one-line)
+      description: A short note on why your perspective is informed — "AE at a procurement SaaS for 6 years", "academic study of B2B funnel CR", "ex-RevOps at a $50M ARR mid-market vendor". This isn't gatekeeping; it helps the maintainer weight the finding when several land in parallel.
+      placeholder: "5y experience as RevOps lead at a procurement SaaS in the same ARR band as Veridian Procure."
+    validations:
+      required: true
+
+  - type: textarea
+    id: claim
+    attributes:
+      label: Claim
+      description: What does the dataset get wrong, and what would you expect instead? One paragraph.
+      placeholder: |
+        The intermediate tier shows a 22% conversion rate on the manufacturing industry slice, identical (within noise) to the rate on healthcare and retail. In real procurement / AP automation, manufacturing typically converts ~1.5x healthcare because manufacturing already has discrete-item AP volume that benefits more from automation. The dataset's conversion rate should differ across industries by 1.3-2x, not be flat.
+    validations:
+      required: true
+
+  - type: textarea
+    id: data_observation
+    attributes:
+      label: Data observation supporting the claim
+      description: |
+        Evidence from the bundle, public benchmarks, or your own data. A pandas snippet that reads the bundle and prints the relevant numbers is ideal.
+      placeholder: |
+        ```python
+        leads = pd.read_parquet("intermediate/tables/leads.parquet")
+        accts = pd.read_parquet("intermediate/tables/accounts.parquet")
+        tasks = pd.read_parquet("intermediate/tasks/converted_within_90_days/test.parquet")
+        joined = tasks.merge(leads[["lead_id", "account_id"]], on="lead_id").merge(
+            accts[["account_id", "industry"]], on="account_id"
+        )
+        print(joined.groupby("industry")["converted_within_90_days"].mean())
+        # All industries within 0.02 of 0.22 — flat across industry.
+        ```
+      render: markdown
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggested_fix
+    attributes:
+      label: Suggested fix (optional)
+      description: How would you change the simulator to match? Even a rough direction ("make `industry` modulate `ConversionHazard` weights") helps. Leave blank if you'd rather flag the problem than prescribe the fix.
+      placeholder: |
+        Add a per-industry scalar to `ConversionHazard` in `leadforge/mechanisms/hazards.py` keyed off `accounts.industry`, so the manufacturing path sees ~1.5x base hazard relative to the modal industry. Acceptance band would live in `v1_acceptance_gates_bands.yaml`.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity (your assessment)
+      description: |
+        - **high**: the dataset's pedagogy is materially misleading — students learn a wrong intuition about the real domain.
+        - **medium**: the gap is real but the lesson still transfers (e.g. flat per-industry rates teach baseline discipline even if production has more variance).
+        - **low**: cosmetic / footnote.
+      options:
+        - high
+        - medium
+        - low
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Confirmations
+      options:
+        - label: I checked [`release/README.md`](https://github.com/leadforge-dev/leadforge/blob/main/release/README.md) "Known limitations" / "Out-of-scope uses" and this finding isn't already explicitly documented.
+          required: true
+        - label: I checked [`docs/release/post_v1_roadmap.md`](https://github.com/leadforge-dev/leadforge/blob/main/docs/release/post_v1_roadmap.md) and the existing [v2 decision log](https://github.com/leadforge-dev/leadforge/blob/main/docs/release/v2_decision_log.md), and this isn't already an accepted v2 work item.
+          required: true
