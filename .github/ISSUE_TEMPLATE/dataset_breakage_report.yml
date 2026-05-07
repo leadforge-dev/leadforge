@@ -39,10 +39,15 @@ body:
     attributes:
       label: Bundle hash
       description: |
-        Paste a hash that identifies the exact bundle. Two equivalent forms:
+        Paste a hash that identifies the exact bundle. Easiest source:
+        copy `tasks.converted_within_90_days.test_sha256` straight out
+        of `manifest.json` (it's pinned at bundle generation time, so
+        no local hashing is needed). If you've modified the file
+        locally, recompute via:
 
-        - From `manifest.json` → `tasks.converted_within_90_days.test_sha256` (the test-split sha256 the bundle records; pinned at generation time).
-        - From a local `sha256sum tasks/converted_within_90_days/test.parquet`.
+        - **macOS:** `shasum -a 256 tasks/converted_within_90_days/test.parquet`
+        - **Linux:** `sha256sum tasks/converted_within_90_days/test.parquet`
+        - **Cross-platform:** `python -c "import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest())" tasks/converted_within_90_days/test.parquet`
 
         This makes the report unambiguous if we regenerate.
       placeholder: "d428c07decc2b1fdf8b5f56a1a63c65799897f1e22b61afd9f5d517f74593f09"

@@ -11,9 +11,9 @@ you can reproduce.
 
 If you find one of these on `leadforge-lead-scoring-v1`,
 file an issue using one of the templates in
-[`.github/ISSUE_TEMPLATE/`](https://github.com/leadforge-dev/leadforge/tree/main/.github/ISSUE_TEMPLATE).
+[`.github/ISSUE_TEMPLATE/`](../../.github/ISSUE_TEMPLATE).
 Accepted findings are logged in
-[`docs/release/v2_decision_log.md`](https://github.com/leadforge-dev/leadforge/blob/main/docs/release/v2_decision_log.md).
+[`v2_decision_log.md`](v2_decision_log.md).
 
 ## Triage labels
 
@@ -96,7 +96,7 @@ still hand a tree model material lift once interactions with
 other columns are available. The validation report's
 `post_snapshot_aggregates` baseline (HistGBM on the trap
 column alone, see
-[`leadforge/validation/release_quality.py`](https://github.com/leadforge-dev/leadforge/blob/main/leadforge/validation/release_quality.py))
+[`leadforge/validation/release_quality.py`](../../leadforge/validation/release_quality.py))
 gives ~0.55 AUC on intermediate (median across seeds 42–46;
 0.52–0.61 across all tier × seed pairs) — the trap "looks"
 innocuous even when scored by a tree model on its own.
@@ -154,10 +154,11 @@ and you've leaked test labels into the feature. Notebook 02
 (four industries — logistics, healthcare_non_clinical,
 manufacturing, professional_services — encoded by their
 training-split conversion rate, with a global-mean fallback
-for industries not seen in train). The leakage version is a one-line change — using
-`pd.concat([train, test]).groupby('industry')['target'].mean()`
-instead — and we deliberately *don't* show that in the
-notebook because the lesson is the discipline, not the trap.
+for industries not seen in train). The leakage variant is a
+one-liner — `pd.concat([train, test]).groupby('industry')['target'].mean()`
+— and the notebook deliberately doesn't show it, because the
+lesson there is the discipline. This guide shows the leakage
+form (above) so you recognise it during code review.
 
 **How to detect on any dataset.** When mean-target encoding
 shows up in a notebook or pipeline, check three things in
@@ -183,20 +184,30 @@ fallback-to-train-mean handling is in `attach_engineered`.
 The bundle ships a deterministic 70/15/15 split on `lead_id`
 (see `tasks/<task>/task_manifest.json`). That guarantees
 `lead_id` uniqueness across splits — but `account_id` is
-*not* split on. Two leads in the same account can land in
-train and test, and the model can ride strong account-level
-signal across the split boundary in ways that don't generalise
-to a fresh account.
+*not* split on. On the as-shipped intermediate bundle,
+**518 of 557 test accounts (93 %) also appear in train**;
+the same numbers hold on intro and advanced because the
+splitter is `lead_id`-keyed and tier-invariant. Models can
+ride strong account-level signal across the split boundary
+in ways that don't generalise to a fresh account.
 
-**How to detect on any dataset.** Compute the intersection
-of `account_id` (or whatever the per-entity grouping key is)
-between train and test. If it's non-empty *and* you've
-engineered any account-level features, retrain with
-account-level grouped splitting (e.g. `GroupKFold` on
-`account_id`) and re-read the AUC delta. The delta is the
-amount of "free" lift the random-split was buying you. The
-right framing isn't "remove the leak"; it's *report both
-numbers so the reader knows which is which.*
+**How to detect on any dataset.**
+
+```python
+import pandas as pd
+train = pd.read_parquet("intermediate/tasks/converted_within_90_days/train.parquet")
+test  = pd.read_parquet("intermediate/tasks/converted_within_90_days/test.parquet")
+overlap = set(train["account_id"]) & set(test["account_id"])
+print(f"shared accounts: {len(overlap)} / {test['account_id'].nunique()}")
+```
+
+If the overlap is non-empty *and* you've engineered any
+account-level features, retrain with account-level grouped
+splitting (e.g. `GroupKFold` on `account_id`) and re-read the
+AUC delta. The delta is the amount of "free" lift the
+random-split was buying you. The right framing isn't "remove
+the leak"; it's *report both numbers so the reader knows
+which is which.*
 
 **Worked example.** Notebook 02 §4.2 builds an account-level
 density feature using *only* train leads' touches — a
@@ -227,10 +238,10 @@ down by 0.04 in the average.
 `estimated_revenue_band`), repeat the cohort-split protocol
 from notebook 04 §7 conditioned on that segment. Report the
 per-segment AUC degradation and the spread across segments.
-A spread larger than your tier-wide cross-seed band
-(`$.tiers.<tier>.spreads.lr_auc`) is a realism flag — the
-simulator is producing a homogeneous world that real
-production cohorts wouldn't be.
+A spread larger than the tier's cross-seed GBM-AUC band
+(`$.tiers.<tier>.spreads.gbm_auc` — same model the cohort-shift
+block uses) is a realism flag: the simulator is producing a
+homogeneous world that real production cohorts wouldn't be.
 
 **Worked example.** Notebook 04 §7 (tier-wide, validator-
 mirrored). The validation report's `cohort_shift.<tier>.auc_degradation`
@@ -261,9 +272,10 @@ so large it suggests the simulator's ACV column has unrealistic
 correlation with P(convert).
 
 **Worked example.** Notebook 04 §5 produces both curves
-side-by-side; the validation report's
-`$.tiers.<tier>.per_seed[*].expected_acv_capture_at_k`
-gives the canonical numbers across seeds.
+side-by-side; the validation report's per-seed scalars live
+under
+`$.tiers.<tier>.per_seed[*].expected_acv_capture_at_k.50`
+(and `.100` for top-100), keyed by string K.
 
 ### 8. Threshold-vs-rank semantics
 
@@ -272,11 +284,9 @@ rank` operating point are not the same thing when probabilities
 have ties. Notebook 04 §6 picks a threshold that "should"
 admit 50 leads and reads back `actually_above` as a defensive
 instrument — on the as-shipped intermediate bundle the realised
-count happens to match capacity, but the readout exists so a
-seed where ties cluster at the operating probability fails
-loud rather than silently inflating the slate. On a calibrated
-LR with continuous scores, ties are rare; on a coarse-grained
-GBM probability output they're routine.
+count matches capacity, but the readout exists so a seed where
+ties cluster at the operating probability fails loud rather
+than silently inflating the slate.
 
 **How to detect on any dataset.** When you set a probability
 threshold for a fixed-capacity decision, always log the
@@ -338,13 +348,14 @@ doesn't ship a per-segment calibration audit; it's a
    under `tables.<name>.sha256` if a table-specific hash is
    the right anchor for the finding.
 2. Pick the issue template that fits — leakage / contamination
-   / metric findings go in [`dataset_breakage_report.yml`](https://github.com/leadforge-dev/leadforge/blob/main/.github/ISSUE_TEMPLATE/dataset_breakage_report.yml);
+   / metric findings go in
+   [`dataset_breakage_report.yml`](../../.github/ISSUE_TEMPLATE/dataset_breakage_report.yml);
    distributional / realism critiques go in
-   [`realism_feedback.yml`](https://github.com/leadforge-dev/leadforge/blob/main/.github/ISSUE_TEMPLATE/realism_feedback.yml).
+   [`realism_feedback.yml`](../../.github/ISSUE_TEMPLATE/realism_feedback.yml).
 3. Suggest a triage label from the table at the top of this
    guide. The maintainer applies the final label.
-4. Watch [`docs/release/v2_decision_log.md`](https://github.com/leadforge-dev/leadforge/blob/main/docs/release/v2_decision_log.md)
-   for the disposition. Accepted findings get an entry with
-   a verdict (`accepted-for-v2`, `deferred`, `wont-fix`,
+4. Watch [`v2_decision_log.md`](v2_decision_log.md) for the
+   disposition. Accepted findings get an entry with a verdict
+   (`accepted-for-v2`, `deferred`, `wont-fix`,
    `needs-investigation`) and a pointer to the resulting v2
    work item.

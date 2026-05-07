@@ -44,13 +44,13 @@ A release candidate is v1-ready when **all** of the following hold. Concrete ban
 | 4 | Channel-signal audit + dataset card | M-S | 1 | 3 | not started |
 | 5 | Platform packaging | M | 2 | 4 | not started |
 | 6 | Notebook sequence + adversarial framing | M-L | 3 | 5 | not started |
-| 7 | LLM critique + publish | M | 2 | 6 | not started |
+| 7 | LLM critique + publish | M | 3 | 6 | not started |
 
-**Total: 14 PRs.** Each PR follows the `CLAUDE.md` workflow: branch → commit → update `.agent-plan.md` → PR with type+layer labels → milestone assignment (`dataset: leadforge-lead-scoring-v1`). PR-level decomposition is in the **PR breakdown** section immediately below.
+**Total: 15 PRs.** Each PR follows the `CLAUDE.md` workflow: branch → commit → update `.agent-plan.md` → PR with type+layer labels → milestone assignment (`dataset: leadforge-lead-scoring-v1`). PR-level decomposition is in the **PR breakdown** section immediately below.
 
 ## PR breakdown
 
-First-cut decomposition of the 7 phases into ~14 PRs. The numbering `phase.seq` is a planning ID, not a GitHub PR number. Sizes are estimates; we may merge or split during implementation. Within a phase, PRs are typically sequential (later sub-PRs depend on earlier ones); cross-phase dependencies follow the phase summary above.
+First-cut decomposition of the 7 phases into ~15 PRs. The numbering `phase.seq` is a planning ID, not a GitHub PR number. Sizes are estimates; we may merge or split during implementation. Within a phase, PRs are typically sequential (later sub-PRs depend on earlier ones); cross-phase dependencies follow the phase summary above.
 
 ### Phase 1 — Audit and naming (1 PR)
 
@@ -154,7 +154,7 @@ First-cut decomposition of the 7 phases into ~14 PRs. The numbering `phase.seq` 
   - Labels: `type: docs`
   - Size: S (~300 lines)
 
-### Phase 7 — LLM critique + publish (2 PRs)
+### Phase 7 — LLM critique + publish (3 PRs)
 
 - **PR 7.1** — `feat(validation): llm_critique module + prompt + driver`
   - `leadforge/validation/llm_critique.py` — single-provider, env-var creds, skip-cleanly without
@@ -165,18 +165,29 @@ First-cut decomposition of the 7 phases into ~14 PRs. The numbering `phase.seq` 
   - Labels: `type: feature`, `layer: validation`
   - Size: M (~500 lines)
 
-- **PR 7.2** — `feat(scripts): publish_kaggle + publish_hf + tag v1 release`
+- **PR 7.2** — `feat(scripts): local Kaggle + HuggingFace mock-page preview` ⚠️ **must land before PR 7.3**
+  - **Goal:** before any real Kaggle/HF publish, the maintainer can render a faithful local preview of how each platform will display the dataset and click through it in a browser. Catch styling, link, embed, and YAML-rendering issues *before* they land on the live page where rollback is expensive (Kaggle and HF both keep cached previews around).
+  - `scripts/preview_kaggle_page.py` — reads `release/kaggle/dataset-metadata.json` + the inlined README + the cover image, renders an offline HTML mock that mimics the public Kaggle dataset page (header, description, schema/columns table, file tree, license footer). Serves on `http://localhost:8765` via `python -m http.server` or a small Flask shim.
+  - `scripts/preview_hf_page.py` — reads `release/huggingface/README.md` (YAML frontmatter + body), renders an offline HTML mock that mimics the HF dataset page (frontmatter pills, configs dropdown, README body, file tree). Serves on `http://localhost:8766`.
+  - Both scripts: `--release-dir`, `--port`, `--variant=public|instructor` (HF only), `--open-browser`. Dry-run / no-network.
+  - Both must round-trip the *exact* artefacts the publish PR will upload — same metadata JSON, same README, same cover image — so the preview is faithful, not a sketch.
+  - Tests: `tests/scripts/test_preview_kaggle_page.py` + `tests/scripts/test_preview_hf_page.py`. Each renders the page once and asserts: required field labels appear, every Markdown link in the source resolves to a non-404 URL pattern, every config block is present, the Kaggle schema table lists every CSV/parquet column.
+  - Pedagogically: this is the staging gate. The release runbook (`docs/release/v1_release_notes.md` in PR 7.3) cites both preview commands as required steps before `kaggle datasets create` / `huggingface-cli upload`.
+  - Labels: `type: feature`, `layer: cli`
+  - Size: M (~600 lines — two HTML templates + two render scripts + two test files)
+
+- **PR 7.3** — `feat(scripts): publish_kaggle + publish_hf + tag v1 release`
   - `scripts/publish_kaggle.py`
   - `scripts/publish_hf.py`
   - `docs/release/v1_release_notes.md`
-  - Dry-run → private/draft → public publish (manual step performed by maintainer with credentials, within the PR or as a follow-up release tag)
+  - Dry-run → private/draft → public publish (manual step performed by maintainer with credentials, within the PR or as a follow-up release tag). The runbook references PR 7.2's preview commands as a required pre-flight.
   - Tag `leadforge-lead-scoring-v1`
   - Labels: `type: feature`, `layer: cli`
   - Size: S (~300 lines code + manual publish step)
 
 ## PR breakdown — totals
 
-- **14 PRs** across 7 phases.
+- **15 PRs** across 7 phases.
 - Estimated total LoC: ~6,500 (excluding regenerated parquet bundles and notebook JSON).
 - All 14 PRs target the `dataset: leadforge-lead-scoring-v1` GitHub milestone.
 - Calendar duration is not committed; depends on iteration cadence and review feedback.
@@ -420,22 +431,29 @@ First-cut decomposition of the 7 phases into ~14 PRs. The numbering `phase.seq` 
 - New `docs/release/llm_critique_prompt.md` — the rubric document, structured as the prompt the script feeds.
 - New `scripts/run_llm_critique.py` — driver: builds the input bundle (README.md, dataset card, generation method, manifest, feature dictionary, validation report, first 100 public rows, public/instructor diff summary, public-safe mechanism summary) → calls the critique → writes `release/validation/llm_critique_raw_*.json` and `release/validation/llm_critique_summary.md`.
 - Adjudicate any high-severity findings; resolve in code or document acknowledgment in `v2_decision_log.md` if intentional-and-accepted.
+- **Local mock-page preview (PR 7.2 — must land before publish):** maintainer renders Kaggle and HF dataset pages locally from the actual upload artefacts (the same metadata JSON, README, cover image the publish PR will use) and clicks through them in a browser before any platform upload, so styling / link / YAML-rendering issues are caught before they hit cached previews on the live page.
+  - `scripts/preview_kaggle_page.py` — reads `release/kaggle/dataset-metadata.json` + inlined README + cover image, renders an offline HTML page that mimics the public Kaggle dataset view.
+  - `scripts/preview_hf_page.py` — reads `release/huggingface/README.md` (frontmatter + body), renders the analogous HF view.
+  - Both serve over `python -m http.server` (or a small Flask shim) and accept `--variant=public|instructor` (HF), `--port`, `--open-browser`.
+  - Tests: required field labels appear, every Markdown link resolves to a non-404 URL pattern, every config block is present, the Kaggle schema table lists every CSV/parquet column.
 - New `scripts/publish_kaggle.py` — uses `kagglehub.dataset_upload()` with `version_notes` containing the commit hash and tag.
 - New `scripts/publish_hf.py` — uses `huggingface_hub.HfApi().upload_folder()` with the dataset repo type.
 - Tag the release: `leadforge-lead-scoring-v1`. Tag the leadforge package release if a coordinated package version bump is needed (TBD — likely just a patch bump).
-- `docs/release/v1_release_notes.md` — public-facing release notes.
-- Both publish scripts exercised in **dry-run** before actual upload, then upload to **private/draft** repos for download smoke test, then promote to public.
+- `docs/release/v1_release_notes.md` — public-facing release notes; references the PR 7.2 preview commands as a required pre-flight step.
+- Both publish scripts exercised in **dry-run** before actual upload, **and the local mock-page previews from PR 7.2 reviewed in a browser**, then upload to **private/draft** repos for download smoke test, then promote to public.
 
 **Files touched:**
 - `leadforge/validation/llm_critique.py` (new)
 - `docs/release/llm_critique_prompt.md` (new)
 - `docs/release/v1_release_notes.md` (new)
-- `scripts/run_llm_critique.py`, `scripts/publish_kaggle.py`, `scripts/publish_hf.py` (new)
+- `scripts/run_llm_critique.py`, `scripts/preview_kaggle_page.py`, `scripts/preview_hf_page.py`, `scripts/publish_kaggle.py`, `scripts/publish_hf.py` (new)
+- `tests/scripts/test_preview_kaggle_page.py`, `tests/scripts/test_preview_hf_page.py` (new)
 - `release/validation/llm_critique_raw_*.json`, `release/validation/llm_critique_summary.md` (output artifacts)
 
 **Acceptance:**
 - LLM critique runs successfully with credentials; produces structured findings.
 - No unresolved high-severity findings before tag.
+- Local Kaggle and HF preview pages render against the as-shipped upload artefacts and are reviewed in a browser before any platform upload.
 - Both platform publishes succeed in dry-run.
 - Both private/draft uploads succeed; download smoke test passes from a clean environment.
 - Public Kaggle and HF pages render the dataset; `load_dataset()` from a clean env works.
