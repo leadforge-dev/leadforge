@@ -22,12 +22,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import nbformat as nbf  # noqa: E402 — must follow sys.path insert
 from _release_notebook_common import (  # noqa: E402 — must follow sys.path insert
     assemble_notebook,
+    builder_arg_parser,
     code,
     md,
     write_notebook,
 )
 
-OUT = (
+DEFAULT_OUT = (
     Path(__file__).resolve().parents[1] / "release" / "notebooks" / "01_baseline_lead_scoring.ipynb"
 )
 
@@ -425,7 +426,11 @@ def cells() -> list[nbf.NotebookNode]:
 
 
 def main() -> None:
-    write_notebook(OUT, assemble_notebook(cells()))
+    args = builder_arg_parser(
+        default_out=DEFAULT_OUT,
+        description="Build release/notebooks/01_baseline_lead_scoring.ipynb",
+    ).parse_args()
+    write_notebook(args.out, assemble_notebook(cells()))
 
 
 if __name__ == "__main__":

@@ -143,6 +143,57 @@ def test_assert_within_tolerance_ignores_extra_observed_keys() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Silent-pass paths: NaN / inf observed and target, missing tolerance keys
+# ---------------------------------------------------------------------------
+
+
+def test_assert_within_tolerance_fails_on_nan_observed() -> None:
+    """``NaN > tol`` is ``False`` in IEEE 754; without an explicit
+    finiteness check a NaN-valued observed metric would slip through
+    the gate.
+    """
+    with pytest.raises(AssertionError, match="non-finite"):
+        nbu.assert_within_tolerance(
+            observed={"auc": float("nan")},
+            target={"auc": 0.886},
+            tolerances=0.05,
+        )
+
+
+def test_assert_within_tolerance_fails_on_inf_observed() -> None:
+    with pytest.raises(AssertionError, match="non-finite"):
+        nbu.assert_within_tolerance(
+            observed={"auc": float("inf")},
+            target={"auc": 0.886},
+            tolerances=0.05,
+        )
+
+
+def test_assert_within_tolerance_fails_on_nan_target() -> None:
+    """A NaN target would also produce a NaN diff and bypass the gate."""
+    with pytest.raises(AssertionError, match="non-finite"):
+        nbu.assert_within_tolerance(
+            observed={"auc": 0.85},
+            target={"auc": float("nan")},
+            tolerances=0.05,
+        )
+
+
+def test_assert_within_tolerance_rejects_incomplete_tolerance_mapping() -> None:
+    """A per-metric tolerances dict missing keys present in ``target``
+    used to default each missing key to ``+inf``, silently disabling the
+    gate for those metrics.  The fix is to fail up front with the list
+    of missing keys, treating it as a configuration error.
+    """
+    with pytest.raises(AssertionError, match="missing entries for target metrics"):
+        nbu.assert_within_tolerance(
+            observed={"auc": 0.88, "brier": 0.10},
+            target={"auc": 0.886, "brier": 0.110},
+            tolerances={"auc": 0.05},  # ``brier`` deliberately missing
+        )
+
+
+# ---------------------------------------------------------------------------
 # precision_at_k must mirror release_quality._precision_at_k
 # ---------------------------------------------------------------------------
 
@@ -174,3 +225,23 @@ def test_precision_at_k_mirrors_release_quality() -> None:
         assert nbu.precision_at_k(tied_scores, tied_y, k) == pytest.approx(
             release_quality._precision_at_k(tied_scores, tied_y, k)
         )
+
+
+def test_top_decile_rate_mirrors_release_quality() -> None:
+    """``release_quality._top_decile_rate`` and the notebook helper share
+    the same ``max(1, int(round(n * 0.1)))`` k-selection rule today.
+    Lock that in: if either side ever changes (e.g. switches to
+    ``ceil`` or ``floor`` on edge cases), the gate would silently
+    diverge from the validation report.  Includes the exact `n` the
+    intermediate tier ships (``n_test = 750``) and a few small `n`
+    where banker's rounding bites.
+    """
+    from leadforge.validation import release_quality
+
+    rng = np.random.default_rng(0)
+    for n in (5, 10, 25, 99, 100, 750, 1234):
+        scores = rng.random(n)
+        y = (rng.random(n) > 0.7).astype(int)
+        assert nbu.top_decile_rate(scores, y) == pytest.approx(
+            release_quality._top_decile_rate(scores, y)
+        ), f"divergence at n={n}"

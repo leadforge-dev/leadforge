@@ -14,10 +14,17 @@ audit-artifact-sync, the same invariant PR 4.1 / 5.1 / 5.2 use for
 ``nbformat.v4.new_*_cell``; without an explicit override every build
 diverges and the byte-equality test in
 ``tests/scripts/test_release_notebook_builders.py`` fails.
+
+Each builder exposes an ``--out PATH`` flag (see ``builder_arg_parser``)
+so the byte-stability test can build into ``tmp_path`` rather than
+mutating the committed ``release/notebooks/<name>.ipynb`` in place.
+That removes a pytest-xdist race and the worktree-dirtying failure
+mode under interrupted runs.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import subprocess
 from pathlib import Path
@@ -74,3 +81,21 @@ def write_notebook(out_path: Path, nb: nbf.NotebookNode) -> None:
     out_path.write_text(text + "\n", encoding="utf-8")
     subprocess.run(["ruff", "format", str(out_path)], check=True)  # noqa: S603, S607
     print(f"wrote {out_path}")
+
+
+def builder_arg_parser(*, default_out: Path, description: str) -> argparse.ArgumentParser:
+    """Return the argparse parser shared by every notebook builder.
+
+    Exposes ``--out PATH`` so callers (notably the byte-stability test)
+    can redirect the build into a temp directory.  Defaults to the
+    canonical committed ``release/notebooks/<name>.ipynb`` path so the
+    no-arg invocation contributors run today keeps working.
+    """
+    parser = argparse.ArgumentParser(description=description)
+    parser.add_argument(
+        "--out",
+        type=Path,
+        default=default_out,
+        help=f"Path to write the notebook to (default: {default_out})",
+    )
+    return parser

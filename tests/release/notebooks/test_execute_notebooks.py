@@ -4,13 +4,18 @@ Each notebook under ``release/notebooks/*.ipynb`` is executed top to
 bottom with ``nbclient`` against the committed public release bundles.
 A clean run is the contract:
 
-* G13.1 — every cell executes from a clean kernel without raising
+* G13.1 — every cell executes from a clean kernel without raising.
 * G13.2 — notebook 01's ``assert_within_tolerance`` cell pins notebook
-  metrics to ``release/validation/validation_report.md`` within ±0.05
+  metrics to the cross-seed-median targets in
+  ``release/notebooks/_release_targets.json`` (per-metric tolerances;
+  AUC/Brier ±0.02, AP / top-decile ±0.05). The targets file is itself
+  audit-synced against ``release/validation/validation_report.json``
+  by ``test_release_targets_match_report.py``, so the gate
+  transitively pins to the validation report.
 * G13.3 — neither notebook touches ``release/intermediate_instructor``
   or any other instructor artefact (enforced by the notebooks' own
   ``BUNDLE = Path("../intermediate")`` path discipline; an instructor
-  load would fail the public-mode manifest assertion in cell 1)
+  load would fail the public-mode manifest assertion in cell 1).
 
 The test is gated on the public release bundles being on disk (matches
 the HF/Kaggle smoke-test pattern in ``tests/scripts/test_package_*``).
