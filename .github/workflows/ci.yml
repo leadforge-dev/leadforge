@@ -18,7 +18,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install ruff
+      # Pin ruff so notebook .ipynb formatting (which the lint job is
+      # strict about) doesn't drift between contributor laptops and CI
+      # the moment a new ruff release ships.  Bump in lock-step with
+      # any local re-runs of ``scripts/build_release_notebook_*.py``.
+      - run: pip install 'ruff==0.15.12'
       - run: ruff check .
       - run: ruff format --check .
 
@@ -138,3 +142,22 @@ jobs:
       - name: Skip v7 (no dataset)
         if: steps.check-v7.outputs.found != 'true'
         run: echo "No v7 datasets found — skipping v7 validation"
+
+  notebooks:
+    name: Execute release notebooks (G13.1)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev,scripts,notebooks]"
+      - name: Register python3 kernelspec for nbclient
+        run: python -m ipykernel install --user --name python3
+      - name: Build the intermediate public bundle (only tier the notebooks need)
+        run: python scripts/build_public_release.py release --tier intermediate
+      - name: Execute release notebooks end-to-end + builder byte-stability
+        run: |
+          pytest tests/release/notebooks/test_execute_notebooks.py \
+                 tests/scripts/test_release_notebook_builders.py \
+                 -v
