@@ -95,7 +95,7 @@ def cells() -> list[nbf.NotebookNode]:
             from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
             sys.path.insert(0, str(Path.cwd()))
-            from _notebook_utils import assert_within_tolerance, precision_at_k
+            from _notebook_utils import assert_within_tolerance
 
             SEED = 42
             BUNDLE = Path("../intermediate")          # public student bundle
@@ -108,7 +108,12 @@ def cells() -> list[nbf.NotebookNode]:
             assert manifest["relational_snapshot_safe"] is True
             SNAPSHOT_DAY = int(manifest["snapshot_day"])
             HORIZON_DAYS = int(manifest["horizon_days"])
-            print(f"snapshot_day = {SNAPSHOT_DAY}   horizon_days = {HORIZON_DAYS}")
+            print(f"snapshot anchor: day {SNAPSHOT_DAY} of a {HORIZON_DAYS}-day horizon")
+            print(
+                f"any feature aggregating events past day {SNAPSHOT_DAY} "
+                f"is leaking — that's the whole {HORIZON_DAYS - SNAPSHOT_DAY}-day window "
+                "we're hunting in section 3"
+            )
             """
         ),
         md(
@@ -200,9 +205,20 @@ def cells() -> list[nbf.NotebookNode]:
                 f"  → {n_post:,} of {len(window):,} leads "
                 f"({n_post / len(window):.1%}) have a positive post-snapshot delta"
             )
-            assert mean_delta > 0, (
-                "expected a positive mean post-snapshot delta — if zero, the trap may "
-                "have been silently rebuilt as a snapshot-safe aggregate"
+            # Real gate, not performative: on the as-shipped bundle the
+            # mean delta is ~3.2 touches/lead and ~82 % of leads have a
+            # positive delta.  The thresholds below sit well below those
+            # observations but well above "barely above zero" — a
+            # regeneration that erodes the trap's post-snapshot
+            # footprint will fail here even if a single lead still
+            # carries a positive delta.
+            assert mean_delta > 1.0, (
+                f"mean post-snapshot delta collapsed to {mean_delta:.2f} (<= 1.0) — "
+                "the trap may have been silently rebuilt as a snapshot-safe aggregate"
+            )
+            assert n_post / len(window) > 0.5, (
+                f"only {n_post / len(window):.1%} of leads have a positive "
+                "post-snapshot delta (< 50 %); the trap's footprint has eroded"
             )
             """
         ),
@@ -251,33 +267,47 @@ def cells() -> list[nbf.NotebookNode]:
             A common leakage audit is to fit a one-feature classifier on
             each suspect column and report the standalone AUC. The
             validation report does this at scale — its
-            `post_snapshot_aggregates` baseline trains a model on the
-            single column `total_touches_all` and reports an AUC around
-            0.55. That sounds tame, and on a busy schedule it's tempting
-            to clear the column on those grounds.
-
-            We re-run the probe here so you've seen the number with your
-            own eyes: ~0.53. If that's all you measure, the trap looks
-            barely worth mentioning. Section 5 shows what that audit
-            misses.
+            `post_snapshot_aggregates` baseline trains a *full LR
+            pipeline* (median-impute + StandardScaler + LR) on the
+            single column `total_touches_all` and reports an AUC of
+            ~0.55. We use a quicker probe here — the raw column
+            value as a score, no preprocessing — which gives ~0.53 on
+            this seed. The two numbers measure slightly different
+            things (a fitted LR can re-scale and adjust, a raw-value
+            ranker can't), but both fall in the "barely above chance"
+            band. On a busy schedule it's tempting to clear the column
+            on those grounds. Section 5 shows what that audit misses.
             """
         ),
         code(
             """
-            standalone_window = window.dropna(subset=[TRAP, "touch_count"]).copy()
-            y = standalone_window[TASK].astype(int).to_numpy()
+            # ``window`` was already dropped of NaN in section 3, so the
+            # raw-value ranker can use it directly.
+            y = window[TASK].astype(int).to_numpy()
             standalone = {
-                TRAP: float(roc_auc_score(y, standalone_window[TRAP].to_numpy())),
+                TRAP: float(roc_auc_score(y, window[TRAP].to_numpy())),
                 "touch_count (snapshot-safe)": float(
-                    roc_auc_score(y, standalone_window["touch_count"].to_numpy())
+                    roc_auc_score(y, window["touch_count"].to_numpy())
                 ),
                 "post-snapshot delta": float(
-                    roc_auc_score(y, standalone_window["post_snapshot_touches"].to_numpy())
+                    roc_auc_score(y, window["post_snapshot_touches"].to_numpy())
                 ),
             }
             print(f"{'feature':<32s}  {'standalone AUC':>16s}")
             for name, auc in standalone.items():
                 print(f"  {name:<30s}  {auc:>16.4f}")
+
+            # Sign-aware: the section-5 narrative ("standalone probe
+            # sees the trap as predictive-ish, but tree models extract
+            # more") falls apart if the trap drops to chance or below.
+            # Lower bound 0.51 sits just above sampling noise; if a
+            # regeneration ever puts the trap at or below 0.50, the
+            # whole pedagogical setup needs revisiting.
+            assert standalone[TRAP] > 0.51, (
+                f"trap standalone AUC collapsed to {standalone[TRAP]:.3f} (<= 0.51); "
+                "section 5 contrasts the standalone probe with the GBM ablation, "
+                "and that contrast is empty if the trap is at or below chance"
+            )
             """
         ),
         md(
@@ -368,8 +398,6 @@ def cells() -> list[nbf.NotebookNode]:
                 results[model] = {
                     "with_trap_auc":    float(roc_auc_score(y_test, p_with)),
                     "without_trap_auc": float(roc_auc_score(y_test, p_without)),
-                    "with_trap_p100":   precision_at_k(p_with, y_test, 100),
-                    "without_trap_p100": precision_at_k(p_without, y_test, 100),
                 }
 
             print(f"{'model':<5s}  {'with trap':>10s}  {'without trap':>13s}  {'Δ AUC':>8s}")

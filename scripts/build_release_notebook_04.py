@@ -358,30 +358,42 @@ def cells() -> list[nbf.NotebookNode]:
             acv = pd.to_numeric(test["expected_acv"], errors="coerce").fillna(0.0).to_numpy()
             value_score = lr_probs * acv
 
-            def acv_capture(scores: np.ndarray, k: int) -> float:
-                order = np.argsort(-scores, kind="stable")
-                captured = float(np.sum(acv[order[:k]] * y_test[order[:k]]))
-                total = float(np.sum(acv * y_test))
-                return captured / total if total > 0 else float("nan")
+            # Pre-compute the ranking orders once — argsort is O(N log N)
+            # and the order doesn't change as K varies, so the ~30 plot
+            # points below should not pay for ~30 sorts.
+            total_converted_acv = float(np.sum(acv * y_test))
+            assert total_converted_acv > 0, "no converted-ACV in the test set"
+            order_p = np.argsort(-lr_probs, kind="stable")
+            order_v = np.argsort(-value_score, kind="stable")
+            captured_p = np.cumsum(acv[order_p] * y_test[order_p]) / total_converted_acv
+            captured_v = np.cumsum(acv[order_v] * y_test[order_v]) / total_converted_acv
+
+            def acv_capture(use_value: bool, k: int) -> float:
+                # 1-indexed cumulative-capture lookup (k=1 = first slot).
+                series = captured_v if use_value else captured_p
+                if k <= 0 or k > len(series):
+                    return float("nan")
+                return float(series[k - 1])
 
             print(f"{'top-K':<6s}  {'cap by P(conv)':>14s}  {'cap by P×ACV':>13s}  {'gain':>7s}")
             value_gains = {}
             for k in (50, 100, 200):
-                cap_p = acv_capture(lr_probs, k)
-                cap_v = acv_capture(value_score, k)
+                cap_p = acv_capture(False, k)
+                cap_v = acv_capture(True, k)
                 value_gains[k] = cap_v - cap_p
                 print(f"  top {k:<3d}  {cap_p:>14.4f}  {cap_v:>13.4f}  {cap_v - cap_p:+7.4f}")
 
-            # Plot side-by-side ACV capture for K in 10..300.
+            # Plot side-by-side ACV capture for K in 10..300.  Cheap now
+            # — every point is a single cumulative-array lookup.
             ks = np.arange(10, 301, 10)
-            cap_p = [acv_capture(lr_probs, int(k)) for k in ks]
-            cap_v = [acv_capture(value_score, int(k)) for k in ks]
+            cap_p_curve = [acv_capture(False, int(k)) for k in ks]
+            cap_v_curve = [acv_capture(True, int(k)) for k in ks]
             fig, ax = plt.subplots(figsize=(7, 4))
-            ax.plot(ks, cap_p, marker="o", color="#9ca3af", label="rank by P(convert)")
-            ax.plot(ks, cap_v, marker="o", color="#3b82f6", label="rank by P(convert)×ACV")
+            ax.plot(ks, cap_p_curve, marker="o", color="#9ca3af", label="rank by P(convert)")
+            ax.plot(ks, cap_v_curve, marker="o", color="#3b82f6", label="rank by P(convert)×ACV")
             ax.set_xlabel("top-K leads contacted")
             ax.set_ylabel("Fraction of converted-ACV captured")
-            ax.set_title("Value-aware ranking captures more revenue per outreach slot")
+            ax.set_title("ACV capture vs top-K (rank by P only vs P × ACV)")
             ax.legend(loc="lower right")
             plt.tight_layout()
             plt.show()
@@ -397,14 +409,15 @@ def cells() -> list[nbf.NotebookNode]:
             from the test population."*
 
             We sweep the probability threshold across the LR score
-            distribution and report precision / recall / count above
-            threshold for each step, then pick the threshold whose
-            count is closest to the requested capacity.
+            distribution and report **count, precision, and recall**
+            above threshold for each step, then pick the threshold
+            whose count is closest to the requested capacity.
             """
         ),
         code(
             """
             CAPACITY = 50
+            n_pos_test = max(int(y_test.sum()), 1)
 
             sorted_probs = np.sort(lr_probs)[::-1]
             # The K-th highest probability is the smallest threshold that
@@ -413,7 +426,7 @@ def cells() -> list[nbf.NotebookNode]:
             mask = lr_probs >= threshold
             n_above = int(mask.sum())
             prec = float(y_test[mask].mean()) if n_above > 0 else float("nan")
-            recall = float(y_test[mask].sum() / max(int(y_test.sum()), 1))
+            recall = float(y_test[mask].sum() / n_pos_test)
             print(
                 f"capacity={CAPACITY}  threshold={threshold:.3f}  "
                 f"actually_above={n_above}  precision={prec:.3f}  recall={recall:.3f}"
@@ -424,28 +437,39 @@ def cells() -> list[nbf.NotebookNode]:
             thresholds = np.linspace(
                 float(np.quantile(lr_probs, 0.5)), float(np.max(lr_probs)), 30
             )
-            counts = [int((lr_probs >= t).sum()) for t in thresholds]
-            precs = [
-                float(y_test[lr_probs >= t].mean()) if (lr_probs >= t).sum() > 0 else 0.0
-                for t in thresholds
-            ]
+            counts = []
+            precs = []
+            recalls = []
+            for t in thresholds:
+                m = lr_probs >= t
+                n_t = int(m.sum())
+                counts.append(n_t)
+                precs.append(float(y_test[m].mean()) if n_t > 0 else 0.0)
+                recalls.append(float(y_test[m].sum() / n_pos_test))
 
-            fig, axes = plt.subplots(1, 2, figsize=(11, 4))
+            fig, axes = plt.subplots(1, 3, figsize=(14, 4))
             axes[0].plot(thresholds, counts, marker="o", color="#3b82f6")
             axes[0].axhline(CAPACITY, color="#ef4444", linestyle="--", label=f"capacity={CAPACITY}")
             axes[0].axvline(threshold, color="#10b981", linestyle="--", label=f"chosen ({threshold:.3f})")
             axes[0].set_xlabel("threshold")
             axes[0].set_ylabel("# leads above threshold")
-            axes[0].set_title("Threshold sweep — count above")
-            axes[0].legend()
+            axes[0].set_title("count above")
+            axes[0].legend(fontsize=8)
 
             axes[1].plot(thresholds, precs, marker="o", color="#3b82f6")
             axes[1].axhline(base_rate, color="#9ca3af", linestyle="--", label=f"base rate ({base_rate:.3f})")
             axes[1].axvline(threshold, color="#10b981", linestyle="--", label=f"chosen ({threshold:.3f})")
             axes[1].set_xlabel("threshold")
             axes[1].set_ylabel("precision above threshold")
-            axes[1].set_title("Threshold sweep — precision above")
-            axes[1].legend()
+            axes[1].set_title("precision above")
+            axes[1].legend(fontsize=8)
+
+            axes[2].plot(thresholds, recalls, marker="o", color="#3b82f6")
+            axes[2].axvline(threshold, color="#10b981", linestyle="--", label=f"chosen ({threshold:.3f})")
+            axes[2].set_xlabel("threshold")
+            axes[2].set_ylabel("recall above threshold")
+            axes[2].set_title("recall above")
+            axes[2].legend(fontsize=8)
             plt.tight_layout()
             plt.show()
             """
@@ -456,22 +480,23 @@ def cells() -> list[nbf.NotebookNode]:
 
             The bundle's train/test split is a uniform random split of
             leads. A more realistic stress test is "train on the first
-            70 % of leads chronologically, score the last 30 % "—
+            85 % of leads chronologically, score the last 15 %" —
             because in production you always have to predict the
             *future*, never a held-out random sample of the past.
 
             We mirror the validator's cohort-shift logic
-            (`leadforge.validation.release_quality.measure_cohort_shift_from_bundle`):
-            pool train + test, sort by `lead_created_at` with `lead_id`
-            as a stable tiebreak, train HistGBM on the first 85 % and
-            score the last 15 % (the validator's `COHORT_TRAIN_FRAC`).
+            (`leadforge.validation.release_quality.measure_cohort_shift_from_bundle`)
+            exactly: pool train + test, sort by `lead_created_at` with
+            `lead_id` as a stable tiebreak, train HistGBM on the first
+            85 % (`COHORT_TRAIN_FRAC = 0.85`) and score the last 15 %.
             Both random and cohort splits use the full feature panel
             **including** the trap, matching the report's posture so
             the numbers compare directly. The HistGBM uses
             `random_state=0` here (the validator's
-            `DEFAULT_MODEL_RANDOM_STATE`) instead of the notebook's
-            default `SEED=42` — that matters for the cohort-shift
-            reproduction down to the third decimal.
+            `DEFAULT_MODEL_RANDOM_STATE = 0`) rather than the
+            notebook's default `SEED=42` — the report's cohort-shift
+            block reproduces to four decimals only when both knobs
+            match.
 
             The expected behaviour for the v1 intermediate tier is
             *no* degradation — the report shows the cohort split AUC
@@ -749,8 +774,8 @@ def cells() -> list[nbf.NotebookNode]:
                 "lr_max_bin_err": float(max_bin_err),
                 "lift_at_5pct":  lifts[5.0],
                 "lift_at_10pct": lifts[10.0],
-                "acv_cap_50":    acv_capture(lr_probs, 50),
-                "acv_cap_100":   acv_capture(lr_probs, 100),
+                "acv_cap_50":    acv_capture(False, 50),
+                "acv_cap_100":   acv_capture(False, 100),
                 "boot_lr_auc_median":  float(np.nanmedian(boot_lr_auc)),
                 "boot_gbm_auc_median": float(np.nanmedian(boot_gbm_auc)),
             }
@@ -761,12 +786,16 @@ def cells() -> list[nbf.NotebookNode]:
                 label="notebook 04 metric panel (seed 42, intermediate)",
             )
 
-            # Sign-aware: value-aware ranking should not be worse than
-            # P-only ranking on aggregate.  The headline finding stays
-            # in the narrative regardless of the exact numbers.
+            # Sign-aware: value-aware ranking should be measurably
+            # better, not just non-worse.  On this seed every K shows
+            # +0.20 ACV-capture gain; the threshold sits well below
+            # that but well above noise so a regeneration that erodes
+            # the value-aware lift fails here.
+            MIN_VALUE_GAIN = 0.05
             for k, gain in value_gains.items():
-                assert gain >= -0.01, (
-                    f"value-aware ranking lost ground at top-{k} ({gain:+.4f}); "
+                assert gain > MIN_VALUE_GAIN, (
+                    f"value-aware ranking lift at top-{k} collapsed: "
+                    f"{gain:+.4f} <= {MIN_VALUE_GAIN:.4f} — "
                     "the P×ACV story is no longer load-bearing"
                 )
             print("OK — cohort-shift, calibration, lift, value-capture, and bootstrap all pinned.")
@@ -776,9 +805,10 @@ def cells() -> list[nbf.NotebookNode]:
             """
             ## 10. Summary
 
-            * The LR baseline is well-calibrated (max bin error ≈ 0.19
-              on this seed) and lifts the top decile to ~2.6× the base
-              rate.
+            * The LR baseline is well-calibrated (max bin error ≈ 0.13
+              on the trap-dropped headline panel, vs ~0.19 on the
+              with-trap panel the validation report tracks) and lifts
+              the top decile to ~2.75× the base rate.
             * Value-aware ranking (P × ACV) captures more revenue per
               top-K slot than P-only ranking — the gap depends on K
               but is positive across all sizes we tested.

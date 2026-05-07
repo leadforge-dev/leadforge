@@ -55,17 +55,28 @@ def test_cohort_shift_targets_match_validation_report() -> None:
     shift metrics under a top-level ``cohort_shift.<tier>`` key (single
     seed, not a cross-seed median), so the structure differs from the
     per-tier ``medians`` block above and warrants its own audit loop.
+
+    The block is **required**: notebook 04's tolerance gate reads it
+    directly, and silently allowing it to disappear would defeat the
+    audit-sync invariant.  If notebook 04 ever stops needing this
+    block, the test should be deleted, not bypassed.
     """
     targets = json.loads(_TARGETS_PATH.read_text())
-    cohort_targets = targets.get("cohort_shift", {})
-    if not cohort_targets:
-        return  # absent block is permitted; only the contents need to match
+    assert "cohort_shift" in targets, (
+        "release_targets is missing the 'cohort_shift' block that notebook 04 "
+        "reads at runtime — re-add it (sourced from "
+        "validation_report.cohort_shift) or delete this test if the notebook "
+        "no longer needs it"
+    )
+    cohort_targets = targets["cohort_shift"]
 
     report = json.loads(_REPORT_PATH.read_text())
     report_cohort = report["cohort_shift"]
+    tiers_checked = 0
     for tier_name, tier_metrics in cohort_targets.items():
         if tier_name.startswith("_"):
             continue
+        tiers_checked += 1
         assert tier_name in report_cohort, (
             f"targets cohort_shift mentions tier {tier_name!r} which is absent "
             f"from validation_report.json cohort_shift (known: {list(report_cohort)})"
@@ -81,3 +92,7 @@ def test_cohort_shift_targets_match_validation_report() -> None:
                 f"{target_value} but validation_report has {report_block[metric_name]} — "
                 "regenerate the report or update _release_targets.json"
             )
+    assert tiers_checked > 0, (
+        "cohort_shift block contained only meta keys (none starting without an "
+        "underscore) — at least one tier must be pinned"
+    )
