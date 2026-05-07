@@ -43,6 +43,14 @@ def test_builder_is_byte_stable_and_matches_committed(
     produce byte-identical output and that the committed notebook
     matches them.
     """
+    # ``nbformat`` lives in the optional ``[notebooks]`` extra; the
+    # main ``test`` CI job installs only ``[dev]`` and would otherwise
+    # see the subprocess-invoked builders crash with
+    # ``ModuleNotFoundError: nbformat``.  The dedicated ``notebooks``
+    # CI job installs ``[dev,scripts,notebooks]`` and runs this test
+    # alongside ``test_execute_notebooks.py``.
+    pytest.importorskip("nbformat", reason="nbformat not installed (use [notebooks] extra)")
+
     builder_path = _SCRIPTS_DIR / builder_name
     committed_path = _NOTEBOOKS_DIR / notebook_name
     assert builder_path.exists(), f"missing builder: {builder_path}"

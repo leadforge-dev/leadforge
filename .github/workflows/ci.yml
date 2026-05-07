@@ -156,5 +156,8 @@ jobs:
         run: python -m ipykernel install --user --name python3
       - name: Build the intermediate public bundle (only tier the notebooks need)
         run: python scripts/build_public_release.py release --tier intermediate
-      - name: Execute release notebooks end-to-end
-        run: pytest tests/release/notebooks/test_execute_notebooks.py -v
+      - name: Execute release notebooks end-to-end + builder byte-stability
+        run: |
+          pytest tests/release/notebooks/test_execute_notebooks.py \
+                 tests/scripts/test_release_notebook_builders.py \
+                 -v
