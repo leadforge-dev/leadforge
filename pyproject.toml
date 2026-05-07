@@ -54,6 +54,19 @@ publish = [
     "datasets>=2.14",
     "kaggle>=1.6",
 ]
+# Optional dependencies for executing the public release notebooks.
+# Installing this extra (``pip install -e ".[notebooks]"``) enables the
+# G13.1 acceptance gate: the CI ``notebooks`` job nbclient-executes
+# ``release/notebooks/*.ipynb`` end-to-end against a freshly built
+# public bundle, asserting the notebooks reproduce validation_report.md
+# metrics within ±0.05 (G13.2) and never load instructor artefacts
+# (G13.3).
+notebooks = [
+    "nbclient>=0.10",
+    "nbformat>=5.10",
+    "scikit-learn>=1.3",
+    "matplotlib>=3.7",
+]
 
 [project.scripts]
 leadforge = "leadforge.cli.main:app"
@@ -74,6 +87,16 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "PT", "S"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*" = ["S101", "S108"]
+# Release notebooks deliberately use ``assert`` for contract checks
+# (path discipline, snapshot-safe joins, G13.2 tolerance gate).  ``assert``
+# is the conventional notebook idiom and these are exactly the cells we
+# want to fail loud on regression.
+"release/notebooks/**/*.ipynb" = ["S101"]
+# Notebook builders emit dedented heredocs whose lines render as
+# markdown tables and print-statement output inside the notebook.
+# Line length is a property of the rendered cell, not the .py source,
+# so 100c is the wrong yardstick here.
+"scripts/_build_release_notebook_*.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.11"

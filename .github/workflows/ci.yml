@@ -138,3 +138,17 @@ jobs:
       - name: Skip v7 (no dataset)
         if: steps.check-v7.outputs.found != 'true'
         run: echo "No v7 datasets found — skipping v7 validation"
+
+  notebooks:
+    name: Execute release notebooks (G13.1)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev,scripts,notebooks]"
+      - name: Build public release bundles (intermediate tier)
+        run: python scripts/build_public_release.py release
+      - name: Execute release notebooks end-to-end
+        run: pytest tests/release/notebooks/test_execute_notebooks.py -v
