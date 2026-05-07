@@ -2,20 +2,27 @@
 
 Run from the repository root::
 
-    python scripts/_build_release_notebook_02.py
+    python scripts/build_release_notebook_02.py
 
-Produces a cleared notebook (no execution_count, no outputs) with stable
-metadata.  Re-running yields a byte-identical file.
+Cells are assigned deterministic IDs by ``_release_notebook_common`` so
+re-running yields a byte-identical file — same audit-artifact-sync
+pattern PR 4.1 / 5.1 / 5.2 use for ``release/`` artifacts.
 """
 
 from __future__ import annotations
 
-import json
-import subprocess
+import sys
 from pathlib import Path
-from textwrap import dedent
 
-import nbformat as nbf
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import nbformat as nbf  # noqa: E402 — must follow sys.path insert
+from _release_notebook_common import (  # noqa: E402 — must follow sys.path insert
+    assemble_notebook,
+    code,
+    md,
+    write_notebook,
+)
 
 OUT = (
     Path(__file__).resolve().parents[1]
@@ -25,20 +32,8 @@ OUT = (
 )
 
 
-def md(source: str) -> nbf.NotebookNode:
-    return nbf.v4.new_markdown_cell(dedent(source).strip("\n"))
-
-
-def code(source: str) -> nbf.NotebookNode:
-    cell = nbf.v4.new_code_cell(dedent(source).strip("\n"))
-    cell["execution_count"] = None
-    cell["outputs"] = []
-    return cell
-
-
-def build() -> nbf.NotebookNode:
-    nb = nbf.v4.new_notebook()
-    nb.cells = [
+def cells() -> list[nbf.NotebookNode]:
+    return [
         md(
             """
             # Notebook 02 — Relational Feature Engineering
@@ -56,11 +51,13 @@ def build() -> nbf.NotebookNode:
 
             1. Loading the seven public tables.
             2. Verifying the snapshot-safe contract inline (the teachable
-               moment — see the contract, don't just read about it).
-            3. Engineering four relational features.
+               moment — see the contract pass, don't just read about it).
+            3. Engineering four relational features, with train-only
+               discipline for any aggregation that crosses splits.
             4. Training a HistGBM on `flat ∪ engineered` columns.
             5. Reporting the AUC / AP / Brier / P@K delta vs the flat-CSV
-               baseline from notebook 01.
+               baseline, with a tolerance gate that fails CI if the
+               headline lift regresses.
 
             **Public path discipline (G13.3).** This notebook reads only
             from `release/intermediate/`. The instructor companion
@@ -70,13 +67,16 @@ def build() -> nbf.NotebookNode:
             purpose (`customers`, `subscriptions`) live only in the
             instructor companion because their mere existence reconstructs
             the label.
+
+            **Leakage-trap discipline.** Unlike notebook 01 (which
+            reproduces the validation report's panel verbatim and
+            therefore keeps `total_touches_all`), notebook 02 **drops**
+            the trap from the flat baseline. We're teaching feature
+            engineering here; mixing a known-leaky column into the
+            "before" panel would muddy the relational lift attribution.
             """
         ),
-        md(
-            """
-            ## 1. Setup
-            """
-        ),
+        md("## 1. Setup"),
         code(
             """
             from __future__ import annotations
@@ -100,7 +100,7 @@ def build() -> nbf.NotebookNode:
             from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
             sys.path.insert(0, str(Path.cwd()))
-            from _notebook_utils import precision_at_k
+            from _notebook_utils import assert_within_tolerance, precision_at_k
 
             SEED = 42
             BUNDLE = Path("../intermediate")          # public student bundle
@@ -151,9 +151,13 @@ def build() -> nbf.NotebookNode:
             ## 3. Verify the snapshot-safe contract
 
             For every event-table row joined back to its lead, assert
-            `timestamp <= lead_created_at + snapshot_day`. This is the
-            invariant that makes any join you can write leakage-safe — and
-            it's worth seeing it pass before relying on it.
+            `timestamp <= lead_created_at + snapshot_day`. The reported
+            **headroom** is the *minimum* gap any event row leaves between
+            its timestamp and the snapshot cutoff — a non-negative number
+            when the contract holds. Showing the actual minimum (rather
+            than just "all <= cutoff") makes the receipt honest: if a
+            future regeneration ever shaves the contract close, you'll see
+            the headroom shrink before the assertion fires.
             """
         ),
         code(
@@ -172,7 +176,7 @@ def build() -> nbf.NotebookNode:
             ]
 
             for tbl, ts_col in EVENT_TABLES:
-                df = tables[tbl][[ "lead_id", ts_col]].merge(
+                df = tables[tbl][["lead_id", ts_col]].merge(
                     cutoff[["lead_id", "cutoff"]], on="lead_id", how="left"
                 )
                 df[ts_col] = pd.to_datetime(df[ts_col])
@@ -180,8 +184,12 @@ def build() -> nbf.NotebookNode:
                 assert len(violations) == 0, (
                     f"{tbl}.{ts_col}: {len(violations)} rows past snapshot cutoff"
                 )
-                max_offset_days = (df[ts_col] - df["lead_created_at" if False else "cutoff"]).max()
-                print(f"  {tbl}.{ts_col}: {len(df):>6,} rows, all <= cutoff (max offset 0.0 days)")
+                min_headroom = (df["cutoff"] - df[ts_col]).min()
+                min_headroom_days = float(min_headroom.total_seconds()) / 86400.0
+                print(
+                    f"  {tbl}.{ts_col}: {len(df):>6,} rows; "
+                    f"min headroom under cutoff: {min_headroom_days:6.2f} days"
+                )
 
             print()
             print("OK — every event row in every public event table satisfies")
@@ -194,21 +202,21 @@ def build() -> nbf.NotebookNode:
 
             We build four relational features. Each one starts as a
             per-lead aggregate over a single snapshot-safe table, then
-            joins back into the per-lead snapshot.
+            joins back into the per-lead snapshot. Aggregations that pool
+            across leads (account-level density, target encoding) are
+            **fit on the train split only** and applied to test via
+            join — same train-only discipline that prevents target leakage
+            in mean encoding.
 
             | # | Feature | Source table(s) | Aggregation |
             |---|---|---|---|
             | 1 | `touches_ch_*` (3 cols) | `touches` | per-lead × `touch_channel` count |
-            | 2 | `account_avg_touches_per_lead` | `touches`, `leads` | account-level rollup, then merge back |
+            | 2 | `account_avg_touches_per_lead` | `touches`, `leads`, train lead set | account-level rollup over **train leads only**, then merge back |
             | 3 | `days_since_last_activity` | `sales_activities`, `leads` | per-lead recency at snapshot cutoff |
-            | 4 | `industry_target_encoding_train` | `accounts`, `train` | mean-target encoding **fit on train only** |
+            | 4 | `industry_target_encoding_train` | `accounts`, train | mean-target encoding **fit on train only** |
             """
         ),
-        md(
-            """
-            ### 4.1 Touch-channel breakdown
-            """
-        ),
+        md("### 4.1 Touch-channel breakdown"),
         code(
             """
             touches = tables["touches"]
@@ -227,15 +235,23 @@ def build() -> nbf.NotebookNode:
             How active is the account this lead belongs to, on average? An
             account with many leads and many touches per lead is a
             structurally different prospect than a one-touch account.
+
+            **Train-only.** We compute the account-level rollup using only
+            train leads' touches. Test leads in train-only-empty accounts
+            fall back to 0 via `fillna`. This avoids letting test rows
+            influence the train feature distribution — same discipline
+            applied to mean-target encoding in 4.4.
             """
         ),
         code(
             """
+            train_lead_ids = set(train["lead_id"].tolist())
             tch_with_acct = touches.merge(
                 tables["leads"][["lead_id", "account_id"]], on="lead_id", how="left"
             )
+            tch_train = tch_with_acct[tch_with_acct["lead_id"].isin(train_lead_ids)]
             account_density = (
-                tch_with_acct.groupby("account_id")
+                tch_train.groupby("account_id")
                 .agg(
                     account_total_touches=("touch_id", "count"),
                     account_lead_count=("lead_id", "nunique"),
@@ -246,6 +262,10 @@ def build() -> nbf.NotebookNode:
                     )
                 )
                 .reset_index()
+            )
+            print(
+                f"account_density rows: {len(account_density):,}  "
+                f"(accounts represented in train touches)"
             )
             account_density.head()
             """
@@ -297,17 +317,16 @@ def build() -> nbf.NotebookNode:
             print(f"  fallback global mean: {tgt_enc_global_mean:.3f}")
             """
         ),
-        md(
-            """
-            ### 4.5 Stitch features onto train and test
-            """
-        ),
+        md("### 4.5 Stitch features onto train and test"),
         code(
             """
             ENGINEERED_NUMERIC = (
                 list(channel_counts.columns)
-                + ["account_avg_touches_per_lead", "days_since_last_activity",
-                   "industry_target_encoding_train"]
+                + [
+                    "account_avg_touches_per_lead",
+                    "days_since_last_activity",
+                    "industry_target_encoding_train",
+                ]
             )
 
             def attach_engineered(df: pd.DataFrame) -> pd.DataFrame:
@@ -335,7 +354,10 @@ def build() -> nbf.NotebookNode:
 
             train_eng = attach_engineered(train)
             test_eng = attach_engineered(test)
-            print(f"train_eng shape: {train_eng.shape}  ({train.shape[1]} -> {train_eng.shape[1]} cols)")
+            print(
+                f"train_eng shape: {train_eng.shape}  "
+                f"({train.shape[1]} -> {train_eng.shape[1]} cols)"
+            )
             print(f"new columns: {ENGINEERED_NUMERIC}")
             """
         ),
@@ -349,10 +371,15 @@ def build() -> nbf.NotebookNode:
 
             | Model | Features | Compares against |
             |---|---|---|
-            | LR-flat   | flat snapshot only      | (validation report baseline) |
-            | GBM-flat  | flat snapshot only      | LR-flat |
-            | LR-eng    | flat ∪ engineered       | LR-flat |
-            | GBM-eng   | flat ∪ engineered       | GBM-flat — the headline lift |
+            | LR-flat   | flat snapshot, no trap            | (validation report baseline) |
+            | GBM-flat  | flat snapshot, no trap            | LR-flat |
+            | LR-eng    | flat ∪ engineered, no trap, no raw `industry` | LR-flat |
+            | GBM-eng   | flat ∪ engineered, no trap, no raw `industry` | GBM-flat — the headline lift |
+
+            The `+rel` pipelines drop the raw `industry` categorical
+            because the train-only target encoding already represents it
+            as a numeric column — feeding both would feed the same column
+            twice.
             """
         ),
         code(
@@ -374,8 +401,15 @@ def build() -> nbf.NotebookNode:
                 )
             ]
             num_base = [c for c in base_cols if c not in cat_base]
-            print(f"flat features: {len(base_cols)}  (numeric={len(num_base)}, categorical={len(cat_base)})")
+            # Drop raw `industry` from the +rel categorical list so the LR
+            # pipeline doesn't see it twice (one-hot + target-encoded).
+            cat_eng = [c for c in cat_base if c != "industry"]
+            print(
+                f"flat features: {len(base_cols)}  "
+                f"(numeric={len(num_base)}, categorical={len(cat_base)})"
+            )
             print(f"engineered (numeric only): {len(ENGINEERED_NUMERIC)}")
+            print(f"+rel categorical list drops: {set(cat_base) - set(cat_eng)}")
             """
         ),
         code(
@@ -388,12 +422,19 @@ def build() -> nbf.NotebookNode:
 
             def build_pipeline(num_cols: list[str], cat_cols: list[str], *, model: str) -> Pipeline:
                 numeric_t = Pipeline(
-                    [("imputer", SimpleImputer(strategy="median")),
-                     ("scaler", StandardScaler())]
+                    [
+                        ("imputer", SimpleImputer(strategy="median")),
+                        ("scaler", StandardScaler()),
+                    ]
                 )
                 cat_t = Pipeline(
-                    [("imputer", SimpleImputer(strategy="most_frequent")),
-                     ("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=False))]
+                    [
+                        ("imputer", SimpleImputer(strategy="most_frequent")),
+                        (
+                            "encoder",
+                            OneHotEncoder(handle_unknown="ignore", sparse_output=False),
+                        ),
+                    ]
                 )
                 pre = ColumnTransformer(
                     [("num", numeric_t, num_cols), ("cat", cat_t, cat_cols)],
@@ -417,8 +458,8 @@ def build() -> nbf.NotebookNode:
                 pipe.fit(_sanitize(x_train_df, cat_cols), y_train)
                 return pipe.predict_proba(_sanitize(x_test_df, cat_cols))[:, 1]
 
-            y_train = train[TASK].astype("boolean").fillna(False).astype(int).values
-            y_test = test[TASK].astype("boolean").fillna(False).astype(int).values
+            y_train = train[TASK].astype("boolean").fillna(False).astype(int).to_numpy()
+            y_test = test[TASK].astype("boolean").fillna(False).astype(int).to_numpy()
             base_rate = float(y_test.mean())
             """
         ),
@@ -435,12 +476,12 @@ def build() -> nbf.NotebookNode:
             probs_lr_eng = fit_and_score(
                 train_eng[base_cols + ENGINEERED_NUMERIC],
                 test_eng[base_cols + ENGINEERED_NUMERIC],
-                num_eng, cat_base, model="lr",
+                num_eng, cat_eng, model="lr",
             )
             probs_gbm_eng = fit_and_score(
                 train_eng[base_cols + ENGINEERED_NUMERIC],
                 test_eng[base_cols + ENGINEERED_NUMERIC],
-                num_eng, cat_base, model="gbm",
+                num_eng, cat_eng, model="gbm",
             )
             """
         ),
@@ -449,9 +490,9 @@ def build() -> nbf.NotebookNode:
             def panel(probs: np.ndarray, label: str) -> dict[str, float]:
                 return {
                     "label": label,
-                    "auc": roc_auc_score(y_test, probs),
-                    "ap": average_precision_score(y_test, probs),
-                    "brier": brier_score_loss(y_test, probs),
+                    "auc": float(roc_auc_score(y_test, probs)),
+                    "ap": float(average_precision_score(y_test, probs)),
+                    "brier": float(brier_score_loss(y_test, probs)),
                     "p@100": precision_at_k(probs, y_test, 100),
                 }
 
@@ -465,12 +506,20 @@ def build() -> nbf.NotebookNode:
             print()
             print(f"{'model':<18s}  {'AUC':>7s}  {'AP':>7s}  {'Brier':>7s}  {'P@100':>7s}")
             for r in rows:
-                print(f"{r['label']:<18s}  {r['auc']:.4f}  {r['ap']:.4f}  {r['brier']:.4f}  {r['p@100']:.4f}")
+                print(
+                    f"{r['label']:<18s}  {r['auc']:.4f}  {r['ap']:.4f}  "
+                    f"{r['brier']:.4f}  {r['p@100']:.4f}"
+                )
             """
         ),
         md(
             """
             ## 6. Lift over the flat baseline
+
+            *Sign convention.* `ΔAUC`, `ΔAP`, `ΔP@100`: **higher is
+            better** (positive = engineered features helped). `ΔBrier`:
+            **lower is better** (Brier is a loss, so negative ΔBrier =
+            improved calibration).
             """
         ),
         code(
@@ -478,10 +527,16 @@ def build() -> nbf.NotebookNode:
             def delta(eng: np.ndarray, base: np.ndarray, name: str) -> dict[str, float]:
                 return {
                     "label": name,
-                    "auc": roc_auc_score(y_test, eng) - roc_auc_score(y_test, base),
-                    "ap": average_precision_score(y_test, eng) - average_precision_score(y_test, base),
-                    "brier": brier_score_loss(y_test, eng) - brier_score_loss(y_test, base),
-                    "p@100": precision_at_k(eng, y_test, 100) - precision_at_k(base, y_test, 100),
+                    "auc": float(roc_auc_score(y_test, eng) - roc_auc_score(y_test, base)),
+                    "ap": float(
+                        average_precision_score(y_test, eng) - average_precision_score(y_test, base)
+                    ),
+                    "brier": float(
+                        brier_score_loss(y_test, eng) - brier_score_loss(y_test, base)
+                    ),
+                    "p@100": float(
+                        precision_at_k(eng, y_test, 100) - precision_at_k(base, y_test, 100)
+                    ),
                 }
 
             deltas = [
@@ -499,22 +554,76 @@ def build() -> nbf.NotebookNode:
         ),
         md(
             """
-            ## 7. Honest takeaway
+            ## 7. Tolerance gate
 
-            The headline number is **GBM(eng) − GBM(flat) AUC**. On
-            seed 42, intermediate tier, this lift is positive and
-            non-trivial: HistGBM closes a meaningful share of the gap to
-            LR-on-flat once it has the engineered relational features to
-            chew on.
+            Pin the four model AUCs and the headline lift to per-metric
+            tolerances so a regression in any pipeline component (feature
+            engineering, leakage discipline, sklearn upgrade) breaks CI.
+            Targets and tolerances are seed-42-specific by design — this
+            notebook is reproducible-by-seed, not a cross-seed median.
+            """
+        ),
+        code(
+            """
+            # Single-seed (seed=42) AUCs observed on the as-shipped
+            # intermediate bundle.  Tolerances allow ±0.02 around each
+            # baseline (well outside numerical jitter, well inside the
+            # band that would let GBM(eng) silently drop below GBM(flat)).
+            NB02_TARGETS = {
+                "lr_flat_auc":  0.8737,
+                "gbm_flat_auc": 0.8432,
+                "lr_eng_auc":   0.8763,
+                "gbm_eng_auc":  0.8579,
+                "headline_lift_auc": 0.0147,  # GBM(eng) - GBM(flat)
+            }
+            NB02_TOLERANCES = {
+                "lr_flat_auc":  0.02,
+                "gbm_flat_auc": 0.02,
+                "lr_eng_auc":   0.02,
+                "gbm_eng_auc":  0.02,
+                "headline_lift_auc": 0.015,   # tighter — sign-aware below
+            }
 
-            However the lift does **not** flip the sign of the GBM-vs-LR
-            comparison: GBM(eng) is still slightly below LR(flat). This is
-            the same v1 finding documented in
+            observed = {
+                "lr_flat_auc":  rows[0]["auc"],
+                "gbm_flat_auc": rows[1]["auc"],
+                "lr_eng_auc":   rows[2]["auc"],
+                "gbm_eng_auc":  rows[3]["auc"],
+                "headline_lift_auc": deltas[0]["auc"],
+            }
+            assert_within_tolerance(
+                observed=observed,
+                target=NB02_TARGETS,
+                tolerances=NB02_TOLERANCES,
+                label="notebook 02 metric panel (seed 42, intermediate)",
+            )
+            assert observed["headline_lift_auc"] > 0.0, (
+                "GBM(eng) − GBM(flat) AUC went non-positive — relational "
+                "lift disappeared; investigate before merging."
+            )
+            print("OK — all panel metrics within tolerance and headline lift is positive.")
+            """
+        ),
+        md(
+            """
+            ## 8. Honest takeaway
+
+            On seed 42 the GBM(eng) − GBM(flat) AUC lift is small
+            (+0.0147). Cross-seed variance for `gbm_auc` on this bundle
+            is ~0.027 (see `release/validation/validation_report.json`,
+            `tiers.intermediate.spreads.gbm_auc`), so a single-seed lift
+            of this size is **suggestive, not conclusive**. Confirming a
+            real signal needs a seed sweep — see the cohort-shift / seed
+            harness coming in PR 6.2's notebook 04.
+
+            The lift also does **not** flip the sign of the GBM-vs-LR
+            comparison: GBM(eng) is still slightly below LR(flat). This
+            is the same v1 finding documented in
             `release/validation/validation_report.md` (gate **G7.4.4**)
-            and in the dataset card: the v1 snapshot is dominated by
+            and the dataset card: the v1 snapshot is dominated by
             roughly-linear signal, and HistGBM doesn't consistently beat
-            LR on it. Engineered relational features narrow the gap; they
-            don't yet erase it.
+            LR on it. Engineered relational features narrow the gap; on
+            this seed they don't yet erase it.
 
             Two takeaways for downstream users:
 
@@ -522,48 +631,27 @@ def build() -> nbf.NotebookNode:
                construction.** Section 3 above is the full proof. You can
                aggregate any of the four event tables without policing the
                horizon yourself.
-            2. **Bring your own non-linearities.** If you can find a
-               feature engineering choice (cross-table interactions, tree
-               kernels, learned embeddings) that flips the GBM-vs-LR sign,
-               please [open a `realism` issue](../docs/release/break_me_guide.md)
-               (template lands in PR 6.3) — that's a finding worth seeing.
+            2. **Bring your own non-linearities.** If a feature
+               engineering choice (cross-table interactions, tree
+               kernels, learned embeddings, bigger seed sweeps) flips the
+               GBM-vs-LR sign reliably, that's a finding worth filing —
+               the *break_me_guide* template lands in PR 6.3.
 
             ## Next
 
-            - **Notebook 03** *(PR 6.2)* — leakage and time-window
-              walkthrough, including the deliberate `total_touches_all`
-              trap.
-            - **Notebook 04** *(PR 6.2)* — value-aware ranking,
-              calibration, and cohort-shift evaluation.
+            - **Notebook 03** *(coming in PR 6.2)* — leakage and
+              time-window walkthrough, including the deliberate
+              `total_touches_all` trap notebook 01 keeps and this notebook
+              drops.
+            - **Notebook 04** *(coming in PR 6.2)* — value-aware ranking,
+              calibration, and cohort-shift evaluation with a seed sweep.
             """
         ),
     ]
-    nb.metadata = {
-        "kernelspec": {
-            "display_name": "Python 3",
-            "language": "python",
-            "name": "python3",
-        },
-        "language_info": {
-            "name": "python",
-            "version": "3.11",
-        },
-    }
-    return nb
 
 
 def main() -> None:
-    nb = build()
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    text = json.dumps(nb, indent=1, sort_keys=True, ensure_ascii=False)
-    OUT.write_text(text + "\n", encoding="utf-8")
-    # Run ruff format on the emitted notebook so the builder's output
-    # matches the project's pre-commit hook byte-for-byte.  Without this
-    # step a contributor running the builder would see pre-commit
-    # reformat their notebook on commit, defeating the audit-artifact-
-    # sync invariant.
-    subprocess.run(["ruff", "format", str(OUT)], check=True)  # noqa: S603, S607
-    print(f"wrote {OUT}")
+    write_notebook(OUT, assemble_notebook(cells()))
 
 
 if __name__ == "__main__":

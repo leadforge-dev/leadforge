@@ -148,7 +148,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev,scripts,notebooks]"
-      - name: Build public release bundles (intermediate tier)
-        run: python scripts/build_public_release.py release
+      - name: Build the intermediate public bundle (only tier the notebooks need)
+        run: python scripts/build_public_release.py release --tier intermediate
       - name: Execute release notebooks end-to-end
         run: pytest tests/release/notebooks/test_execute_notebooks.py -v

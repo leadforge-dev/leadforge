@@ -125,6 +125,16 @@ def main() -> None:
             "Default: wall-clock now. Use this for reproducible bundles."
         ),
     )
+    parser.add_argument(
+        "--tier",
+        choices=[name for name, _, _ in BUNDLES] + ["all"],
+        default="all",
+        help=(
+            "Build only the named tier (default: all four). "
+            "Useful for CI jobs that need a single bundle — e.g. the "
+            "release-notebooks job only needs ``intermediate``."
+        ),
+    )
     args = parser.parse_args()
 
     output_root = Path(args.output_dir)
@@ -135,7 +145,8 @@ def main() -> None:
     if license_src.exists():
         shutil.copy2(license_src, output_root / "LICENSE")
 
-    for dir_name, exposure_mode, difficulty in BUNDLES:
+    selected = BUNDLES if args.tier == "all" else [b for b in BUNDLES if b[0] == args.tier]
+    for dir_name, exposure_mode, difficulty in selected:
         bundle_dir = output_root / dir_name
         print(f"Generating {dir_name} ({exposure_mode}, {difficulty})...", file=sys.stderr)
         generate_and_save(
@@ -162,7 +173,7 @@ def main() -> None:
 
     # Summary
     print("\n=== Release Summary ===")
-    for dir_name, _, _ in BUNDLES:
+    for dir_name, _, _ in selected:
         bundle_dir = output_root / dir_name
         print_summary(bundle_dir, dir_name)
 

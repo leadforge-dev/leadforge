@@ -2,41 +2,38 @@
 
 Run from the repository root::
 
-    python scripts/_build_release_notebook_01.py
+    python scripts/build_release_notebook_01.py
 
-Produces a cleared notebook (no execution_count, no outputs) with stable
-metadata.  Re-running yields a byte-identical file — same audit-artifact-
-sync pattern PR 4.1 / 5.1 / 5.2 use for ``release/`` artifacts.
+Cells are assigned deterministic IDs by ``_release_notebook_common`` so
+re-running yields a byte-identical file — same audit-artifact-sync
+pattern PR 4.1 / 5.1 / 5.2 use for ``release/`` artifacts.  The byte
+equality is enforced in CI by ``tests/scripts/test_release_notebook_builders.py``.
 """
 
 from __future__ import annotations
 
-import json
-import subprocess
+import sys
 from pathlib import Path
-from textwrap import dedent
 
-import nbformat as nbf
+# Make ``scripts/`` importable regardless of how this file is loaded
+# (mirrors ``scripts/package_hf_release.py``'s sys.path dance).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import nbformat as nbf  # noqa: E402 — must follow sys.path insert
+from _release_notebook_common import (  # noqa: E402 — must follow sys.path insert
+    assemble_notebook,
+    code,
+    md,
+    write_notebook,
+)
 
 OUT = (
     Path(__file__).resolve().parents[1] / "release" / "notebooks" / "01_baseline_lead_scoring.ipynb"
 )
 
 
-def md(source: str) -> nbf.NotebookNode:
-    return nbf.v4.new_markdown_cell(dedent(source).strip("\n"))
-
-
-def code(source: str) -> nbf.NotebookNode:
-    cell = nbf.v4.new_code_cell(dedent(source).strip("\n"))
-    cell["execution_count"] = None
-    cell["outputs"] = []
-    return cell
-
-
-def build() -> nbf.NotebookNode:
-    nb = nbf.v4.new_notebook()
-    nb.cells = [
+def cells() -> list[nbf.NotebookNode]:
+    return [
         md(
             """
             # Notebook 01 — Baseline Lead Scoring
@@ -48,7 +45,7 @@ def build() -> nbf.NotebookNode:
             baselines on the snapshot-safe public bundle, and verify they
             reproduce the cross-seed-median metrics in
             [`release/validation/validation_report.md`](../validation/validation_report.md)
-            within the **±0.05** tolerance fixed by acceptance gate **G13.2**.
+            within the per-metric tolerances fixed by acceptance gate **G13.2**.
 
             **Public path discipline (G13.3).** This notebook reads only from
             the public bundle at `release/intermediate/`. The instructor
@@ -58,15 +55,12 @@ def build() -> nbf.NotebookNode:
             never depend on instructor-only artefacts.
             """
         ),
-        md(
-            """
-            ## 1. Setup
-            """
-        ),
+        md("## 1. Setup"),
         code(
             """
             from __future__ import annotations
 
+            import json
             import sys
             from pathlib import Path
 
@@ -85,7 +79,11 @@ def build() -> nbf.NotebookNode:
             from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
             sys.path.insert(0, str(Path.cwd()))
-            from _notebook_utils import assert_within_tolerance, precision_at_k
+            from _notebook_utils import (
+                assert_within_tolerance,
+                precision_at_k,
+                top_decile_rate,
+            )
 
             SEED = 42
             BUNDLE = Path("../intermediate")          # public student bundle
@@ -96,26 +94,44 @@ def build() -> nbf.NotebookNode:
             """
             ## 2. Reproduction targets
 
-            We pin the cross-seed median metrics from
-            `release/validation/validation_report.md` (intermediate tier).
-            Each is a Logistic Regression score on the test split unless
-            otherwise noted; ranking-based metrics use stable argsort on the
-            LR probability so ties resolve identically to the validator.
+            We pin the cross-seed-median metrics for the *intermediate* tier
+            (seeds 42–46) from `release/validation/validation_report.json`.
+            The targets live in a sibling file
+            (`release/notebooks/_release_targets.json`) so they can't drift
+            from the validation report without an audit-sync test failure
+            in CI.
+
+            **Per-metric tolerances** are tighter than a flat 5 % band: the
+            cross-seed standard deviation in the report is well under 0.02
+            on AUC and Brier, and a flat ±0.05 would let a regression slip
+            through. Average-precision and the small-`k` `top_decile_rate`
+            stay at ±0.05 because their seed-to-seed variance is larger.
             """
         ),
         code(
             """
-            # Cross-seed medians from release/validation/validation_report.md
-            # (intermediate tier; seeds 42-46).  See ``$.tiers.intermediate.medians``
-            # in the JSON sibling for the source of truth.
+            with (Path.cwd() / "_release_targets.json").open() as fh:
+                targets = json.load(fh)["intermediate"]
+
+            # Re-key the validation report's metric names into the metric
+            # names this notebook prints below, so the gate compares apples
+            # to apples.
             VALIDATION_REPORT_TARGETS = {
-                "lr_auc": 0.8859,
-                "gbm_auc": 0.8755,
-                "lr_average_precision": 0.5752,
-                "lr_brier": 0.1096,
-                "lr_precision_at_100": 0.59,
+                "lr_auc": targets["lr_auc"],
+                "gbm_auc": targets["gbm_auc"],
+                "lr_average_precision": targets["lr_average_precision"],
+                "lr_brier": targets["brier_score"],
+                "lr_top_decile_rate": targets["top_decile_rate"],
             }
-            TOLERANCE = 0.05  # G13.2
+            TOLERANCES = {
+                "lr_auc": 0.02,                  # G13.2 — tighter than a flat 5%
+                "gbm_auc": 0.02,
+                "lr_average_precision": 0.05,    # higher seed variance
+                "lr_brier": 0.02,
+                "lr_top_decile_rate": 0.05,      # small-k variance
+            }
+            for k, v in VALIDATION_REPORT_TARGETS.items():
+                print(f"  target  {k:<24s} {v:.4f}  (tol ±{TOLERANCES[k]:.2f})")
             """
         ),
         md(
@@ -131,8 +147,6 @@ def build() -> nbf.NotebookNode:
         ),
         code(
             """
-            import json
-
             train = pd.read_parquet(BUNDLE / "tasks" / TASK / "train.parquet")
             valid = pd.read_parquet(BUNDLE / "tasks" / TASK / "valid.parquet")
             test = pd.read_parquet(BUNDLE / "tasks" / TASK / "test.parquet")
@@ -162,13 +176,23 @@ def build() -> nbf.NotebookNode:
             """
             ## 4. Feature selection
 
-            The feature dictionary flags one column as a deliberate **leakage
-            trap**: `total_touches_all` counts touches over the full 90-day
-            horizon (post-snapshot data). We drop it from the baseline so
-            the comparison against the validation report is honest.
+            We use the **same feature set as `release/validation/validation_report.json`**
+            so the gate in section 7 is a real reproduction check rather
+            than a related-but-different number. That means we drop only
+            the IDs and the label — every other column in `train` (including
+            `total_touches_all`, the documented leakage trap) goes into the
+            pipeline.
 
-            Notebook 03 (the leakage walkthrough, shipping in PR 6.2) exists
-            specifically to show what happens if you keep it.
+            **About `total_touches_all`.** The feature dictionary flags it
+            with `leakage_risk = True`: it counts touches over the full
+            90-day horizon, which is post-snapshot data. The validation
+            report keeps it in the panel anyway because (a) its standalone
+            AUC is barely above 0.55 (see the *post_snapshot_aggregates*
+            baseline column in the report) and (b) the report exists to
+            measure the v1 dataset's *as-shipped* difficulty, leakage trap
+            included. **Notebook 03** *(coming in PR 6.2)* walks through
+            what dropping the trap does to performance and how to detect
+            similar traps from feature audits alone.
             """
         ),
         code(
@@ -178,7 +202,8 @@ def build() -> nbf.NotebookNode:
                 feat_dict["leakage_risk"].astype(bool), "name"
             ].tolist()
             ID_COLS = ["account_id", "contact_id", "lead_id", "lead_created_at"]
-            EXCLUDE = set(ID_COLS + trap_cols + [TASK])
+            # Mirrors ``release_quality._partition_columns`` — IDs + label only.
+            EXCLUDE = set(ID_COLS + [TASK])
 
             feature_cols = [c for c in train.columns if c not in EXCLUDE]
             cat_cols = [
@@ -191,7 +216,7 @@ def build() -> nbf.NotebookNode:
             ]
             num_cols = [c for c in feature_cols if c not in cat_cols]
 
-            print(f"Leakage-trap columns dropped: {trap_cols}")
+            print(f"Leakage-trap columns kept (see narrative above): {trap_cols}")
             print(f"Categorical features ({len(cat_cols)}): {cat_cols}")
             print(f"Numeric features    ({len(num_cols)}): {num_cols}")
             """
@@ -219,8 +244,8 @@ def build() -> nbf.NotebookNode:
 
             x_train = _sanitize_categoricals(train[feature_cols])
             x_test = _sanitize_categoricals(test[feature_cols])
-            y_train = train[TASK].astype("boolean").fillna(False).astype(int).values
-            y_test = test[TASK].astype("boolean").fillna(False).astype(int).values
+            y_train = train[TASK].astype("boolean").fillna(False).astype(int).to_numpy()
+            y_test = test[TASK].astype("boolean").fillna(False).astype(int).to_numpy()
 
             numeric_t = Pipeline(
                 [("imputer", SimpleImputer(strategy="median")), ("scaler", StandardScaler())]
@@ -240,11 +265,7 @@ def build() -> nbf.NotebookNode:
             )
             """
         ),
-        md(
-            """
-            ## 6. Train baselines and score the test split
-            """
-        ),
+        md("## 6. Train baselines and score the test split"),
         code(
             """
             lr_pipe = Pipeline(
@@ -276,6 +297,9 @@ def build() -> nbf.NotebookNode:
                 "gbm_auc": float(roc_auc_score(y_test, gbm_probs)),
                 "lr_average_precision": float(average_precision_score(y_test, lr_probs)),
                 "lr_brier": float(brier_score_loss(y_test, lr_probs)),
+                "lr_top_decile_rate": top_decile_rate(lr_probs, y_test),
+                # Print-only; not pinned (the validation report tracks
+                # ``top_decile_rate`` instead, which we gate above).
                 "lr_precision_at_50": precision_at_k(lr_probs, y_test, 50),
                 "lr_precision_at_100": precision_at_k(lr_probs, y_test, 100),
                 "lr_precision_at_200": precision_at_k(lr_probs, y_test, 200),
@@ -289,10 +313,10 @@ def build() -> nbf.NotebookNode:
             ## 7. Tolerance check (G13.2)
 
             The notebook's printed metrics must match the cross-seed medians
-            in `validation_report.md` to within ±0.05. If a future change
-            breaks this, the assertion below fails — and CI catches it,
-            because the same cell runs under `nbclient` in the
-            `notebooks` job.
+            in `validation_report.json` to within the per-metric tolerances
+            declared in section 2. If a future change breaks this, the
+            assertion below fails — and CI catches it, because the same
+            cell runs under `nbclient` in the `notebooks` job.
             """
         ),
         code(
@@ -300,10 +324,10 @@ def build() -> nbf.NotebookNode:
             assert_within_tolerance(
                 observed=metrics,
                 target=VALIDATION_REPORT_TARGETS,
-                tolerances=TOLERANCE,
-                label="notebook 01 vs validation_report.md (intermediate tier)",
+                tolerances=TOLERANCES,
+                label="notebook 01 vs validation_report.json (intermediate tier)",
             )
-            print("OK — all reported metrics are within ±0.05 of the validation report medians.")
+            print("OK — all gated metrics are within their per-metric tolerance.")
             """
         ),
         md(
@@ -389,41 +413,19 @@ def build() -> nbf.NotebookNode:
             - **Notebook 02** — engineer features by joining the snapshot-
               safe relational tables under `release/intermediate/tables/`,
               then measure the lift over the flat-CSV LR baseline above.
-            - **Notebook 03** *(PR 6.2)* — leakage and time-window
+            - **Notebook 03** *(coming in PR 6.2)* — leakage and time-window
               walkthrough; works through what `total_touches_all` does to
               your AUC if you forget to drop it.
-            - **Notebook 04** *(PR 6.2)* — value-aware ranking
+            - **Notebook 04** *(coming in PR 6.2)* — value-aware ranking
               (`expected_acv` × P(convert)), threshold selection, and the
               cohort-shift stress test.
             """
         ),
     ]
-    nb.metadata = {
-        "kernelspec": {
-            "display_name": "Python 3",
-            "language": "python",
-            "name": "python3",
-        },
-        "language_info": {
-            "name": "python",
-            "version": "3.11",
-        },
-    }
-    return nb
 
 
 def main() -> None:
-    nb = build()
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    text = json.dumps(nb, indent=1, sort_keys=True, ensure_ascii=False)
-    OUT.write_text(text + "\n", encoding="utf-8")
-    # Run ruff format on the emitted notebook so the builder's output
-    # matches the project's pre-commit hook byte-for-byte.  Without this
-    # step a contributor running the builder would see pre-commit
-    # reformat their notebook on commit, defeating the audit-artifact-
-    # sync invariant.
-    subprocess.run(["ruff", "format", str(OUT)], check=True)  # noqa: S603, S607
-    print(f"wrote {OUT}")
+    write_notebook(OUT, assemble_notebook(cells()))
 
 
 if __name__ == "__main__":

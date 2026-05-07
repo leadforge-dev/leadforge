@@ -140,3 +140,37 @@ def test_assert_within_tolerance_ignores_extra_observed_keys() -> None:
         target={"auc": 0.886, "ap": 0.575},
         tolerances=0.05,
     )
+
+
+# ---------------------------------------------------------------------------
+# precision_at_k must mirror release_quality._precision_at_k
+# ---------------------------------------------------------------------------
+
+
+def test_precision_at_k_mirrors_release_quality() -> None:
+    """The notebook helper's docstring claims byte-equivalence with
+    ``leadforge.validation.release_quality._precision_at_k`` (same
+    stable argsort, same tie-breaking).  This test pins that claim:
+    if either implementation drifts, the notebook's reproduction gate
+    silently drifts with it.
+    """
+    from leadforge.validation import release_quality
+
+    rng = np.random.default_rng(0)
+    scores = rng.random(1000)
+    y = (rng.random(1000) > 0.7).astype(int)
+
+    for k in (1, 10, 50, 100, 250, 500, 999):
+        nbu_value = nbu.precision_at_k(scores, y, k)
+        rq_value = release_quality._precision_at_k(scores, y, k)
+        assert nbu_value == pytest.approx(rq_value), (
+            f"divergence at k={k}: notebook helper {nbu_value}, release_quality {rq_value}"
+        )
+
+    # Tied scores — the convention drift this is most likely to surface.
+    tied_scores = np.array([0.5, 0.5, 0.5, 0.5, 0.4, 0.4, 0.3])
+    tied_y = np.array([1, 0, 1, 0, 1, 1, 0])
+    for k in (1, 2, 4, 6, 7):
+        assert nbu.precision_at_k(tied_scores, tied_y, k) == pytest.approx(
+            release_quality._precision_at_k(tied_scores, tied_y, k)
+        )

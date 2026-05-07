@@ -96,7 +96,7 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "PT", "S"]
 # markdown tables and print-statement output inside the notebook.
 # Line length is a property of the rendered cell, not the .py source,
 # so 100c is the wrong yardstick here.
-"scripts/_build_release_notebook_*.py" = ["E501"]
+"scripts/build_release_notebook_*.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.11"
