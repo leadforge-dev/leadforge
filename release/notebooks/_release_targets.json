@@ -1,5 +1,5 @@
 {
- "_doc": "Cross-seed-median metric values from release/validation/validation_report.json, sliced to the metrics the release notebooks pin via assert_within_tolerance. Audited against the report by tests/release/notebooks/test_release_targets_match_report.py — if you change a value here, the test will fail unless the corresponding median in the validation report changes to match.",
+ "_doc": "Reproduction targets that release notebooks pin via assert_within_tolerance, sourced from release/validation/validation_report.json. Mixed structure: per-tier blocks (intermediate, ...) hold cross-seed-median metrics from validation_report.tiers.<tier>.medians; the cohort_shift block holds single-seed (seed 42) metrics from validation_report.cohort_shift.<tier>, since the report runs cohort-shift on seed 42 only. Audited against the report by tests/release/notebooks/test_release_targets_match_report.py — if you change a value here, the test will fail unless the corresponding source value in the validation report changes to match.",
  "cohort_shift": {
   "_doc": "Per-tier cohort-shift metrics from validation_report.cohort_shift (single-seed values; the report runs cohort-shift only on seed 42). Notebook 04 reproduces these via a chronological resplit and pins them via assert_within_tolerance.",
   "intermediate": {

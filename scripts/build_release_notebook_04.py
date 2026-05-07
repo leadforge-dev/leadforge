@@ -128,7 +128,7 @@ def cells() -> list[nbf.NotebookNode]:
             `leadforge.validation.release_quality._build_pipeline`).
             We drop the documented leakage trap `total_touches_all`
             here so the calibration / lift / value plots in sections
-            3–6 reflect a honest production model. The cohort-shift
+            3–6 reflect an honest production model. The cohort-shift
             section in section 7 uses the validator's full-panel
             posture (trap kept) so its number is comparable to the
             published validation report.
@@ -421,7 +421,14 @@ def cells() -> list[nbf.NotebookNode]:
 
             sorted_probs = np.sort(lr_probs)[::-1]
             # The K-th highest probability is the smallest threshold that
-            # admits exactly K leads (ties resolved by score order).
+            # admits AT LEAST K leads via ``probs >= threshold``.  If
+            # several leads share that probability, the inclusive
+            # comparison can admit more than K — that's a property of
+            # threshold-based selection, not a bug.  The
+            # ``actually_above`` readout below makes the realised count
+            # visible so the operator can see when ties are inflating
+            # the slate (and decide whether to break them with a
+            # secondary score).
             threshold = float(sorted_probs[CAPACITY - 1])
             mask = lr_probs >= threshold
             n_above = int(mask.sum())
@@ -644,7 +651,13 @@ def cells() -> list[nbf.NotebookNode]:
             for i in range(N_BOOT):
                 idx = rng.integers(0, n_test, n_test)
                 if y_test[idx].sum() == 0 or y_test[idx].sum() == n_test:
-                    # Degenerate resample — re-roll.
+                    # Degenerate resample (all-positive or all-negative)
+                    # — ``roc_auc_score`` is undefined here.  We mark
+                    # the iteration NaN and let ``_summary`` filter it
+                    # out; with n_test=750 and base rate ~22 %, the
+                    # probability of a degenerate draw is ~10⁻¹⁰⁰, so
+                    # this branch is dead in practice.  Kept as a
+                    # defensive safety net for tiny test sets.
                     boot_lr_auc[i] = np.nan
                     boot_gbm_auc[i] = np.nan
                     boot_lr_ap[i] = np.nan
