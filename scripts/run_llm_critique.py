@@ -55,6 +55,7 @@ from leadforge.validation.llm_critique import (
     CritiqueResult,
     CritiqueValidationError,
     LLMCritiqueClient,
+    MissingCredentialsError,
     api_key_or_skip,
     build_anthropic_client,
     build_input_bundle,
@@ -223,7 +224,15 @@ class DriverResult:
 
 
 def _utc_iso_timestamp() -> str:
-    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    """Render the current UTC instant for the raw-output filename.
+
+    Microsecond precision so two adjacent runs in the same wall-clock
+    second don't clobber each other's raw JSON — the design doc commits
+    to "raw JSON files are append-only history".  ``--out-tag`` is the
+    user-facing way to disambiguate adjudication runs; this is the
+    just-in-case for unattended scripted runs.
+    """
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 def _preflight(config: DriverConfig) -> tuple[Path, Path]:
@@ -264,8 +273,28 @@ def run_critique(
     effects check.
     """
 
+    # --no-execute: confirm creds + SDK importability and exit.  Runs
+    # BEFORE any pre-flight I/O so the CI smoke gate is fast and
+    # doesn't read the bundle.  Raises MissingCredentialsError if the
+    # key is absent — the smoke gate is supposed to fail loud here.
+    if config.no_execute:
+        api_key_or_skip(env)
+        if client is None:
+            # Lazy import; fails fast if the SDK isn't installed.
+            # Construction is enough to prove the SDK is present —
+            # we don't make an API call.
+            build_anthropic_client()
+        return DriverResult(
+            result=None,
+            written_files=(),
+            skipped=True,
+            skip_reason="--no-execute: SDK + credentials verified; API not called.",
+        )
+
     # Skip-cleanly: ANTHROPIC_API_KEY unset or empty-after-strip.
-    if not config.no_execute and not config.dry_run and not has_anthropic_credentials(env):
+    # ``--dry-run`` deliberately bypasses the cred check (the bundle
+    # builder is the whole point of the dry run; no API is called).
+    if not config.dry_run and not has_anthropic_credentials(env):
         return DriverResult(
             result=None,
             written_files=(),
@@ -300,21 +329,6 @@ def run_critique(
             written_files=(dry_path,),
             skipped=True,
             skip_reason=(f"--dry-run: input bundle written to {dry_path}; API not called."),
-        )
-
-    # --no-execute: confirm creds + SDK importability, write nothing.
-    if config.no_execute:
-        api_key_or_skip(env)  # raises MissingCredentialsError if absent
-        if client is None:
-            # Lazy import; fails fast with a clean error if the SDK
-            # isn't installed.  Construction is enough to prove the
-            # SDK is present — we don't make an API call.
-            build_anthropic_client()
-        return DriverResult(
-            result=None,
-            written_files=(),
-            skipped=True,
-            skip_reason="--no-execute: SDK + credentials verified; API not called.",
         )
 
     # Live path: confirm creds, construct the client, run the critique.
@@ -396,6 +410,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         driver_result = run_critique(config)
     except FileNotFoundError as exc:
+        print(f"run_llm_critique: pre-flight error: {exc}", file=sys.stderr)
+        return 2
+    except MissingCredentialsError as exc:
+        # ``--no-execute`` fails loud here when the key is absent;
+        # other paths skip cleanly via has_anthropic_credentials.
         print(f"run_llm_critique: pre-flight error: {exc}", file=sys.stderr)
         return 2
     except CritiqueValidationError as exc:

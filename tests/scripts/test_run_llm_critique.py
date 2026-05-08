@@ -264,6 +264,62 @@ class TestLivePath:
 # ---------------------------------------------------------------------------
 
 
+class TestNoExecute:
+    def test_no_execute_does_not_read_release_dir(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # --no-execute must short-circuit BEFORE _preflight; pointing
+        # --release-dir at a non-existent path proves no I/O occurred.
+        rubric = _write_minimal_rubric(tmp_path)
+        # build_anthropic_client is called to confirm SDK importability;
+        # stub it so no SDK is required.
+        canned = _CannedClient(canned="{}")
+        monkeypatch.setattr(run_llm_critique, "build_anthropic_client", lambda: canned)
+        config = run_llm_critique.DriverConfig(
+            release_dir=tmp_path / "no-such-release",  # would FileNotFoundError if read
+            out_dir=tmp_path / "out",
+            prompt=rubric,
+            model="claude-opus-4-7",
+            tier="intermediate",
+            effort="high",
+            max_tokens=16000,
+            out_tag=None,
+            dry_run=False,
+            no_execute=True,
+        )
+        result = run_llm_critique.run_critique(config, env={ANTHROPIC_API_KEY_ENV: "sk-ant-fake"})
+        assert result.skipped is True
+        assert "no-execute" in (result.skip_reason or "")
+        # No out-dir created.
+        assert not (tmp_path / "out").exists()
+
+    def test_no_execute_without_key_fails_loud(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        # main() catches MissingCredentialsError → exit code 2 with a
+        # pre-flight error on stderr.  --no-execute is the smoke gate;
+        # it's supposed to fail loud when creds are missing.
+        rubric = _write_minimal_rubric(tmp_path)
+        release = _write_minimal_release(tmp_path)
+        monkeypatch.delenv(ANTHROPIC_API_KEY_ENV, raising=False)
+        rc = run_llm_critique.main(
+            [
+                "--release-dir",
+                str(release),
+                "--out-dir",
+                str(tmp_path / "out"),
+                "--prompt",
+                str(rubric),
+                "--no-execute",
+            ]
+        )
+        assert rc == 2
+        captured = capsys.readouterr()
+        assert "ANTHROPIC_API_KEY" in captured.err
+
+
 class TestDryRun:
     def test_writes_input_bundle_only(self, tmp_path: Path) -> None:
         rubric = _write_minimal_rubric(tmp_path)

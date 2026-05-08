@@ -52,9 +52,12 @@ from leadforge.validation.leakage_probes import (
 # Constants
 # ---------------------------------------------------------------------------
 
-#: Default release-id stamped into the critique result.  Mirrors the
-#: dataset-tag constant in the platform packagers; keeping a copy here
-#: keeps this module's import graph free of ``scripts/_release_common.py``.
+#: Default release-id stamped into the critique result and pinned by
+#: the schema validator.  Identical to the Kaggle / HF dataset slug
+#: hardcoded in the platform packagers (``scripts/package_kaggle_release.py``,
+#: ``scripts/package_hf_release.py``); the duplication is intentional —
+#: this module imports nothing from ``scripts/`` so the release-validation
+#: import graph stays free of CLI-driver dependencies.
 RELEASE_ID: Final[str] = "leadforge-lead-scoring-v1"
 
 #: Env var the Anthropic SDK reads.  We honour the same name so a
@@ -125,12 +128,18 @@ SYSTEM_PROMPT_CLOSE: Final[str] = "</system_prompt>"
 USER_CUE_OPEN: Final[str] = "<user_cue>"
 USER_CUE_CLOSE: Final[str] = "</user_cue>"
 
+# Greedy on the closing tag so the rubric body can legitimately
+# mention the markers as text (the prompt-injection warning in the
+# system prompt does exactly this).  Greedy means the regex matches
+# from the FIRST opening to the LAST closing — so internal references
+# to ``</user_cue>`` are preserved as part of the section body, not
+# treated as section terminators.
 _SYSTEM_PROMPT_RE: Final[re.Pattern[str]] = re.compile(
-    rf"{re.escape(SYSTEM_PROMPT_OPEN)}\s*(.*?)\s*{re.escape(SYSTEM_PROMPT_CLOSE)}",
+    rf"{re.escape(SYSTEM_PROMPT_OPEN)}\s*(.*)\s*{re.escape(SYSTEM_PROMPT_CLOSE)}",
     re.DOTALL,
 )
 _USER_CUE_RE: Final[re.Pattern[str]] = re.compile(
-    rf"{re.escape(USER_CUE_OPEN)}\s*(.*?)\s*{re.escape(USER_CUE_CLOSE)}",
+    rf"{re.escape(USER_CUE_OPEN)}\s*(.*)\s*{re.escape(USER_CUE_CLOSE)}",
     re.DOTALL,
 )
 
@@ -580,11 +589,15 @@ def _render_public_safe_mechanism_summary(repo_root: Path) -> str:
 def _safe_difficulty_knobs(payload: Any, tier: str) -> list[str]:
     """Extract the *names* of difficulty knobs without leaking values.
 
-    The point is the LLM should know ``noise_level`` exists as a knob
-    on this tier; the LLM should NOT be told that the knob is set to
-    ``0.7`` (that's mechanism truth).  Returns a sorted list of knob
-    names, or an empty list if the YAML doesn't match the shape we
-    know how to redact safely.
+    The LLM should know ``noise_level`` exists as a knob on this tier;
+    the LLM should NOT be told that the knob is set to ``0.7`` (that's
+    mechanism truth).  Returns a sorted list of knob names, or an
+    empty list if the YAML doesn't match the shape we know how to
+    redact safely.
+
+    Redaction is name-only — the YAML *values* never enter the
+    rendered summary, regardless of whether they're scalars, lists,
+    or nested dicts.
     """
 
     if not isinstance(payload, dict):
@@ -595,13 +608,7 @@ def _safe_difficulty_knobs(payload: Any, tier: str) -> list[str]:
     tier_block = profiles.get(tier)
     if not isinstance(tier_block, dict):
         return []
-    knobs: set[str] = set()
-    for k, v in tier_block.items():
-        if isinstance(v, dict | list):
-            knobs.add(str(k))
-        else:
-            knobs.add(str(k))
-    return sorted(knobs)
+    return sorted(str(k) for k in tier_block)
 
 
 def build_input_bundle(
@@ -677,7 +684,11 @@ def build_input_bundle(
         "release/validation/validation_report.json": _hash_file(
             release_dir / "validation" / "validation_report.json"
         ),
-        f"release/{tier}/tasks/test.parquet[head{n_test_sample_rows}]": _hash_text(test_sample),
+        # Stable key — the row-count is *not* embedded so audit-artifact-
+        # sync tests don't spuriously fail when the sample size is tuned.
+        # Re-running with a different ``n_test_sample_rows`` will produce
+        # a different hash; the row-count itself is not the audit key.
+        f"release/{tier}/tasks/test.parquet[head]": _hash_text(test_sample),
         "public_instructor_diff": _hash_text(public_instructor_diff),
         "public_safe_mechanism_summary": _hash_text(mechanism_summary),
         "docs/release/break_me_guide.md": _hash_file(
@@ -803,6 +814,10 @@ def parse_critique_response(
             problems.append(f"missing required top-level field: {name!r}")
 
     # Step 3: types of top-level fields.
+    payload_release_id = payload.get("release_id")
+    if not isinstance(payload_release_id, str) or payload_release_id != RELEASE_ID:
+        problems.append(f"release_id must equal {RELEASE_ID!r}; got {payload_release_id!r}")
+
     overall_score = payload.get("overall_score")
     if not isinstance(overall_score, int) or isinstance(overall_score, bool):
         problems.append(
@@ -870,6 +885,18 @@ def parse_critique_response(
                 f"{sorted(VALID_RUBRIC_DIMENSIONS)}"
             )
 
+        # Reject non-string prose fields — silent str() coercion would
+        # let an int "claim" land on disk as the string "5" with no audit
+        # trail.  The rubric is explicit that these are quotable text.
+        prose_field_problems = False
+        for prose_field in ("claim", "evidence", "reproducer", "suggested_fix"):
+            value = raw.get(prose_field)
+            if not isinstance(value, str):
+                problems.append(
+                    f"findings[{idx}].{prose_field} must be a string; got {type(value).__name__}"
+                )
+                prose_field_problems = True
+
         # If the structural problems above already invalidate the
         # finding, don't construct it — it would carry placeholder
         # values that aren't load-bearing.  ``problems`` already
@@ -879,6 +906,7 @@ def parse_critique_response(
             and category in VALID_CATEGORIES
             and rubric_dim in VALID_RUBRIC_DIMENSIONS
             and isinstance(fid, str)
+            and not prose_field_problems
         ):
             findings.append(
                 Finding(
@@ -886,10 +914,10 @@ def parse_critique_response(
                     severity=severity,  # type: ignore[arg-type]
                     category=str(category),
                     rubric_dimension=str(rubric_dim),
-                    claim=str(raw.get("claim", "")),
-                    evidence=str(raw.get("evidence", "")),
-                    reproducer=str(raw.get("reproducer", "")),
-                    suggested_fix=str(raw.get("suggested_fix", "")),
+                    claim=raw["claim"],
+                    evidence=raw["evidence"],
+                    reproducer=raw["reproducer"],
+                    suggested_fix=raw["suggested_fix"],
                 )
             )
 
@@ -897,8 +925,9 @@ def parse_critique_response(
         raise CritiqueValidationError(problems)
 
     timestamp = run_timestamp or datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # Strictly validated above; this assignment can rely on it.
     return CritiqueResult(
-        release_id=str(payload.get("release_id", RELEASE_ID)),
+        release_id=str(payload_release_id),
         model=model,
         effort=effort,
         thinking_mode=thinking_mode,

@@ -293,6 +293,29 @@ class TestBuildInputBundle:
             "expected sha256 hex digests"
         )
 
+    def test_real_release_dir_smoke(self) -> None:
+        # Audit-artifact-sync smoke test: build the input bundle against
+        # the real ``release/`` artefacts on disk and assert the eleven
+        # expected source files all resolve.  Skipped when the release
+        # dir isn't present (CI on a fresh checkout without bundles, or
+        # the in-package test run).  When it is present, this is the
+        # last-mile audit that the design-doc commitment to
+        # ``audit-artifact-sync`` actually exercises real artefacts.
+        release_dir = Path("release")
+        if not (release_dir / "intermediate" / "manifest.json").exists():
+            pytest.skip("release/intermediate/ not present in this checkout")
+        if not (release_dir / "validation" / "validation_report.json").exists():
+            pytest.skip("release/validation/ not present in this checkout")
+        bundle = build_input_bundle(release_dir, tier="intermediate")
+        # Eleven blocks with non-empty bodies.
+        assert len(bundle.blocks) == 11
+        for block in bundle.blocks:
+            assert block.body.strip(), f"block {block.name!r} has empty body"
+        # Determinism on the real artefacts: re-build, same hashes.
+        rerun = build_input_bundle(release_dir, tier="intermediate")
+        assert bundle.bundle_hashes == rerun.bundle_hashes
+        assert bundle.sha256 == rerun.sha256
+
 
 # ---------------------------------------------------------------------------
 # Schema validator
@@ -417,6 +440,31 @@ class TestSchemaValidator:
         result = _parse_payload(payload)
         assert result.findings == []
 
+    def test_wrong_release_id_rejected(self) -> None:
+        # Strict release_id check — silent drift would defeat the
+        # audit-artifact-sync contract the design doc commits to.
+        payload = _well_formed_response_payload()
+        payload["release_id"] = "leadforge-xyz"
+        with pytest.raises(CritiqueValidationError) as excinfo:
+            _parse_payload(payload)
+        assert any("release_id" in p and "leadforge-xyz" in p for p in excinfo.value.problems)
+
+    def test_non_string_prose_field_rejected(self) -> None:
+        # Silent str() coercion would let an int "claim" land on disk
+        # as the string "5" with no audit trail.
+        payload = _well_formed_response_payload()
+        payload["findings"][0]["claim"] = 42
+        with pytest.raises(CritiqueValidationError) as excinfo:
+            _parse_payload(payload)
+        assert any("claim must be a string" in p for p in excinfo.value.problems)
+
+    def test_non_string_missing_section_rejected(self) -> None:
+        payload = _well_formed_response_payload()
+        payload["missing_sections"] = ["ok", 42]
+        with pytest.raises(CritiqueValidationError) as excinfo:
+            _parse_payload(payload)
+        assert any("missing_sections" in p for p in excinfo.value.problems)
+
 
 # ---------------------------------------------------------------------------
 # Severity policy
@@ -530,19 +578,27 @@ class TestMarkdownSummary:
 
 class TestOutputPaths:
     def test_raw_path_includes_timestamp(self, tmp_path: Path) -> None:
-        ts = "2026-05-08T12:00:00Z"
+        ts = "2026-05-08T12:00:00.123456Z"
         p = raw_output_path(tmp_path, ts)
-        assert p.name == "llm_critique_raw_20260508T120000Z.json"
+        assert p.name == "llm_critique_raw_20260508T120000.123456Z.json"
         assert p.parent == tmp_path
 
     def test_raw_path_with_tag(self, tmp_path: Path) -> None:
-        ts = "2026-05-08T12:00:00Z"
+        ts = "2026-05-08T12:00:00.123456Z"
         p = raw_output_path(tmp_path, ts, tag="adj1")
-        assert p.name == "llm_critique_raw_20260508T120000Z_adj1.json"
+        assert p.name == "llm_critique_raw_20260508T120000.123456Z_adj1.json"
 
     def test_summary_path_canonical(self, tmp_path: Path) -> None:
         p = summary_output_path(tmp_path)
         assert p.name == "llm_critique_summary.md"
+
+    def test_microsecond_precision_avoids_collision(self) -> None:
+        # Two timestamps that differ only in the microsecond field
+        # must produce different filenames so adjacent runs in the
+        # same wall-clock second don't clobber the raw JSON history.
+        ts1 = "2026-05-08T12:00:00.000001Z"
+        ts2 = "2026-05-08T12:00:00.000002Z"
+        assert raw_output_path(Path("."), ts1) != raw_output_path(Path("."), ts2)
 
 
 # ---------------------------------------------------------------------------

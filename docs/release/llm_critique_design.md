@@ -115,7 +115,6 @@ CritiqueResult
 ├── release_id: str           # "leadforge-lead-scoring-v1" (recipe + dataset name)
 ├── bundle_hashes: dict[tier→sha]  # for audit-artifact-sync
 ├── model: str                # "claude-opus-4-7" (echoed for provenance)
-├── temperature: None         # explicit None — Opus 4.7 doesn't accept it
 ├── effort: str               # "high"
 ├── thinking_mode: str        # "adaptive"
 ├── run_timestamp: str        # ISO 8601, UTC
@@ -159,11 +158,16 @@ cluster on dimension 3 and ignore 8-12?" Cheap to require, high
 audit value.
 
 **Validation.** Schema validator runs on the model's JSON output
-before it lands on disk. Unknown fields → drop with a warning.
-Missing required fields → exit code 2 (treated as a model
-malfunction, not a finding). Severity outside the 3-value set →
-exit code 2. Unknown category → exit code 2. The validator returns
-a structured error report, not a string match.
+before it lands on disk. Unknown fields → drop silently (the
+rubric is the contract; extra fields are tolerated). Missing
+required fields → exit code 2 (treated as a model malfunction,
+not a finding). `release_id` not equal to `RELEASE_ID` → exit
+code 2 (silent drift would defeat the audit-artifact-sync
+contract). Severity outside the 3-value set → exit code 2.
+Unknown category → exit code 2. Unknown rubric dimension → exit
+code 2. The validator collects every problem in one
+`CritiqueValidationError` so the driver can render the full
+report instead of fixing them one at a time.
 
 **Rationale.** Roadmap pins the shape (release_id, model,
 run_timestamp, overall_score, findings[severity/category/claim/
@@ -312,11 +316,15 @@ Coverage:
 2. `build_input_bundle` references `BANNED_*` constants live (not
    string-duplicated) — sync test asserts the diff summary contains
    every banned column from the constants.
-3. `validate_critique_result` accepts a well-formed payload, rejects
-   the eight pinned malformations (missing required field, wrong
-   severity value, wrong category value, malformed timestamp,
-   non-JSON output, top-level non-object, finding.id collision,
-   findings non-list).
+3. `parse_critique_response` accepts a well-formed payload, rejects
+   the pinned malformations (missing required field, wrong severity
+   value, wrong category value, wrong rubric dimension, non-JSON
+   output, top-level non-object, finding.id collision, findings
+   non-list, score out of range, wrong release_id, non-string
+   `missing_sections` / `questions_for_maintainer` entry, defensive
+   single-outer-code-fence stripping). `run_timestamp` is
+   driver-generated (not LLM-supplied), so it has no malformation
+   surface to validate.
 4. `run_critique` skip-cleanly path: with `ANTHROPIC_API_KEY` unset,
    exit 0, no I/O, single stderr line. Spot-check this writes
    nothing to `--out-dir`.
