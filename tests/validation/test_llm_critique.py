@@ -41,7 +41,6 @@ from leadforge.validation.llm_critique import (
     parse_critique_response,
     parse_rubric_prompt,
     raw_output_path,
-    render_input_bundle_text,
     render_markdown_summary,
     result_to_dict,
     result_to_json,
@@ -242,7 +241,7 @@ class TestBuildInputBundle:
         b = build_input_bundle(release_dir, tier="intermediate")
         assert a.sha256 == b.sha256
         assert a.bundle_hashes == b.bundle_hashes
-        assert render_input_bundle_text(a.blocks) == render_input_bundle_text(b.blocks)
+        assert a.render() == b.render()
 
     def test_block_order_is_pinned(self, tmp_path: Path) -> None:
         release_dir = _write_minimal_release(tmp_path)
@@ -268,14 +267,15 @@ class TestBuildInputBundle:
         for table in BANNED_TABLES:
             assert f"`{table}`" in diff_block.body
 
-    def test_test_split_sample_renders_csv(self, tmp_path: Path) -> None:
+    def test_test_split_sample_renders_describe_and_head(self, tmp_path: Path) -> None:
         release_dir = _write_minimal_release(tmp_path, n_test_rows=5)
         bundle = build_input_bundle(release_dir, tier="intermediate", n_test_sample_rows=3)
-        csv_block = next(b for b in bundle.blocks if "test.parquet" in b.name)
-        # CSV header + 3 rows = 4 lines + trailing newline.
-        lines = [ln for ln in csv_block.body.splitlines() if ln]
-        assert len(lines) == 4
-        assert lines[0].startswith("lead_id,industry,converted_within_90_days")
+        block = next(b for b in bundle.blocks if "test.parquet" in b.name)
+        # Both sections are present: per-column statistics and a row head.
+        assert "## Per-column statistics (df.describe)" in block.body
+        assert "## First 3 rows (df.head)" in block.body
+        # The head's CSV header lists the columns.
+        assert "lead_id,industry,converted_within_90_days" in block.body
 
     def test_missing_input_raises_filenotfound(self, tmp_path: Path) -> None:
         release_dir = _write_minimal_release(tmp_path)
@@ -294,13 +294,11 @@ class TestBuildInputBundle:
         )
 
     def test_real_release_dir_smoke(self) -> None:
-        # Audit-artifact-sync smoke test: build the input bundle against
-        # the real ``release/`` artefacts on disk and assert the eleven
-        # expected source files all resolve.  Skipped when the release
-        # dir isn't present (CI on a fresh checkout without bundles, or
-        # the in-package test run).  When it is present, this is the
-        # last-mile audit that the design-doc commitment to
-        # ``audit-artifact-sync`` actually exercises real artefacts.
+        # Smoke test against the real ``release/`` artefacts on disk:
+        # all eleven source files resolve, every block has a non-empty
+        # body, and re-running the builder produces identical hashes.
+        # Skipped when the release dir isn't present (CI on a fresh
+        # checkout, or the in-package test run).
         release_dir = Path("release")
         if not (release_dir / "intermediate" / "manifest.json").exists():
             pytest.skip("release/intermediate/ not present in this checkout")
@@ -505,8 +503,8 @@ class TestVocabulariesAlignWithBreakMeGuide:
                 f"category {category!r} not mentioned in break_me_guide.md; vocabulary has drifted"
             )
 
-    def test_rubric_dimensions_are_d1_through_d14(self) -> None:
-        assert VALID_RUBRIC_DIMENSIONS == {f"D{i}" for i in range(1, 15)}
+    def test_rubric_dimensions_are_d1_through_d13(self) -> None:
+        assert VALID_RUBRIC_DIMENSIONS == {f"D{i}" for i in range(1, 14)}
 
     def test_severities_are_three_values(self) -> None:
         assert VALID_SEVERITIES == frozenset({"high", "medium", "low"})

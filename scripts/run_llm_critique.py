@@ -47,6 +47,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from leadforge.validation.llm_critique import (
+    ANTHROPIC_API_KEY_ENV,
     DEFAULT_EFFORT,
     DEFAULT_MAX_TOKENS,
     DEFAULT_MODEL,
@@ -64,7 +65,6 @@ from leadforge.validation.llm_critique import (
     parse_critique_response,
     parse_rubric_prompt,
     raw_output_path,
-    render_input_bundle_text,
     render_markdown_summary,
     result_to_json,
     summary_output_path,
@@ -163,6 +163,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "do not call the API or write any output. CI smoke gate."
         ),
     )
+    parser.add_argument(
+        "--require-execute",
+        action="store_true",
+        help=(
+            "Convert the skip-cleanly path to a hard failure when "
+            "ANTHROPIC_API_KEY is unset. Set this in release-readiness CI "
+            "where 'no critique ran' must not silently pass the gate."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -185,6 +194,7 @@ class DriverConfig:
     out_tag: str | None
     dry_run: bool
     no_execute: bool
+    require_execute: bool
 
 
 def _config_from_args(args: argparse.Namespace) -> DriverConfig:
@@ -199,6 +209,7 @@ def _config_from_args(args: argparse.Namespace) -> DriverConfig:
         out_tag=args.out_tag,
         dry_run=args.dry_run,
         no_execute=args.no_execute,
+        require_execute=args.require_execute,
     )
 
 
@@ -294,7 +305,15 @@ def run_critique(
     # Skip-cleanly: ANTHROPIC_API_KEY unset or empty-after-strip.
     # ``--dry-run`` deliberately bypasses the cred check (the bundle
     # builder is the whole point of the dry run; no API is called).
+    # ``--require-execute`` converts the skip into a hard failure so
+    # release-readiness CI doesn't silently pass when the gate didn't
+    # actually run.
     if not config.dry_run and not has_anthropic_credentials(env):
+        if config.require_execute:
+            raise MissingCredentialsError(
+                f"{ANTHROPIC_API_KEY_ENV} is not set; --require-execute "
+                "demands the critique actually run."
+            )
         return DriverResult(
             result=None,
             written_files=(),
@@ -310,7 +329,7 @@ def run_critique(
         config.release_dir,
         tier=config.tier,
     )
-    bundle_text = render_input_bundle_text(bundle.blocks)
+    bundle_text = bundle.render()
 
     # Parse the rubric prompt.
     rubric_text = prompt_path.read_text(encoding="utf-8")
@@ -360,7 +379,7 @@ def run_critique(
     # Write outputs: timestamped raw JSON + canonical Markdown summary.
     config.out_dir.mkdir(parents=True, exist_ok=True)
     raw_path = raw_output_path(config.out_dir, timestamp, tag=config.out_tag)
-    summary_path = summary_output_path(config.out_dir)
+    summary_path = summary_output_path(config.out_dir, tag=config.out_tag)
     raw_path.write_text(result_to_json(result) + "\n", encoding="utf-8")
     summary_path.write_text(render_markdown_summary(result) + "\n", encoding="utf-8")
 
@@ -431,6 +450,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     print(format_summary(driver_result))
+
+    # Loud warning when the credential gate skipped — release-readiness
+    # CI must not silently pass on a skipped critique.  ``--require-execute``
+    # already converts that case to MissingCredentialsError above; this
+    # is the local-dev / non-CI surface.
+    if (
+        driver_result.skipped
+        and driver_result.skip_reason
+        and ("ANTHROPIC_API_KEY" in driver_result.skip_reason)
+    ):
+        print(
+            "run_llm_critique: WARNING — critique was skipped because "
+            f"{ANTHROPIC_API_KEY_ENV} is unset; release-readiness gate has "
+            "NOT been evaluated. Set --require-execute in CI to fail loud.",
+            file=sys.stderr,
+        )
 
     # Exit-code policy:
     #   0 — pass (skip-cleanly counts as pass; no high-severity findings).

@@ -156,6 +156,7 @@ def _config(
     *,
     dry_run: bool = False,
     no_execute: bool = False,
+    require_execute: bool = False,
     out_tag: str | None = None,
 ) -> Any:
     return run_llm_critique.DriverConfig(
@@ -169,6 +170,7 @@ def _config(
         out_tag=out_tag,
         dry_run=dry_run,
         no_execute=no_execute,
+        require_execute=require_execute,
     )
 
 
@@ -197,6 +199,39 @@ class TestSkipCleanly:
         result = run_llm_critique.run_critique(config, env={ANTHROPIC_API_KEY_ENV: "   "})
         assert result.skipped is True
         assert result.written_files == ()
+
+    def test_require_execute_fails_loud_on_missing_key(self, tmp_path: Path) -> None:
+        # B2 fix: --require-execute converts the skip-cleanly path
+        # into a hard failure for release-readiness CI.
+        rubric = _write_minimal_rubric(tmp_path)
+        release = _write_minimal_release(tmp_path)
+        config = _config(tmp_path, rubric, release, require_execute=True)
+        with pytest.raises(run_llm_critique.MissingCredentialsError):
+            run_llm_critique.run_critique(config, env={})
+
+    def test_main_warns_loudly_when_skipping(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        # B2 fix: even without --require-execute, the skip path must
+        # warn loudly on stderr so a maintainer reading CI logs notices
+        # the gate didn't actually run.
+        rubric = _write_minimal_rubric(tmp_path)
+        release = _write_minimal_release(tmp_path)
+        monkeypatch.delenv(ANTHROPIC_API_KEY_ENV, raising=False)
+        rc = run_llm_critique.main(
+            [
+                "--release-dir",
+                str(release),
+                "--out-dir",
+                str(tmp_path / "out"),
+                "--prompt",
+                str(rubric),
+            ]
+        )
+        assert rc == 0
+        captured = capsys.readouterr()
+        assert "WARNING" in captured.err
+        assert "release-readiness gate" in captured.err
 
 
 # ---------------------------------------------------------------------------
@@ -247,7 +282,10 @@ class TestLivePath:
         assert run_llm_critique.has_unresolved_high_severity(result.result)
         assert len(result.written_files) == 2
 
-    def test_out_tag_suffixes_filename(self, tmp_path: Path) -> None:
+    def test_out_tag_suffixes_both_raw_and_summary(self, tmp_path: Path) -> None:
+        # B1 fix: --out-tag must suffix BOTH the raw JSON and the
+        # summary Markdown so adjudication runs don't clobber the
+        # canonical run's at-a-glance summary.
         rubric = _write_minimal_rubric(tmp_path)
         release = _write_minimal_release(tmp_path)
         config = _config(tmp_path, rubric, release, out_tag="adj1")
@@ -255,8 +293,11 @@ class TestLivePath:
         result = run_llm_critique.run_critique(
             config, client=client, env={ANTHROPIC_API_KEY_ENV: "sk"}
         )
-        raw = result.written_files[0]
+        raw, summary = result.written_files
         assert raw.name.endswith("_adj1.json")
+        assert summary.name == "llm_critique_summary_adj1.md"
+        # The canonical (no-tag) summary path is NOT written by this run.
+        assert not (tmp_path / "out" / "llm_critique_summary.md").exists()
 
 
 # ---------------------------------------------------------------------------
@@ -285,6 +326,7 @@ class TestNoExecute:
             tier="intermediate",
             effort="high",
             max_tokens=16000,
+            require_execute=False,
             out_tag=None,
             dry_run=False,
             no_execute=True,

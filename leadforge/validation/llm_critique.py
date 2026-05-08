@@ -33,7 +33,7 @@ import hashlib
 import json
 import os
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -108,16 +108,20 @@ VALID_CATEGORIES: Final[frozenset[str]] = frozenset(
 #: Rubric dimensions defined in ``docs/release/llm_critique_prompt.md``.
 #: The validator uses this set to confirm every finding cites a known
 #: dimension; new dimensions land in lockstep with the rubric.
-VALID_RUBRIC_DIMENSIONS: Final[frozenset[str]] = frozenset({f"D{i}" for i in range(1, 15)})
+VALID_RUBRIC_DIMENSIONS: Final[frozenset[str]] = frozenset({f"D{i}" for i in range(1, 14)})
 
 #: Tier whose artefacts the input bundle is built from.  See the design
 #: doc — feeding all three tiers triples context for marginal value.
 DEFAULT_TIER: Final[str] = "intermediate"
 
-#: How many rows of the test split to sample into the input bundle.
-#: 100 rows × ~40 columns is small enough not to drown the model in
-#: tabular data, large enough to surface obvious distribution issues.
-TEST_SAMPLE_ROWS: Final[int] = 100
+#: How many rows of the test split to head-sample into the input
+#: bundle.  Reduced from 100 in PR 7.1 self-review pass — the model
+#: can't draw distributional conclusions from raw rows anyway, and
+#: ``df.describe()`` (rendered alongside) carries the per-column
+#: statistics the rubric actually needs.  20 rows is enough to show
+#: column ordering, value formatting, and a handful of concrete
+#: examples for the rubric to quote in ``evidence``.
+TEST_SAMPLE_ROWS: Final[int] = 20
 
 #: Section markers in the rubric prompt.  The driver splits on these
 #: to extract the system prompt and the user-turn cue.  Renaming
@@ -174,9 +178,10 @@ class CritiqueResult:
     """Structured result of one critique pass.
 
     Carries the full provenance triple (model + effort + thinking mode)
-    plus the input-bundle hash, so the audit-artifact-sync test can
-    detect when a committed result has gone stale relative to the
-    current release artefacts on disk.
+    plus the input-bundle hash so the maintainer can tell at a glance
+    whether a committed result is stale relative to the current
+    release artefacts (compare ``input_bundle_sha256`` against a
+    fresh ``build_input_bundle().sha256``).
     """
 
     release_id: str
@@ -212,6 +217,19 @@ class InputBundle:
     blocks: tuple[InputBundleBlock, ...]
     sha256: str
     bundle_hashes: dict[str, str]
+
+    def render(self) -> str:
+        """Render the bundle as a single text payload.
+
+        Format: each block is ``# <name>\\n\\n<body>``, blocks separated
+        by a Markdown horizontal rule.  The trailing newline is
+        deterministic.
+        """
+
+        parts: list[str] = []
+        for block in self.blocks:
+            parts.append(f"# {block.name}\n\n{block.body.rstrip()}\n")
+        return "\n---\n\n".join(parts) + "\n"
 
 
 # ---------------------------------------------------------------------------
@@ -282,20 +300,24 @@ def build_anthropic_client() -> LLMCritiqueClient:
     return _AnthropicCritiqueClient(anthropic.Anthropic())
 
 
+#: Long-running adaptive-thinking responses can take minutes; the SDK's
+#: default 10-minute httpx timeout is enough for ``messages.create`` on
+#: this prompt size, but we set it explicitly so the contract is
+#: visible at the call site.
+ANTHROPIC_REQUEST_TIMEOUT_SECONDS: Final[float] = 600.0
+
+
 @dataclass(frozen=True)
 class _AnthropicCritiqueClient:
     """Default :class:`LLMCritiqueClient` backed by the Anthropic SDK.
 
-    Caching strategy (per the design doc, §3):
-
-    * Breakpoint 1 — end of the system prompt.  Frozen across runs.
-    * Breakpoint 2 — end of the input-bundle blocks.  Frozen across
-      re-runs of the same RC; only the rubric tweak path invalidates
-      breakpoint 1.
-
-    Volatile content (the user cue) goes after both breakpoints.
-    Re-running the critique on the same RC — the common adjudication
-    workflow — should hit cache on both breakpoints.
+    One prompt-cache breakpoint at the end of the input bundle.  The
+    system prompt sits inside the cached prefix (rendered before the
+    bundle in ``messages.create`` order: system → messages), so the
+    rubric is cached together with the bundle for free.  A second
+    breakpoint at the end of the system prompt would cost a slot
+    without buying anything — any rubric edit invalidates the bundle
+    cache too, so caching them separately wins nothing.
     """
 
     client: Any
@@ -310,25 +332,16 @@ class _AnthropicCritiqueClient:
         max_tokens: int,
         effort: str,
     ) -> str:
-        # Stream so the underlying httpx client doesn't trip the 10-min
-        # idle-connection timeout on long adaptive-thinking responses;
-        # ``.get_final_message()`` re-assembles the streamed chunks
-        # into a complete Message object.
-        with self.client.messages.stream(
+        message = self.client.messages.create(
             model=model,
             max_tokens=max_tokens,
+            timeout=ANTHROPIC_REQUEST_TIMEOUT_SECONDS,
             thinking={
                 "type": DEFAULT_THINKING_MODE,
                 "display": DEFAULT_THINKING_DISPLAY,
             },
             output_config={"effort": effort},
-            system=[
-                {
-                    "type": "text",
-                    "text": system_prompt,
-                    "cache_control": {"type": "ephemeral"},
-                },
-            ],
+            system=system_prompt,
             messages=[
                 {
                     "role": "user",
@@ -342,8 +355,7 @@ class _AnthropicCritiqueClient:
                     ],
                 }
             ],
-        ) as stream:
-            message = stream.get_final_message()
+        )
         for block in message.content:
             if getattr(block, "type", None) == "text":
                 return str(block.text)
@@ -446,28 +458,38 @@ def _hash_file(path: Path) -> str:
 
 
 def _render_test_split_sample(bundle_dir: Path, n_rows: int) -> str:
-    """Render the first ``n_rows`` of the test split as CSV.
+    """Render a sample of the test split for the input bundle.
 
-    Reads ``tasks/converted_within_90_days/test.parquet`` (the canonical
-    public-facing split).  Renders deterministically via
-    ``DataFrame.to_csv(index=False)`` — the parquet bytes themselves
-    aren't byte-stable across pyarrow patch versions, but the *rendered
-    CSV* is.
+    Returns two sections concatenated:
+
+    1. ``df.describe(include='all')`` — per-column statistics (count,
+       unique, mean / std / quartiles for numerics, top / freq for
+       categoricals).  This is what the model actually needs to draw
+       distributional conclusions; raw rows alone are noise.
+    2. ``df.head(n_rows)`` — a small head sample so the model can quote
+       concrete row values in ``evidence`` without paying for hundreds
+       of redundant rows.
+
+    Both rendered as CSV with ``lineterminator="\\n"`` so the bytes are
+    OS-independent and the bundle hash is stable across machines.
     """
 
     split_path = bundle_dir / "tasks" / "converted_within_90_days" / "test.parquet"
     if not split_path.exists():
         raise FileNotFoundError(f"test split missing at {split_path}; bundle is incomplete")
     df = pd.read_parquet(split_path)
-    head = df.head(n_rows)
-    # ``to_csv`` defaults are stable across pandas versions for pure
-    # data; ``lineterminator="\n"`` keeps the rendered text identical
-    # across OSes (pandas defaults to ``os.linesep`` otherwise).
+
     # ``to_csv(path_or_buf=None, ...)`` returns ``str`` at runtime, but
-    # the stub's union widens to ``str | None``; cast pins the type so
-    # mypy doesn't complain about returning Any.
-    rendered: str = head.to_csv(index=False, lineterminator="\n")  # type: ignore[assignment]
-    return rendered
+    # the stub's union widens to ``str | None``; the cast pins the type.
+    describe_csv: str = df.describe(include="all").to_csv(lineterminator="\n")  # type: ignore[assignment]
+    head_csv: str = df.head(n_rows).to_csv(index=False, lineterminator="\n")  # type: ignore[assignment]
+
+    return (
+        f"## Per-column statistics (df.describe)\n\n"
+        f"{describe_csv}\n"
+        f"## First {n_rows} rows (df.head)\n\n"
+        f"{head_csv}"
+    )
 
 
 def _render_public_instructor_diff() -> str:
@@ -628,10 +650,9 @@ def build_input_bundle(
     Block order is part of the contract — the rubric refers to block
     names verbatim and a re-order would invalidate the prompt cache.
 
-    The ``bundle_hashes`` field carries per-tier-file SHA256s for the
-    audit-artifact-sync test: a re-run of this builder against the
-    same release dir must produce hashes byte-identical to the
-    committed result's ``bundle_hashes``.
+    The ``bundle_hashes`` field carries per-source-file SHA256s so a
+    maintainer can compare a committed critique's hashes against a
+    fresh build and tell which input changed.
 
     :param release_dir: the ``release/`` directory at repo root.
     :param tier: which tier's per-tier artefacts to include.  The
@@ -667,9 +688,10 @@ def build_input_bundle(
     mechanism_summary = _render_public_safe_mechanism_summary(repo_root)
     break_me_guide = _read_text(repo_root / "docs" / "release" / "break_me_guide.md")
 
-    # Per-source-file hashes for audit-artifact-sync.  Use raw bytes
-    # for files (catches BOM / line-ending drift), text-hash for
-    # rendered blocks (the dataframe-to-csv path).
+    # Per-source-file hashes carried on the result for staleness
+    # checks against committed critiques.  Use raw bytes for files
+    # (catches BOM / line-ending drift) and text-hash for rendered
+    # blocks (the dataframe-to-csv path).
     bundle_hashes = {
         "release/README.md": _hash_file(release_dir / "README.md"),
         f"release/{tier}/dataset_card.md": _hash_file(bundle_dir / "dataset_card.md"),
@@ -720,25 +742,9 @@ def build_input_bundle(
         ),
     )
 
-    rendered = render_input_bundle_text(blocks)
-    return InputBundle(
-        blocks=blocks,
-        sha256=_hash_text(rendered),
-        bundle_hashes=bundle_hashes,
-    )
-
-
-def render_input_bundle_text(blocks: Iterable[InputBundleBlock]) -> str:
-    """Render an input bundle as a single text payload.
-
-    Format: each block is ``# <name>\\n\\n<body>``, blocks separated by
-    a Markdown horizontal rule.  The trailing newline is deterministic.
-    """
-
-    parts: list[str] = []
-    for block in blocks:
-        parts.append(f"# {block.name}\n\n{block.body.rstrip()}\n")
-    return "\n---\n\n".join(parts) + "\n"
+    bundle = InputBundle(blocks=blocks, sha256="", bundle_hashes=bundle_hashes)
+    rendered = bundle.render()
+    return dataclasses.replace(bundle, sha256=_hash_text(rendered))
 
 
 # ---------------------------------------------------------------------------
@@ -976,8 +982,9 @@ def result_to_dict(result: CritiqueResult) -> dict[str, Any]:
 def result_to_json(result: CritiqueResult, *, indent: int = 2) -> str:
     """Serialise a :class:`CritiqueResult` deterministically.
 
-    Sorted keys, fixed indent.  The audit-artifact-sync test diffs
-    against this exact output, so any drift is caught.
+    Sorted keys, fixed indent — same provenance triple + bundle
+    hashes round-trip identically across runs, so a diff between
+    two committed critiques shows only LLM-generated content.
     """
 
     return json.dumps(result_to_dict(result), indent=indent, sort_keys=True)
@@ -1083,14 +1090,19 @@ def raw_output_path(out_dir: Path, run_timestamp: str, *, tag: str | None = None
     return out_dir / f"llm_critique_raw_{safe_ts}{suffix}.json"
 
 
-def summary_output_path(out_dir: Path) -> Path:
-    """Return the canonical Markdown summary path.
+def summary_output_path(out_dir: Path, *, tag: str | None = None) -> Path:
+    """Return the Markdown summary path.
 
-    Single filename — overwritten on each run.  Pair with the raw JSON
-    history when you need to look at a specific run.
+    With ``tag=None`` the canonical ``llm_critique_summary.md`` is
+    overwritten on each run — pair with the raw JSON history for a
+    specific run.  With ``tag`` set, the suffix mirrors
+    :func:`raw_output_path` so adjudication runs don't clobber the
+    canonical summary; the canonical summary stays as last produced
+    by the no-tag run.
     """
 
-    return out_dir / "llm_critique_summary.md"
+    suffix = f"_{tag}" if tag else ""
+    return out_dir / f"llm_critique_summary{suffix}.md"
 
 
 # ---------------------------------------------------------------------------
@@ -1139,7 +1151,6 @@ __all__ = [
     "parse_critique_response",
     "parse_rubric_prompt",
     "raw_output_path",
-    "render_input_bundle_text",
     "render_markdown_summary",
     "result_to_dict",
     "result_to_json",
