@@ -183,41 +183,49 @@ fallback-to-train-mean handling is in `attach_engineered`.
 
 The bundle ships a deterministic 70/15/15 split on `lead_id`
 (see `tasks/<task>/task_manifest.json`). That guarantees
-`lead_id` uniqueness across splits — but `account_id` is
-*not* split on. On the as-shipped intermediate bundle,
-**518 of 557 test accounts (93 %) also appear in train**;
-the same numbers hold on intro and advanced because the
-splitter is `lead_id`-keyed and tier-invariant. Models can
-ride strong account-level signal across the split boundary
-in ways that don't generalise to a fresh account.
+`lead_id` uniqueness across splits — but `account_id` and
+`contact_id` are *not* split on. On the as-shipped intermediate
+bundle, **518 of 557 test accounts (93 %) also appear in train**,
+and the contact-level overlap is similar in magnitude (the
+split is `lead_id`-keyed and `account_id` / `contact_id` are
+shared foreign keys); the same proportions hold on intro and
+advanced because the splitter is tier-invariant. Models can
+ride account- or contact-level signal across the split boundary
+in ways that don't generalise to a fresh account or fresh
+contact.
 
-**How to detect on any dataset.**
+**How to detect on any dataset.** Repeat the snippet below per
+group key — every reusable foreign-key column the dataset
+exposes (`account_id`, `contact_id`, and any derived strata
+like `industry × region` you bake into engineered features) is
+a separate group-leakage axis.
 
 ```python
 import pandas as pd
 train = pd.read_parquet("intermediate/tasks/converted_within_90_days/train.parquet")
 test  = pd.read_parquet("intermediate/tasks/converted_within_90_days/test.parquet")
-overlap = set(train["account_id"]) & set(test["account_id"])
-print(f"shared accounts: {len(overlap)} / {test['account_id'].nunique()}")
+for key in ("account_id", "contact_id"):
+    overlap = set(train[key]) & set(test[key])
+    print(f"shared {key}: {len(overlap)} / {test[key].nunique()}")
 ```
 
-If the overlap is non-empty *and* you've engineered any
-account-level features, retrain with account-level grouped
-splitting (e.g. `GroupKFold` on `account_id`) and re-read the
-AUC delta. The delta is the amount of "free" lift the
-random-split was buying you. The right framing isn't "remove
-the leak"; it's *report both numbers so the reader knows
-which is which.*
+If any overlap is non-empty *and* you've engineered any
+group-level features, retrain with group-aware splitting
+(e.g. `GroupKFold` on the relevant key) and re-read the AUC
+delta. The delta is the amount of "free" lift the random-split
+was buying you. The right framing isn't "remove the leak"; it's
+*report both numbers so the reader knows which is which.*
 
 **Worked example.** Notebook 02 §4.2 builds an account-level
 density feature using *only* train leads' touches — a
 defensive posture against this hazard. The
 `tasks/converted_within_90_days/task_manifest.json` records
 the split policy and is the right artefact to cite when filing
-an issue under this label. A bundle-level `account_id`
-overlap audit isn't included in v1 — the validation report's
-split-leakage probe (`probe_split_id_overlap`) checks
-`lead_id` only.
+an issue under this label. A bundle-level group-overlap audit
+isn't included in v1 — the validation report's split-leakage
+probe (`probe_split_id_overlap`) checks `lead_id` only;
+extending it to enumerate `account_id` and `contact_id`
+overlap is a `v2-idea` candidate.
 
 ### 6. Cohort-by-segment evaluation
 
