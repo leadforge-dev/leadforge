@@ -289,12 +289,13 @@ def run_critique(
     # doesn't read the bundle.  Raises MissingCredentialsError if the
     # key is absent — the smoke gate is supposed to fail loud here.
     if config.no_execute:
-        api_key_or_skip(env)
+        resolved_key = api_key_or_skip(env)
         if client is None:
             # Lazy import; fails fast if the SDK isn't installed.
             # Construction is enough to prove the SDK is present —
-            # we don't make an API call.
-            build_anthropic_client()
+            # we don't make an API call.  Passing the resolved key
+            # keeps the env-override contract end-to-end.
+            build_anthropic_client(api_key=resolved_key)
         return DriverResult(
             result=None,
             written_files=(),
@@ -351,9 +352,12 @@ def run_critique(
         )
 
     # Live path: confirm creds, construct the client, run the critique.
-    api_key_or_skip(env)
+    # Pass the resolved key into the SDK explicitly so an injected ``env``
+    # override flows end-to-end (the SDK would otherwise read
+    # process-global os.environ and silently ignore the override).
+    resolved_key = api_key_or_skip(env)
     if client is None:
-        client = build_anthropic_client()
+        client = build_anthropic_client(api_key=resolved_key)
 
     raw_text = client.run(
         system_prompt=system_prompt,

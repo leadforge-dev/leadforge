@@ -285,7 +285,7 @@ class LLMCritiqueClient(Protocol):
         ...
 
 
-def build_anthropic_client() -> LLMCritiqueClient:
+def build_anthropic_client(api_key: str | None = None) -> LLMCritiqueClient:
     """Construct the default Anthropic critique client.
 
     Imports the SDK lazily so this module imports cleanly even on
@@ -293,11 +293,20 @@ def build_anthropic_client() -> LLMCritiqueClient:
     path in the driver returns before this is called; the
     ``--no-execute`` smoke path calls this purely to confirm the SDK
     is importable.
+
+    :param api_key: explicit API key, passed straight through to
+        ``anthropic.Anthropic(api_key=...)``.  Defaults to ``None``,
+        which lets the SDK fall back to its standard
+        ``ANTHROPIC_API_KEY`` env-var resolution.  The driver passes
+        the key it resolved from its own ``env`` argument so an
+        injected env override flows end-to-end (otherwise the SDK
+        would read process-global ``os.environ`` and silently ignore
+        the override — the inconsistency Copilot review caught).
     """
 
     import anthropic  # noqa: PLC0415 — lazy import is intentional
 
-    return _AnthropicCritiqueClient(anthropic.Anthropic())
+    return _AnthropicCritiqueClient(anthropic.Anthropic(api_key=api_key))
 
 
 #: Long-running adaptive-thinking responses can take minutes; the SDK's
@@ -537,13 +546,18 @@ def _render_public_instructor_diff() -> str:
     return "\n".join(lines) + "\n"
 
 
-def _render_public_safe_mechanism_summary(repo_root: Path) -> str:
-    """Render the public-safe mechanism summary.
+def _render_public_safe_mechanism_summary(repo_root: Path, tier: str) -> str:
+    """Render the public-safe mechanism summary for ``tier``.
 
     Names the motif families and difficulty-profile knobs WITHOUT
     leaking latent-trait weights, mechanism parameters, or the hidden
     graph structure.  Same redaction posture as the ``student_public``
     mode itself.
+
+    The tier-specific block (header + knob list) tracks the tier the
+    rest of the input bundle is built for; running with
+    ``--tier advanced`` produces an advanced-tier knob list, not the
+    intermediate one.
 
     Pulls the difficulty-profile descriptions from the recipe YAML
     when available so the summary stays in sync with the recipe;
@@ -583,7 +597,7 @@ def _render_public_safe_mechanism_summary(repo_root: Path) -> str:
     for family in motif_families:
         lines.append(f"- `{family}`")
     lines.append("")
-    lines.append("### Difficulty profile (intermediate tier)")
+    lines.append(f"### Difficulty profile ({tier} tier)")
     lines.append("")
     yaml_path = (
         repo_root / "leadforge" / "recipes" / "b2b_saas_procurement_v1" / "difficulty_profiles.yaml"
@@ -595,7 +609,7 @@ def _render_public_safe_mechanism_summary(repo_root: Path) -> str:
             from leadforge.core.serialization import load_yaml  # noqa: PLC0415
 
             payload = load_yaml(yaml_path)
-            knobs = _safe_difficulty_knobs(payload, "intermediate")
+            knobs = _safe_difficulty_knobs(payload, tier)
         except Exception:
             knobs = []
         if knobs:
@@ -685,7 +699,7 @@ def build_input_bundle(
     validation_json = _read_text(release_dir / "validation" / "validation_report.json")
     test_sample = _render_test_split_sample(bundle_dir, n_test_sample_rows)
     public_instructor_diff = _render_public_instructor_diff()
-    mechanism_summary = _render_public_safe_mechanism_summary(repo_root)
+    mechanism_summary = _render_public_safe_mechanism_summary(repo_root, tier)
     break_me_guide = _read_text(repo_root / "docs" / "release" / "break_me_guide.md")
 
     # Per-source-file hashes carried on the result for staleness

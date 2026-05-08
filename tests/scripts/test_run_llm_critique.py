@@ -209,6 +209,31 @@ class TestSkipCleanly:
         with pytest.raises(run_llm_critique.MissingCredentialsError):
             run_llm_critique.run_critique(config, env={})
 
+    def test_env_override_is_passed_to_anthropic_client(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # COPILOT-2 fix: the env override must flow end-to-end.  When
+        # client is None, the driver resolves the key from env and
+        # passes it explicitly to build_anthropic_client(api_key=...) —
+        # otherwise the SDK reads process-global os.environ and
+        # silently ignores the override.
+        rubric = _write_minimal_rubric(tmp_path)
+        release = _write_minimal_release(tmp_path)
+        # Stub build_anthropic_client to record the api_key it was called with.
+        captured: dict[str, Any] = {}
+
+        def _stub_builder(api_key: str | None = None) -> _CannedClient:
+            captured["api_key"] = api_key
+            return _CannedClient(json.dumps(_well_formed_payload()))
+
+        monkeypatch.setattr(run_llm_critique, "build_anthropic_client", _stub_builder)
+        # Make sure the process env does NOT leak in — the driver must
+        # use the injected env, not os.environ.
+        monkeypatch.delenv(ANTHROPIC_API_KEY_ENV, raising=False)
+        config = _config(tmp_path, rubric, release)
+        run_llm_critique.run_critique(config, env={ANTHROPIC_API_KEY_ENV: "sk-from-env-override"})
+        assert captured["api_key"] == "sk-from-env-override"
+
     def test_main_warns_loudly_when_skipping(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
@@ -317,7 +342,7 @@ class TestNoExecute:
         # build_anthropic_client is called to confirm SDK importability;
         # stub it so no SDK is required.
         canned = _CannedClient(canned="{}")
-        monkeypatch.setattr(run_llm_critique, "build_anthropic_client", lambda: canned)
+        monkeypatch.setattr(run_llm_critique, "build_anthropic_client", lambda *_, **__: canned)
         config = run_llm_critique.DriverConfig(
             release_dir=tmp_path / "no-such-release",  # would FileNotFoundError if read
             out_dir=tmp_path / "out",
@@ -394,7 +419,7 @@ class TestSchemaFailure:
         # client without touching the SDK.
         bad_client = _CannedClient(canned="not json at all")
 
-        def _fake_builder() -> _CannedClient:
+        def _fake_builder(api_key: str | None = None) -> _CannedClient:
             return bad_client
 
         monkeypatch.setattr(run_llm_critique, "build_anthropic_client", _fake_builder)
@@ -424,7 +449,7 @@ class TestMainExitCodes:
         rubric = _write_minimal_rubric(tmp_path)
         release = _write_minimal_release(tmp_path)
         canned = _CannedClient(json.dumps(_well_formed_payload()))
-        monkeypatch.setattr(run_llm_critique, "build_anthropic_client", lambda: canned)
+        monkeypatch.setattr(run_llm_critique, "build_anthropic_client", lambda *_, **__: canned)
         monkeypatch.setenv(ANTHROPIC_API_KEY_ENV, "sk-ant-fake")
         rc = run_llm_critique.main(
             [
@@ -444,7 +469,7 @@ class TestMainExitCodes:
         rubric = _write_minimal_rubric(tmp_path)
         release = _write_minimal_release(tmp_path)
         canned = _CannedClient(json.dumps(_high_severity_payload()))
-        monkeypatch.setattr(run_llm_critique, "build_anthropic_client", lambda: canned)
+        monkeypatch.setattr(run_llm_critique, "build_anthropic_client", lambda *_, **__: canned)
         monkeypatch.setenv(ANTHROPIC_API_KEY_ENV, "sk-ant-fake")
         rc = run_llm_critique.main(
             [

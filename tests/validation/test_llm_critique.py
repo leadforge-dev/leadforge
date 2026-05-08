@@ -293,6 +293,30 @@ class TestBuildInputBundle:
             "expected sha256 hex digests"
         )
 
+    def test_mechanism_summary_tracks_requested_tier(self, tmp_path: Path) -> None:
+        # COPILOT-1 fix: --tier advanced must produce an "advanced tier"
+        # mechanism block, not a hardcoded "intermediate tier" header.
+        release_dir = tmp_path / "release"
+        for tier in ("intermediate", "advanced"):
+            (release_dir / tier).mkdir(parents=True, exist_ok=True)
+        # Write all required inputs for both tiers; the only thing
+        # that differs is the per-tier dir name.
+        _write_minimal_release(tmp_path, tier="intermediate")
+        _write_minimal_release(tmp_path, tier="advanced")
+        intermediate = build_input_bundle(release_dir, tier="intermediate")
+        advanced = build_input_bundle(release_dir, tier="advanced")
+        intermediate_summary = next(
+            b for b in intermediate.blocks if b.name == "public-safe mechanism summary"
+        )
+        advanced_summary = next(
+            b for b in advanced.blocks if b.name == "public-safe mechanism summary"
+        )
+        assert "(intermediate tier)" in intermediate_summary.body
+        assert "(advanced tier)" in advanced_summary.body
+        # Sanity: the two tiers produce different mechanism blocks
+        # (the header alone makes them differ).
+        assert intermediate_summary.body != advanced_summary.body
+
     def test_real_release_dir_smoke(self) -> None:
         # Smoke test against the real ``release/`` artefacts on disk:
         # all eleven source files resolve, every block has a non-empty
