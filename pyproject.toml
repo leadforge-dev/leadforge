@@ -49,10 +49,14 @@ scripts = [
 # this extra (``pip install -e ".[publish]"``) enables the gated
 # ``load_dataset()`` / Kaggle-CLI smoke tests that verify G11.3 (Kaggle
 # package) and G12.3 / G12.4 (HF load_dataset round-trip) without
-# pulling the heavy SDKs into the default dev install.
+# pulling the heavy SDKs into the default dev install.  PR 7.2 adds
+# ``markdown-it-py`` for the local Kaggle / HF preview pages
+# (``scripts/preview_{kaggle,hf}_page.py``) — same publish-extra
+# posture, missing import raises a clean error pointing at this extra.
 publish = [
     "datasets>=2.14",
     "kaggle>=1.6",
+    "markdown-it-py>=3.0",
 ]
 # Optional dependencies for executing the public release notebooks.
 # Installing this extra (``pip install -e ".[notebooks]"``) enables the
