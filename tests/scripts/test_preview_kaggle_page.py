@@ -116,13 +116,21 @@ def test_render_includes_title_subtitle_id_and_license() -> None:
     assert "testorg/testset-lead-scoring" in html
     assert "License: MIT" in html
     assert "Updates: never" in html
-    assert "Visibility: Private" in html
 
 
-def test_render_includes_visibility_public_when_not_private() -> None:
-    metadata = {**_minimal_metadata(), "isPrivate": False}
-    html = preview.render_kaggle_html(metadata, "dataset-cover-image.png")
-    assert "Visibility: Public" in html
+def test_render_does_not_include_visibility_pill() -> None:
+    """Kaggle's public page does NOT display ``isPrivate``; rendering
+    a ``Visibility:`` pill in the preview would misrepresent what
+    public viewers see (folded back in self-review pass 3)."""
+
+    private_html = preview.render_kaggle_html(_minimal_metadata(), "dataset-cover-image.png")
+    public_html = preview.render_kaggle_html(
+        {**_minimal_metadata(), "isPrivate": False},
+        "dataset-cover-image.png",
+    )
+    for html in (private_html, public_html):
+        assert "Visibility:" not in html
+        assert "pill--visibility" not in html
 
 
 def test_render_file_tree_lists_every_resource_path() -> None:
@@ -371,7 +379,6 @@ def test_run_preview_writes_html_and_copies_cover(tmp_path: Path) -> None:
     )
     assert outcome.html_path == out_dir / "index.html"
     assert outcome.html_path.is_file()
-    assert outcome.cover_path is not None
     assert outcome.cover_path.is_file()
     assert not outcome.cover_path.is_symlink()
     # The HTML references the cover image by sibling-relative name.
@@ -414,3 +421,45 @@ def test_tier_of_extracts_leading_path_segment() -> None:
     assert preview._tier_of("intro/lead_scoring.csv") == "intro"
     assert preview._tier_of("intermediate/tasks/converted/train.parquet") == "intermediate"
     assert preview._tier_of("toplevel.json") == ""
+
+
+# ---------------------------------------------------------------------------
+# Server smoke test — covers _preview_common.make_server / serve glue
+# (folded back from self-review pass 3 — _serve was previously untested)
+# ---------------------------------------------------------------------------
+
+
+def test_make_server_binds_and_serves_index(tmp_path: Path) -> None:
+    """Stand the server up on port 0 (kernel-picked), GET ``/``,
+    assert 200 + body shape, shut down cleanly.
+
+    Covers every path inside ``_preview_common.make_server`` and
+    ``_make_handler_factory`` (handler subclass with ``directory=``,
+    ``ThreadingHTTPServer`` instantiation, address-reuse posture,
+    static-file serving).  ``serve`` itself is the blocking caller
+    that wraps this and is exercised manually.
+    """
+
+    import threading
+    import urllib.request
+
+    import _preview_common  # noqa: PLC0415 — local import for the smoke test
+
+    (tmp_path / "index.html").write_text(
+        "<html><body><h1>preview-smoke-token</h1></body></html>", encoding="utf-8"
+    )
+    httpd = _preview_common.make_server(tmp_path, port=0)
+    bound_port = httpd.server_address[1]
+    assert bound_port > 0
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with urllib.request.urlopen(f"http://localhost:{bound_port}/", timeout=5) as resp:  # noqa: S310 — localhost smoke
+            assert resp.status == 200
+            body = resp.read().decode("utf-8")
+        assert "preview-smoke-token" in body
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        thread.join(timeout=5)
+    assert not thread.is_alive()

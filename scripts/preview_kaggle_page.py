@@ -1,57 +1,44 @@
 #!/usr/bin/env python3
-"""Render an offline mock of the Kaggle dataset page.
+"""Local publication-readiness preview for the Kaggle dataset page.
 
-PR 7.2 — middle PR in Phase 7 (LLM critique + publish).  Reads the
-artefacts the publish PR will upload (``release/kaggle/dataset-metadata.json``
-+ ``release/dataset-cover-image.png``) and renders an HTML page that
-mimics the public Kaggle dataset view: header (title / subtitle /
-licence / id pill / update-frequency pill), cover image, rendered
-description (the inlined README body), file tree of declared
-resources, schema/columns tables for every tabular resource, and a
-licence + sources footer.
+PR 7.2.  Reads the artefacts the publish PR will upload
+(``release/kaggle/dataset-metadata.json`` + cover image), renders an
+offline HTML page that surfaces the published structure (header,
+cover, description, file tree, schema tables, sources, footer), and
+optionally serves it on ``http://localhost:8765``.
 
-The page exists for human click-through review BEFORE the maintainer
-runs the real ``kaggle datasets create`` upload (PR 7.3).  Cached
-previews on the live page are expensive to roll back, so the
-publish runbook in PR 7.3 cites this script as a required pre-flight.
+This is a *publication-readiness* preview — structured rendering of
+the upload artefacts that helps catch link / config / column-listing
+issues before the real ``kaggle datasets create`` upload.  It is
+deliberately NOT a Kaggle look-alike: pixel fidelity is out of scope
+and the chrome (CSS palette, layout) is approximate.
 
-The rendered HTML is a deterministic function of the input artefacts
-(no ``now()``, no random) — same metadata + cover-image filename →
-byte-identical HTML.  The committed sample at
-``release/_preview_committed/kaggle.html`` is the audit-artefact-sync
-gate (mirrors PR 4.1 / 5.1 / 5.2 / 7.1).
+Design rationale + decision log: ``docs/release/preview_pages_design.md``.
 
 Usage::
 
-    # Render + serve on http://localhost:8765, pop a browser tab.
-    python scripts/preview_kaggle_page.py --open-browser
+    python scripts/preview_kaggle_page.py --open-browser  # serve + browser
+    python scripts/preview_kaggle_page.py --no-serve      # build only
 
-    # Just build the HTML (CI / inspection); no server.
-    python scripts/preview_kaggle_page.py --no-serve
-
-Exit codes: 0 success / 2 pre-flight error (missing metadata,
-missing cover image, malformed JSON).
+Exit codes: 0 success / 2 pre-flight error.
 """
 
 from __future__ import annotations
 
 import argparse
-import http.server
 import json
-import re
 import sys
-import webbrowser
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
 # Make ``scripts/`` importable regardless of how this file is loaded
-# (CLI entrypoint, ``importlib.util.spec_from_file_location`` from
-# tests).  Mirrors the pattern in ``package_kaggle_release.py``.
+# (CLI entrypoint, ``importlib.util.spec_from_file_location`` from tests).
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _release_common import replace_file  # noqa: E402 — must follow sys.path insert
+from _preview_common import escape, serve  # noqa: E402 — must follow sys.path insert
+from _release_common import replace_file  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Defaults
@@ -63,60 +50,41 @@ DEFAULT_PORT: Final[int] = 8765
 
 
 # ---------------------------------------------------------------------------
-# Markdown rendering (gated behind the [publish] extra)
+# Markdown rendering (markdown-it-py is in [dev] AND [publish])
 # ---------------------------------------------------------------------------
 
 
 def _render_markdown(text: str) -> str:
     """Render ``text`` (the inlined README body) to HTML.
 
-    Uses ``markdown-it-py`` in GFM-like mode (tables, fenced code,
-    autolink, strikethrough) — closest match to how Kaggle renders
-    its description block.  The ``[publish]`` extra (alongside
-    ``datasets`` / ``kaggle``) is the install path; absent dep
-    raises a clear instruction rather than a cryptic ``ImportError``.
-    Footnotes (``[^foo]``) render as literal text, which is faithful
-    enough — Kaggle does not invest in footnote rendering either.
+    ``gfm-like`` preset gives tables / fenced code / strikethrough;
+    ``linkify`` is explicitly disabled so the optional
+    ``linkify-it-py`` transitive dep is not required.
     """
 
     try:
         from markdown_it import MarkdownIt
-    except ImportError as exc:  # pragma: no cover — gated by extra
+    except ImportError as exc:  # pragma: no cover — dep is in [dev]
         raise ImportError(
-            "markdown-it-py is required for the Kaggle preview page. "
-            "Install the publish extra: pip install -e '.[publish]'"
+            "markdown-it-py is required.  pip install -e '.[dev]' (or [publish])."
         ) from exc
-    # ``gfm-like`` enables linkify by default, which requires the
-    # separate ``linkify-it-py`` package; we explicitly turn it off so
-    # the preview does not pull a transitive dep beyond markdown-it-py.
-    # Tables / fenced code / strikethrough remain on (the bits that
-    # actually matter for faithful Kaggle/HF rendering).
-    md = MarkdownIt("gfm-like").disable("linkify")
-    return md.render(text)
+    return MarkdownIt("gfm-like").disable("linkify").render(text)
 
 
 # ---------------------------------------------------------------------------
-# Tier inference + file tree
+# Tier inference
 # ---------------------------------------------------------------------------
-
-#: Kaggle's CLI emits resource paths like ``intro/lead_scoring.csv`` —
-#: the leading path segment is the tier name.  We group resources by
-#: this segment so the rendered file tree mirrors the bundle layout
-#: the user will see on Kaggle.
-_TIER_PATH_RE: Final[re.Pattern[str]] = re.compile(r"^([^/]+)/")
 
 
 def _tier_of(resource_path: str) -> str:
     """Return the leading path segment of ``resource_path``, or ``""``.
 
-    Used to bucket resources by tier in the file tree.  An empty
-    string indicates a top-level resource (none of these are emitted
-    by the Kaggle packager today, but we tolerate them for forward
-    compatibility).
+    Used to bucket resources by tier in the file tree.  Empty string
+    means top-level (none today, tolerated for forward compatibility).
     """
 
-    match = _TIER_PATH_RE.match(resource_path)
-    return match.group(1) if match else ""
+    parts = resource_path.split("/", 1)
+    return parts[0] if len(parts) > 1 else ""
 
 
 # ---------------------------------------------------------------------------
@@ -125,14 +93,18 @@ def _tier_of(resource_path: str) -> str:
 
 
 def _render_header(metadata: dict[str, Any]) -> str:
-    """Render the page header — title, subtitle, id pill, licence pill."""
+    """Render the page header — title, subtitle, id, licence, frequency.
 
-    title = _escape(metadata["title"])
-    subtitle = _escape(metadata["subtitle"])
-    dataset_id = _escape(metadata["id"])
-    license_name = _escape(metadata["licenses"][0]["name"]) if metadata.get("licenses") else ""
-    update_freq = _escape(metadata.get("expectedUpdateFrequency", ""))
-    visibility = "Private" if metadata.get("isPrivate") else "Public"
+    Visibility is intentionally NOT rendered: Kaggle's public dataset
+    page does not display ``isPrivate``, so showing it here would
+    misrepresent what public viewers see.
+    """
+
+    title = escape(metadata["title"])
+    subtitle = escape(metadata["subtitle"])
+    dataset_id = escape(metadata["id"])
+    license_name = escape(metadata["licenses"][0]["name"]) if metadata.get("licenses") else ""
+    update_freq = escape(metadata.get("expectedUpdateFrequency", ""))
 
     return f"""<header class="dataset-header">
   <div class="dataset-header__id">{dataset_id}</div>
@@ -141,7 +113,6 @@ def _render_header(metadata: dict[str, Any]) -> str:
   <ul class="dataset-header__pills">
     <li class="pill pill--license">License: {license_name}</li>
     <li class="pill pill--frequency">Updates: {update_freq}</li>
-    <li class="pill pill--visibility">Visibility: {visibility}</li>
   </ul>
 </header>"""
 
@@ -149,13 +120,12 @@ def _render_header(metadata: dict[str, Any]) -> str:
 def _render_cover(cover_image_filename: str) -> str:
     """Render the cover-image block.
 
-    The ``src`` is a sibling-relative path so the same HTML works
-    against both the runtime preview tree (where the image was copied
-    in) and the committed sample (used for byte-equality only — the
-    sample is not served).
+    Sibling-relative ``src`` so the same HTML works against both the
+    runtime preview tree (where the image was copied in) and the
+    committed sample (which is byte-compared, not served).
     """
 
-    src = _escape(cover_image_filename)
+    src = escape(cover_image_filename)
     return f"""<section class="cover">
   <img class="cover__image" src="{src}" alt="Dataset cover image">
 </section>"""
@@ -164,30 +134,23 @@ def _render_cover(cover_image_filename: str) -> str:
 def _render_description(description_md: str) -> str:
     """Render the inlined README body as HTML."""
 
-    body = _render_markdown(description_md)
-    return f'<section class="description">\n{body}</section>'
+    return f'<section class="description">\n{_render_markdown(description_md)}</section>'
 
 
 def _render_file_tree(resources: list[dict[str, Any]]) -> str:
-    """Render the file tree, grouped by tier (leading path segment).
-
-    Inside each tier, files appear in declaration order — matches the
-    order Kaggle renders the resources column.  Each entry is a
-    monospace path + the resource description.
-    """
+    """Render the file tree, grouped by tier (leading path segment)."""
 
     by_tier: dict[str, list[dict[str, Any]]] = {}
     for resource in resources:
-        tier = _tier_of(resource["path"])
-        by_tier.setdefault(tier, []).append(resource)
+        by_tier.setdefault(_tier_of(resource["path"]), []).append(resource)
 
     blocks: list[str] = []
     for tier, tier_resources in by_tier.items():
-        tier_label = _escape(tier) if tier else "(top-level)"
+        tier_label = escape(tier) if tier else "(top-level)"
         items: list[str] = []
         for resource in tier_resources:
-            path = _escape(resource["path"])
-            description = _escape(resource.get("description", ""))
+            path = escape(resource["path"])
+            description = escape(resource.get("description", ""))
             items.append(
                 f'    <li class="file"><code class="file__path">{path}</code>'
                 f'<span class="file__desc">{description}</span></li>'
@@ -208,14 +171,7 @@ def _render_file_tree(resources: list[dict[str, Any]]) -> str:
 
 
 def _render_schema_tables(resources: list[dict[str, Any]]) -> str:
-    """Render one schema/columns table per tabular resource.
-
-    Mimics Kaggle's "Data Card" expandable per-file column listing.
-    Resources without a ``schema`` (markdown / JSON) are skipped —
-    same posture as Kaggle.  Column count appears in the heading so
-    the test can assert the table is exhaustive without parsing the
-    DOM.
-    """
+    """Render one schema/columns table per tabular resource."""
 
     blocks: list[str] = []
     total_columns = 0
@@ -227,12 +183,12 @@ def _render_schema_tables(resources: list[dict[str, Any]]) -> str:
         if not fields:
             continue
         total_columns += len(fields)
-        path = _escape(resource["path"])
+        path = escape(resource["path"])
         rows: list[str] = []
         for fd in fields:
-            name = _escape(fd.get("name", ""))
-            ftype = _escape(fd.get("type", ""))
-            description = _escape(fd.get("description", ""))
+            name = escape(fd.get("name", ""))
+            ftype = escape(fd.get("type", ""))
+            description = escape(fd.get("description", ""))
             rows.append(
                 f"      <tr>"
                 f'<td class="col__name"><code>{name}</code></td>'
@@ -258,14 +214,14 @@ def _render_schema_tables(resources: list[dict[str, Any]]) -> str:
 
 
 def _render_sources(metadata: dict[str, Any]) -> str:
-    """Render the user-specified sources block."""
+    """Render the user-specified sources block (omitted when empty)."""
 
     sources = metadata.get("userSpecifiedSources", []) or []
     if not sources:
         return ""
     items = "\n".join(
-        f'    <li><a href="{_escape(s["url"])}" target="_blank" rel="noopener noreferrer">'
-        f"{_escape(s['title'])}</a></li>"
+        f'    <li><a href="{escape(s["url"])}" target="_blank" rel="noopener noreferrer">'
+        f"{escape(s['title'])}</a></li>"
         for s in sources
     )
     return f"""<section class="sources">
@@ -280,23 +236,22 @@ def _render_footer(metadata: dict[str, Any]) -> str:
     """Render the licence + keywords footer."""
 
     keywords = metadata.get("keywords", []) or []
-    keyword_chips = " ".join(f'<span class="chip">{_escape(k)}</span>' for k in keywords)
-    license_name = _escape(metadata["licenses"][0]["name"]) if metadata.get("licenses") else ""
+    keyword_chips = " ".join(f'<span class="chip">{escape(k)}</span>' for k in keywords)
+    license_name = escape(metadata["licenses"][0]["name"]) if metadata.get("licenses") else ""
     return f"""<footer class="dataset-footer">
   <div class="dataset-footer__keywords">{keyword_chips}</div>
   <div class="dataset-footer__license">License: {license_name}</div>
-  <div class="dataset-footer__note">Local Kaggle preview rendered by scripts/preview_kaggle_page.py — not the live dataset page.</div>
+  <div class="dataset-footer__note">Local Kaggle publication-readiness preview rendered by scripts/preview_kaggle_page.py — not the live dataset page.</div>
 </footer>"""
 
 
 # ---------------------------------------------------------------------------
-# HTML wrapper + minimal Kaggle-ish CSS
+# HTML wrapper + minimal CSS
 # ---------------------------------------------------------------------------
 
-#: Kept inline rather than served as a separate ``style.css`` so the
-#: rendered HTML is a single self-contained file — easier to inspect,
-#: easier to byte-compare in the audit-artefact-sync test, and works
-#: without a server (open the committed sample directly in a browser).
+#: Inlined for a single self-contained HTML file (easier inspection,
+#: simpler byte-compare in the regeneration-discipline test, works
+#: without a server).  Palette is approximate, not branded.
 _PAGE_CSS: Final[str] = """\
 :root { --bg:#fff; --fg:#202124; --muted:#5f6368; --accent:#20beff; --border:#e0e0e0; --pill-bg:#f1f3f4; }
 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: var(--fg); background: var(--bg); margin: 0; padding: 0; line-height: 1.5; }
@@ -340,18 +295,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 
 
 def _wrap_html(*, title: str, body: str) -> str:
-    """Wrap rendered sections in the page chrome.
-
-    Order: header → cover → description → files → schemas → sources →
-    footer.  Description sits above files because Kaggle leads with
-    the dataset card on the public page.
-    """
-
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Kaggle preview — {_escape(title)}</title>
+  <title>Kaggle preview — {escape(title)}</title>
   <style>{_PAGE_CSS}</style>
 </head>
 <body>
@@ -363,24 +311,6 @@ def _wrap_html(*, title: str, body: str) -> str:
 """
 
 
-def _escape(value: str) -> str:
-    """HTML-escape a single attribute / text value.
-
-    Inlined rather than importing ``html.escape`` so the renderer's
-    surface stays small and the (well-tested) substitution is local
-    and obvious.
-    """
-
-    return (
-        str(value)
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
-        .replace("'", "&#39;")
-    )
-
-
 # ---------------------------------------------------------------------------
 # Top-level renderer
 # ---------------------------------------------------------------------------
@@ -389,9 +319,8 @@ def _escape(value: str) -> str:
 def render_kaggle_html(metadata: dict[str, Any], cover_image_filename: str) -> str:
     """Render the full Kaggle preview HTML.
 
-    Pure function: same ``(metadata, cover_image_filename)`` →
-    byte-identical HTML.  No I/O, no clock, no random.  Tests rely
-    on this for the audit-artefact-sync gate.
+    Pure: same ``(metadata, cover_image_filename)`` → byte-identical
+    HTML.  No I/O, no clock, no random.
     """
 
     body_parts = [
@@ -407,18 +336,13 @@ def render_kaggle_html(metadata: dict[str, Any], cover_image_filename: str) -> s
 
 
 # ---------------------------------------------------------------------------
-# Driver — reads inputs, writes HTML, optionally serves
+# Driver
 # ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
 class PreviewConfig:
-    """Frozen driver config.
-
-    Mirrors the ``DriverConfig`` posture in
-    ``scripts/run_llm_critique.py`` — building this from CLI args
-    keeps the test surface a Python-level call rather than an exec.
-    """
+    """Frozen driver config — built from CLI args or test input."""
 
     release_dir: Path
     out_dir: Path
@@ -429,10 +353,14 @@ class PreviewConfig:
 
 @dataclass(frozen=True)
 class PreviewOutcome:
-    """Return value from :func:`run_preview` — used by tests + CLI."""
+    """Return value from :func:`run_preview`.
+
+    ``cover_path`` is always set on success — the driver always
+    copies the cover into the preview tree.
+    """
 
     html_path: Path
-    cover_path: Path | None
+    cover_path: Path
 
 
 def _resolve_cover_image(release_dir: Path, image_name: str) -> Path:
@@ -441,27 +369,21 @@ def _resolve_cover_image(release_dir: Path, image_name: str) -> Path:
     Lookup order: ``release/kaggle/<image_name>`` (assembled
     upload-tree copy, present after the maintainer runs the Kaggle
     packager — gitignored, so absent on a fresh checkout) →
-    ``release/<image_name>`` (the committed master copy).  Returning
-    the resolved path here mirrors ``_release_common.resolve_cover_image_path``
-    so the assembler and inputs cannot disagree.
+    ``release/<image_name>`` (the committed master copy).
     """
 
-    candidates = [
-        release_dir / "kaggle" / image_name,
-        release_dir / image_name,
-    ]
-    for candidate in candidates:
+    for candidate in (release_dir / "kaggle" / image_name, release_dir / image_name):
         if candidate.is_file():
             return candidate
-    return candidates[0]  # surface the missing-file error against the canonical location
+    return release_dir / "kaggle" / image_name  # surface the missing-file error here
 
 
 def run_preview(config: PreviewConfig) -> PreviewOutcome:
     """Render the preview HTML, optionally serve it.
 
-    Pre-flight failures (missing metadata, malformed JSON, missing
-    cover image) raise — the CLI converts to rc=2.  Validation
-    discipline mirrors the Phase 5 packagers: build → validate → write.
+    Validation discipline: build → validate → write.  Pre-flight
+    failures (missing metadata, malformed JSON, missing cover) raise;
+    the CLI converts to rc=2.
     """
 
     metadata_path = config.release_dir / "kaggle" / "dataset-metadata.json"
@@ -489,53 +411,9 @@ def run_preview(config: PreviewConfig) -> PreviewOutcome:
     replace_file(cover_src, cover_dst)
 
     if config.serve:
-        _serve(config.out_dir, config.port, open_browser=config.open_browser)
+        serve(config.out_dir, config.port, open_browser=config.open_browser)
 
     return PreviewOutcome(html_path=html_path, cover_path=cover_dst)
-
-
-def _serve(directory: Path, port: int, *, open_browser: bool) -> None:
-    """Start a stdlib HTTP server rooted at ``directory`` and block.
-
-    Uses ``http.server.ThreadingHTTPServer`` so the browser can fetch
-    the cover image alongside the HTML without serialising requests.
-    ``ThreadingHTTPServer`` (unlike bare ``socketserver.ThreadingTCPServer``)
-    inherits ``allow_reuse_address = True`` from ``HTTPServer`` —
-    matters because Ctrl-C → re-run within ~60s would otherwise
-    raise ``OSError: [Errno 48] Address already in use`` while the
-    socket sits in TIME_WAIT.
-
-    Blocks on ``serve_forever()``; KeyboardInterrupt (Ctrl-C) is the
-    documented exit path.  No coverage here — tests exercise the
-    pure renderer and ``--no-serve`` path; serving is glue that
-    requires a live socket.
-    """
-
-    handler_factory = _make_handler_factory(directory)
-    url = f"http://localhost:{port}/"
-    print(f"serving {directory} at {url} — Ctrl-C to stop", file=sys.stderr)
-    if open_browser:
-        webbrowser.open(url)
-    with http.server.ThreadingHTTPServer(("", port), handler_factory) as httpd:
-        httpd.serve_forever()
-
-
-def _make_handler_factory(directory: Path) -> type[http.server.SimpleHTTPRequestHandler]:
-    """Build a handler subclass that serves from ``directory``.
-
-    ``SimpleHTTPRequestHandler`` ships a ``directory=`` kwarg in
-    Python 3.7+, but threading the path through ``socketserver``'s
-    ``RequestHandlerClass`` requires either a partial or a subclass.
-    Subclassing keeps the import surface stdlib-only.
-    """
-
-    resolved = str(directory.resolve())
-
-    class _Handler(http.server.SimpleHTTPRequestHandler):
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
-            super().__init__(*args, directory=resolved, **kwargs)
-
-    return _Handler
 
 
 # ---------------------------------------------------------------------------

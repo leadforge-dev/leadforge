@@ -162,16 +162,37 @@ def test_render_data_files_appear_under_each_config() -> None:
     assert "intermediate/train.parquet" in html
 
 
+def test_render_does_not_emit_files_declared_section() -> None:
+    """Real HF doesn't surface a "files declared in YAML" section —
+    showing one would be an internal-concept leak that omits the bulk
+    of the actual upload tree (manifest.json, tables/*.parquet, etc.).
+    The configs dropdown already lists every YAML-declared path; a
+    parallel files section would be misleading duplicate noise.
+    Folded back from self-review pass 3.
+    """
+
+    html = preview.render_hf_html(_minimal_doc(), variant="public")
+    assert "Files declared" not in html
+    assert "files / variant:" not in html  # legacy heading text
+    assert 'class="files"' not in html
+
+
 def test_render_includes_variant_in_footer() -> None:
     public = preview.render_hf_html(_minimal_doc(), variant="public")
     instructor = preview.render_hf_html(_minimal_doc(), variant="instructor")
     assert "Variant: <code>public</code>" in public
     assert "Variant: <code>instructor</code>" in instructor
-    # Variant differences are localised to the footer + file-tree
-    # heading; the rest of the output is identical.
-    public_no_variant = public.replace("public", "VARIANT")
-    instructor_no_variant = instructor.replace("instructor", "VARIANT")
-    assert public_no_variant == instructor_no_variant
+    # Variant differences are localised to the footer; the rest of
+    # the output is identical between variants.  Replace via the
+    # full ``Variant: <code>X</code>`` marker (not the bare word)
+    # so this assertion does not match "public" inside "publication"
+    # in the footer note (regression caught + folded back during
+    # self-review pass 3 reframing).
+    public_normalised = public.replace("Variant: <code>public</code>", "Variant: <code>X</code>")
+    instructor_normalised = instructor.replace(
+        "Variant: <code>instructor</code>", "Variant: <code>X</code>"
+    )
+    assert public_normalised == instructor_normalised
 
 
 def test_render_handles_no_configs_gracefully() -> None:
@@ -369,7 +390,6 @@ def test_run_preview_writes_html_and_copies_cover(tmp_path: Path) -> None:
     outcome = preview.run_preview(_make_config(fake_release, out_dir))  # type: ignore[arg-type]
     assert outcome.html_path == out_dir / "index.html"
     assert outcome.html_path.is_file()
-    assert outcome.cover_path is not None
     assert outcome.cover_path.is_file()
     assert not outcome.cover_path.is_symlink()
 

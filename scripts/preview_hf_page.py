@@ -1,45 +1,36 @@
 #!/usr/bin/env python3
-"""Render an offline mock of the Hugging Face dataset page.
+"""Local publication-readiness preview for the Hugging Face dataset page.
 
-PR 7.2 — middle PR in Phase 7 (LLM critique + publish).  Reads the
-artefact the publish PR will upload (``release/huggingface/README.md``
-or ``release/huggingface-instructor/README.md``) and renders an HTML
-page that mimics the public HF dataset view: header (pretty_name +
-licence + size pill), tag chips, configs dropdown, file tree, the
-README body, and a footer with sources.
+PR 7.2.  Reads the artefact the publish PR will upload
+(``release/huggingface/README.md`` or ``release/huggingface-instructor/README.md``
+per ``--variant=public|instructor``), parses the YAML frontmatter +
+Markdown body, renders an offline HTML page that surfaces the
+published structure (header pills, tag chips, configs dropdown,
+README body, footer), and optionally serves it on
+``http://localhost:8766``.
 
-Same rationale as ``preview_kaggle_page.py`` — cached previews on
-the live HF page are expensive to roll back, so the publish runbook
-in PR 7.3 cites this script as a required pre-flight.
+This is a *publication-readiness* preview — structured rendering of
+the upload artefact that helps catch link / config / YAML-rendering
+issues before the real ``huggingface-cli upload``.  It is
+deliberately NOT an HF look-alike: pixel fidelity is out of scope
+and the chrome is approximate.
 
-The rendered HTML is a deterministic function of the input README
-(no ``now()``, no random) — same input → byte-identical HTML.  The
-committed samples at
-``release/_preview_committed/huggingface_{public,instructor}.html``
-are the audit-artefact-sync gate.
+Design rationale + decision log: ``docs/release/preview_pages_design.md``.
 
 Usage::
 
-    # Public variant on http://localhost:8766.
-    python scripts/preview_hf_page.py --open-browser
+    python scripts/preview_hf_page.py --open-browser              # public variant
+    python scripts/preview_hf_page.py --variant=instructor        # companion repo
+    python scripts/preview_hf_page.py --no-serve                  # build only
 
-    # Instructor companion variant (separate input README).
-    python scripts/preview_hf_page.py --variant=instructor
-
-    # Just build the HTML (CI / inspection).
-    python scripts/preview_hf_page.py --no-serve
-
-Exit codes: 0 success / 2 pre-flight error (missing README,
-malformed YAML frontmatter, missing cover image).
+Exit codes: 0 success / 2 pre-flight error.
 """
 
 from __future__ import annotations
 
 import argparse
-import http.server
 import re
 import sys
-import webbrowser
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -50,7 +41,8 @@ import yaml
 # Make ``scripts/`` importable regardless of how this file is loaded.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _release_common import replace_file  # noqa: E402 — must follow sys.path insert
+from _preview_common import escape, serve  # noqa: E402 — must follow sys.path insert
+from _release_common import replace_file  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Defaults
@@ -70,28 +62,20 @@ VALID_VARIANTS: Final[tuple[str, ...]] = ("public", "instructor")
 
 
 # ---------------------------------------------------------------------------
-# Markdown rendering (gated behind the [publish] extra)
+# Markdown rendering (markdown-it-py is in [dev] AND [publish])
 # ---------------------------------------------------------------------------
 
 
 def _render_markdown(text: str) -> str:
-    """Render ``text`` to HTML using markdown-it-py in GFM-like mode.
-
-    Same posture + dep gating as the Kaggle preview (markdown-it-py
-    via the ``[publish]`` extra; ``linkify`` disabled so the
-    transitive ``linkify-it-py`` dep is not required).  See
-    ``preview_kaggle_page.py`` for the rationale.
-    """
+    """Render ``text`` to HTML.  See preview_kaggle_page._render_markdown."""
 
     try:
         from markdown_it import MarkdownIt
-    except ImportError as exc:  # pragma: no cover — gated by extra
+    except ImportError as exc:  # pragma: no cover — dep is in [dev]
         raise ImportError(
-            "markdown-it-py is required for the Hugging Face preview page. "
-            "Install the publish extra: pip install -e '.[publish]'"
+            "markdown-it-py is required.  pip install -e '.[dev]' (or [publish])."
         ) from exc
-    md = MarkdownIt("gfm-like").disable("linkify")
-    return md.render(text)
+    return MarkdownIt("gfm-like").disable("linkify").render(text)
 
 
 # ---------------------------------------------------------------------------
@@ -99,8 +83,7 @@ def _render_markdown(text: str) -> str:
 # ---------------------------------------------------------------------------
 
 #: HF dataset cards open with a ``---`` block of YAML, then the body.
-#: This regex pulls them apart in one shot; ``re.DOTALL`` is essential
-#: because the YAML spans multiple lines.
+#: ``re.DOTALL`` matters because the YAML spans multiple lines.
 _FRONTMATTER_RE: Final[re.Pattern[str]] = re.compile(
     r"\A---\n(?P<yaml>.*?)\n---\n(?P<body>.*)\Z",
     re.DOTALL,
@@ -119,8 +102,8 @@ def parse_hf_readme(text: str) -> HuggingFaceDoc:
     """Split an HF README into YAML frontmatter + Markdown body.
 
     Raises ``ValueError`` if the document does not open with a
-    ``---``-delimited frontmatter block (every HF dataset card MUST
-    have one — the renderer cannot mock the page without it).
+    ``---``-delimited frontmatter block, or if the YAML is not a
+    mapping (every HF dataset card MUST satisfy both).
     """
 
     match = _FRONTMATTER_RE.match(text)
@@ -141,27 +124,14 @@ def parse_hf_readme(text: str) -> HuggingFaceDoc:
 # ---------------------------------------------------------------------------
 
 
-def _escape(value: str) -> str:
-    """HTML-escape a single attribute / text value."""
-
-    return (
-        str(value)
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
-        .replace("'", "&#39;")
-    )
-
-
 def _render_header(frontmatter: dict[str, Any]) -> str:
-    """Render the page header — pretty_name, licence pill, sizes."""
+    """Render the page header — pretty_name + licence / task / size pills."""
 
-    pretty_name = _escape(str(frontmatter.get("pretty_name", "")))
-    license_id = _escape(str(frontmatter.get("license", "")))
-    languages = ", ".join(_escape(str(x)) for x in frontmatter.get("language", []) or [])
-    sizes = ", ".join(_escape(str(x)) for x in frontmatter.get("size_categories", []) or [])
-    tasks = ", ".join(_escape(str(x)) for x in frontmatter.get("task_categories", []) or [])
+    pretty_name = escape(str(frontmatter.get("pretty_name", "")))
+    license_id = escape(str(frontmatter.get("license", "")))
+    languages = ", ".join(escape(str(x)) for x in frontmatter.get("language", []) or [])
+    sizes = ", ".join(escape(str(x)) for x in frontmatter.get("size_categories", []) or [])
+    tasks = ", ".join(escape(str(x)) for x in frontmatter.get("task_categories", []) or [])
     return f"""<header class="dataset-header">
   <div class="dataset-header__namespace">huggingface.co/datasets</div>
   <h1 class="dataset-header__title">{pretty_name}</h1>
@@ -175,22 +145,22 @@ def _render_header(frontmatter: dict[str, Any]) -> str:
 
 
 def _render_tags(frontmatter: dict[str, Any]) -> str:
-    """Render the tag chip row (mimics HF tag pills under the header)."""
+    """Render the tag chip row (omitted when no tags)."""
 
     tags = frontmatter.get("tags", []) or []
     if not tags:
         return ""
-    chips = " ".join(f'<span class="chip">{_escape(str(t))}</span>' for t in tags)
+    chips = " ".join(f'<span class="chip">{escape(str(t))}</span>' for t in tags)
     return f'<section class="tags">\n  {chips}\n</section>'
 
 
 def _render_configs(frontmatter: dict[str, Any]) -> str:
     """Render the configs dropdown — one entry per ``configs[]`` block.
 
-    Mirrors HF's "Subset" selector at the top of the dataset viewer.
-    Each config lists its data_files (split → path) so the test can
-    assert every config block from the YAML round-trips through to
-    the rendered page.  The default config is flagged.
+    This is the load-bearing inventory of what the YAML declares: each
+    config + its train/validation/test data_files.  HF's "Subset"
+    selector at the top of the dataset viewer maps to this.  Default
+    config is flagged with a single ``badge--default`` instance.
     """
 
     configs = frontmatter.get("configs", []) or []
@@ -198,13 +168,13 @@ def _render_configs(frontmatter: dict[str, Any]) -> str:
         return '<section class="configs"><p>No configs declared.</p></section>'
     blocks: list[str] = []
     for config in configs:
-        config_name = _escape(str(config.get("config_name", "")))
+        config_name = escape(str(config.get("config_name", "")))
         is_default = bool(config.get("default"))
         default_badge = ' <span class="badge badge--default">default</span>' if is_default else ""
         data_files = config.get("data_files", []) or []
         rows = "\n".join(
-            f"      <tr><td>{_escape(str(df.get('split', '')))}</td>"
-            f"<td><code>{_escape(str(df.get('path', '')))}</code></td></tr>"
+            f"      <tr><td>{escape(str(df.get('split', '')))}</td>"
+            f"<td><code>{escape(str(df.get('path', '')))}</code></td></tr>"
             for df in data_files
         )
         blocks.append(
@@ -224,39 +194,6 @@ def _render_configs(frontmatter: dict[str, Any]) -> str:
 </section>"""
 
 
-def _render_file_tree(frontmatter: dict[str, Any], variant: str) -> str:
-    """Render the file tree.
-
-    HF doesn't ship a structured file inventory in the dataset card
-    YAML the way Kaggle does — ``data_files`` are the only paths
-    declared in the frontmatter.  We list each declared path under
-    its config heading.  The tree is therefore narrower than the
-    real dataset (which also has ``manifest.json``, ``tables/``, etc.)
-    but matches what the YAML knows about, which is what the publish
-    runbook is trying to verify.
-    """
-
-    configs = frontmatter.get("configs", []) or []
-    paths: list[tuple[str, str]] = []
-    for config in configs:
-        config_name = str(config.get("config_name", ""))
-        for df in config.get("data_files", []) or []:
-            paths.append((config_name, str(df.get("path", ""))))
-    if not paths:
-        return ""
-    items = "\n".join(
-        f'    <li class="file"><span class="file__config">[{_escape(c)}]</span> '
-        f'<code class="file__path">{_escape(p)}</code></li>'
-        for c, p in paths
-    )
-    return f"""<section class="files">
-  <h2 class="section__heading">Files declared in YAML <span class="section__count">({len(paths)} files / variant: {_escape(variant)})</span></h2>
-  <ul class="files__list">
-{items}
-  </ul>
-</section>"""
-
-
 def _render_readme_body(body_md: str) -> str:
     """Render the README body (everything after the YAML)."""
 
@@ -266,21 +203,18 @@ def _render_readme_body(body_md: str) -> str:
 def _render_footer(frontmatter: dict[str, Any], variant: str) -> str:
     """Render the licence + variant note footer."""
 
-    license_id = _escape(str(frontmatter.get("license", "")))
+    license_id = escape(str(frontmatter.get("license", "")))
     return f"""<footer class="dataset-footer">
   <div class="dataset-footer__license">License: {license_id}</div>
-  <div class="dataset-footer__variant">Variant: <code>{_escape(variant)}</code></div>
-  <div class="dataset-footer__note">Local Hugging Face preview rendered by scripts/preview_hf_page.py — not the live dataset page.</div>
+  <div class="dataset-footer__variant">Variant: <code>{escape(variant)}</code></div>
+  <div class="dataset-footer__note">Local Hugging Face publication-readiness preview rendered by scripts/preview_hf_page.py — not the live dataset page.</div>
 </footer>"""
 
 
 # ---------------------------------------------------------------------------
-# HTML wrapper + minimal HF-ish CSS
+# HTML wrapper + minimal CSS
 # ---------------------------------------------------------------------------
 
-#: Inlined for the same reasons as the Kaggle preview — single
-#: self-contained file, simple byte-comparison in the audit-sync test,
-#: works without the server.
 _PAGE_CSS: Final[str] = """\
 :root { --bg:#fff; --fg:#1f2937; --muted:#6b7280; --accent:#ff9d00; --border:#e5e7eb; --pill-bg:#f3f4f6; --code-bg:#f9fafb; }
 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, sans-serif; color: var(--fg); background: var(--bg); margin: 0; padding: 0; line-height: 1.6; }
@@ -294,7 +228,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helve
 .chip { display: inline-block; background: var(--pill-bg); border-radius: 12px; padding: 2px 10px; margin: 2px 4px 2px 0; font-size: 0.85em; color: var(--fg); }
 .section__heading { font-size: 1.3em; border-bottom: 2px solid var(--accent); padding-bottom: 4px; margin-top: 32px; }
 .section__count { color: var(--muted); font-size: 0.7em; font-weight: normal; }
-.config, .file-tree { border: 1px solid var(--border); border-radius: 4px; padding: 8px 12px; margin: 8px 0; }
+.config { border: 1px solid var(--border); border-radius: 4px; padding: 8px 12px; margin: 8px 0; }
 .config__name { cursor: pointer; font-weight: 600; }
 .config__count { color: var(--muted); font-weight: normal; font-size: 0.85em; }
 .badge { display: inline-block; padding: 1px 8px; border-radius: 4px; font-size: 0.75em; font-weight: 600; vertical-align: middle; margin-left: 4px; }
@@ -302,11 +236,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helve
 .config__table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 0.9em; }
 .config__table th, .config__table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
 .config__table th { background: var(--pill-bg); font-weight: 600; }
-.files__list { list-style: none; padding-left: 0; margin: 0; }
-.file { padding: 4px 0; border-bottom: 1px dotted var(--border); }
-.file:last-child { border-bottom: none; }
-.file__config { color: var(--muted); font-size: 0.85em; margin-right: 8px; }
-.file__path { color: var(--accent); }
 .readme { margin: 24px 0; }
 .readme code { background: var(--code-bg); padding: 1px 4px; border-radius: 2px; font-size: 0.9em; }
 .readme pre { background: var(--code-bg); padding: 12px; border-radius: 4px; overflow-x: auto; }
@@ -320,19 +249,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helve
 
 
 def _wrap_html(*, title: str, body: str) -> str:
-    """Wrap the rendered sections in page chrome.
-
-    Order: header → tags → configs → files → readme body → footer.
-    Configs sit above the README because that's the primary affordance
-    on the live HF dataset page (the user picks a subset before
-    reading the body).
-    """
-
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>HF preview — {_escape(title)}</title>
+  <title>HF preview — {escape(title)}</title>
   <style>{_PAGE_CSS}</style>
 </head>
 <body>
@@ -352,16 +273,14 @@ def _wrap_html(*, title: str, body: str) -> str:
 def render_hf_html(doc: HuggingFaceDoc, *, variant: str) -> str:
     """Render the full HF preview HTML.
 
-    Pure function: same ``(doc, variant)`` → byte-identical HTML.
-    No I/O, no clock, no random.  Tests rely on this for the
-    audit-artefact-sync gate.
+    Pure: same ``(doc, variant)`` → byte-identical HTML.  No I/O,
+    no clock, no random.
     """
 
     body_parts = [
         _render_header(doc.frontmatter),
         _render_tags(doc.frontmatter),
         _render_configs(doc.frontmatter),
-        _render_file_tree(doc.frontmatter, variant=variant),
         _render_readme_body(doc.body),
         _render_footer(doc.frontmatter, variant=variant),
     ]
@@ -372,7 +291,7 @@ def render_hf_html(doc: HuggingFaceDoc, *, variant: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Driver — reads inputs, writes HTML, optionally serves
+# Driver
 # ---------------------------------------------------------------------------
 
 
@@ -390,39 +309,39 @@ class PreviewConfig:
 
 @dataclass(frozen=True)
 class PreviewOutcome:
-    """Return value from :func:`run_preview` — used by tests + CLI."""
+    """Return value from :func:`run_preview`.
+
+    ``cover_path`` is always set on success — the driver always
+    copies the cover into the preview tree.
+    """
 
     html_path: Path
-    cover_path: Path | None
+    cover_path: Path
 
 
 def _resolve_cover_image(release_dir: Path, variant: str) -> Path:
     """Locate the cover image for the variant.
 
-    The HF packager (PR 5.2) copies the cover image into both
-    ``release/huggingface/`` and ``release/huggingface-instructor/``
-    next to each README.  Prefer the variant-tree copy (closest to
-    the artefact the publish PR will upload); fall back to
-    ``release_dir`` for the case where the assembler hasn't been
-    run yet.
+    Lookup order: variant-specific upload tree (assembled by the HF
+    packager — gitignored, absent on a fresh checkout) → committed
+    master copy under ``release_dir``.
     """
 
     variant_dir = "huggingface" if variant == "public" else "huggingface-instructor"
-    candidates = [
+    for candidate in (
         release_dir / variant_dir / "dataset-cover-image.png",
         release_dir / "dataset-cover-image.png",
-    ]
-    for candidate in candidates:
+    ):
         if candidate.is_file():
             return candidate
-    return candidates[0]
+    return release_dir / variant_dir / "dataset-cover-image.png"
 
 
 def run_preview(config: PreviewConfig) -> PreviewOutcome:
     """Render the preview HTML, optionally serve it.
 
     Pre-flight failures (missing README, malformed YAML, missing
-    cover image, unknown variant) raise — the CLI converts to rc=2.
+    cover, unknown variant) raise; the CLI converts to rc=2.
     """
 
     if config.variant not in VALID_VARIANTS:
@@ -432,17 +351,15 @@ def run_preview(config: PreviewConfig) -> PreviewOutcome:
     if not readme_path.is_file():
         raise FileNotFoundError(
             f"HF README not found at {readme_path}; "
-            f"regenerate via scripts/package_hf_release.py "
-            f"--variant={config.variant} first"
+            f"regenerate via scripts/package_hf_release.py --variant={config.variant} first"
         )
     doc = parse_hf_readme(readme_path.read_text(encoding="utf-8"))
 
     cover_src = _resolve_cover_image(config.release_dir, config.variant)
     if not cover_src.is_file():
         raise FileNotFoundError(
-            f"cover image not found at {cover_src} (looked in "
-            f"{config.release_dir}/huggingface{'-instructor' if config.variant == 'instructor' else ''}/ "
-            f"and {config.release_dir}/)"
+            f"cover image not found at {cover_src} "
+            f"(looked in the {config.variant} upload tree and {config.release_dir}/)"
         )
 
     config.out_dir.mkdir(parents=True, exist_ok=True)
@@ -453,35 +370,9 @@ def run_preview(config: PreviewConfig) -> PreviewOutcome:
     replace_file(cover_src, cover_dst)
 
     if config.serve:
-        _serve(config.out_dir, config.port, open_browser=config.open_browser)
+        serve(config.out_dir, config.port, open_browser=config.open_browser)
 
     return PreviewOutcome(html_path=html_path, cover_path=cover_dst)
-
-
-def _serve(directory: Path, port: int, *, open_browser: bool) -> None:
-    """Start a stdlib HTTP server rooted at ``directory`` and block.
-
-    Same posture as the Kaggle preview — see that module for the
-    ``allow_reuse_address`` rationale.
-    """
-
-    handler_factory = _make_handler_factory(directory)
-    url = f"http://localhost:{port}/"
-    print(f"serving {directory} at {url} — Ctrl-C to stop", file=sys.stderr)
-    if open_browser:
-        webbrowser.open(url)
-    with http.server.ThreadingHTTPServer(("", port), handler_factory) as httpd:
-        httpd.serve_forever()
-
-
-def _make_handler_factory(directory: Path) -> type[http.server.SimpleHTTPRequestHandler]:
-    resolved = str(directory.resolve())
-
-    class _Handler(http.server.SimpleHTTPRequestHandler):
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
-            super().__init__(*args, directory=resolved, **kwargs)
-
-    return _Handler
 
 
 # ---------------------------------------------------------------------------
