@@ -130,8 +130,8 @@ feature set unless you're demonstrating leakage detection.
 | Contacts | 4,200 | 4,200 | 4,200 |
 | Snapshot columns | 32 / 34* | 32 / 34* | 32 / 34* |
 | Target | `converted_within_90_days` | `converted_within_90_days` | `converted_within_90_days` |
-| Conversion rate (recipe band) | 24–61% | 12–31% | 4–12% |
-| Conversion rate (median, seeds 42–46) | 42.67% | 21.60% | 8.40% |
+| Conversion rate (acceptance band, gate G7.\*) | 24–61% | 12–31% | 4–12% |
+| Conversion rate (observed median, seeds 42–46) | 42.67% | 21.60% | 8.40% |
 | Signal strength | 0.90 | 0.70 | 0.50 |
 | Noise scale | 0.10 | 0.30 | 0.55 |
 | Missing rate | 2% | 8% | 18% |
@@ -139,7 +139,10 @@ feature set unless you're demonstrating leakage detection.
 \* `student_public` / `research_instructor`. Difficulty is modulated
 by the simulation engine — signal strength on latent-trait weights,
 Gaussian noise on float features, MCAR missingness, outlier rate —
-not post-hoc label flipping.
+not post-hoc label flipping. The acceptance band is the recipe
+gate's tolerance window (`v1_acceptance_gates_bands.yaml` G7.\*),
+not the achievable range — observed five-seed spreads sit
+comfortably inside the band.
 
 ## The scenario
 
@@ -251,6 +254,15 @@ intended difficulty axis (intro > intermediate > advanced).
   the simulator. Never sampled directly.
 - **Splits.** 70/15/15 train/valid/test, deterministic given seed;
   recorded in `tasks/converted_within_90_days/task_manifest.json`.
+  **Group-leakage warning:** the splitter is keyed on `lead_id` only,
+  not on `account_id` or `contact_id`. On the as-shipped intermediate
+  bundle, **518 of 557 test accounts (≈93 %) also appear in train**;
+  the contact-level overlap is similar in magnitude. A flat baseline
+  trained on the random split rides account-level signal across the
+  split boundary. For a generalisation-faithful number, retrain with
+  `GroupKFold(account_id)` (or `contact_id`) and report both — see
+  [`break_me_guide.md`](https://github.com/leadforge-dev/leadforge/blob/main/docs/release/break_me_guide.md) §5 for the
+  detection recipe.
 - **Provenance.** Recipe `b2b_saas_procurement_v1`, seed 42, package
   version stamped in `manifest.json`.
 

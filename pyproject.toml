@@ -129,5 +129,14 @@ ignore_missing_imports = true
 module = ["matplotlib", "matplotlib.*"]
 ignore_missing_imports = true
 
+# Anthropic SDK is loaded lazily inside ``build_anthropic_client`` (PR
+# 7.1) so the LLM critique module imports cleanly without the SDK.  CI's
+# type-check job doesn't install ``anthropic``; the override stops mypy
+# from failing on the missing import stub.  The runtime contract is
+# enforced by tests via the ``LLMCritiqueClient`` protocol.
+[[tool.mypy.overrides]]
+module = ["anthropic", "anthropic.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

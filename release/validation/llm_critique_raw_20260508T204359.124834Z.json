@@ -1,0 +1,95 @@
+{
+  "bundle_hashes": {
+    "docs/release/break_me_guide.md": "87694a4cc3975cb9d9a670b3f4ce152c50a23663474d4e99a26d5541515929d1",
+    "docs/release/generation_method.md": "60c663cf1edc54e44780d90bc39e594989d43ce5cc0fce20639ad065a67416b7",
+    "public_instructor_diff": "2c626ea25480d53954c873a073cc7d8cf9831d75e5715b4667d61e233f5135ca",
+    "public_safe_mechanism_summary": "05e6d5bb12ec649138b3734a7b414e4f74accc2f4b5d8b6de883e5b6d086969f",
+    "release/README.md": "7a27b000f7fc93e1824d84e6322068860ff3d3d8c311b764d399ae01409c0933",
+    "release/intermediate/dataset_card.md": "5d4a68b59ad245101bbbce287781d2b006fba5da6750061a261e1fbc00b127fc",
+    "release/intermediate/feature_dictionary.csv": "4fe5724049e676f2c2bdd1431ff4cfdc491b14f9781bb8c9ee1d10a2caa75245",
+    "release/intermediate/manifest.json": "da802eedf92fb26b4765da7895bc43ebd0b2ec396a28f09c7ba6f8dbdda19dee",
+    "release/intermediate/tasks/test.parquet[head]": "6f33b2f2235e5f7f009d6a534a5b42572a4b5e97cc27ae424b8099ca456e9532",
+    "release/validation/validation_report.json": "2f165370fdc8617418087c42ddc0d5d8810650f0cbcb33e11beb58be49a1610f",
+    "release/validation/validation_report.md": "04250633a39d3a44c0f1af7aa3ea6e2793bfe7ae87eaf68e35b855f765b1981c"
+  },
+  "effort": "high",
+  "findings": [
+    {
+      "category": "documentation",
+      "claim": "The 93% test-account overlap with train is documented only in the adversarial guide, not in the dataset card or README, so a baseline-notebook student will not know their AUC is account-leaky.",
+      "evidence": "`break_me_guide.md` \u00a75 quotes '518 of 557 test accounts (93%) also appear in train' and notes 'A bundle-level account_id overlap audit isn't included in v1'; release/README.md 'Composition' section says only 'Splits. 70/15/15 train/valid/test, deterministic given seed' with no group-leakage warning; release/intermediate/dataset_card.md has no mention of account-level overlap.",
+      "id": "F001",
+      "reproducer": "python -c \"import pandas as pd; tr=pd.read_parquet('release/intermediate/tasks/converted_within_90_days/train.parquet'); te=pd.read_parquet('release/intermediate/tasks/converted_within_90_days/test.parquet'); print(len(set(tr.account_id)&set(te.account_id)), '/', te.account_id.nunique())\"",
+      "rubric_dimension": "D6",
+      "severity": "high",
+      "suggested_fix": "Add a one-paragraph 'Group-leakage warning' to release/README.md 'Splits' subsection and to dataset_card.md 'Caveats', citing the 518/557 figure and pointing at break_me_guide \u00a75 plus a GroupKFold(account_id) recipe."
+    },
+    {
+      "category": "documentation",
+      "claim": "Noise injection produces physically impossible values (negative ACV, negative `days_since_last_touch`, `days_since_first_touch` > snapshot_day) that the dataset card's 'Caveats' does not disclose.",
+      "evidence": "Test-split describe(): `opportunity_estimated_acv` min = -140151.06, `expected_acv` min = -125614.81, `days_since_last_touch` min = -29.73, `days_since_first_touch` max = 43.46 (snapshot_day = 30 per manifest). Dataset_card.md caveat states 'event-aggregate features ... observe only the first 30 days' with no mention that Gaussian noise can push float features outside their physical range.",
+      "id": "F002",
+      "reproducer": "python -c \"import pandas as pd; df=pd.read_parquet('release/intermediate/tasks/converted_within_90_days/test.parquet'); print(df[['expected_acv','days_since_last_touch','days_since_first_touch']].describe())\"",
+      "rubric_dimension": "D1",
+      "severity": "medium",
+      "suggested_fix": "Add a 'Noise artefacts' bullet to dataset_card.md Caveats: 'Gaussian noise on float features can produce non-physical values (negative ACV, negative day-deltas, day-deltas > snapshot_day=30). Models should treat these as noise rather than clip; clipping silently shifts the conditional distribution.'"
+    },
+    {
+      "category": "platform",
+      "claim": "release/README.md links to files outside the release/ tree using `](../foo)` paths that will 404 once the README is inlined onto Kaggle and Hugging Face.",
+      "evidence": "README references `[gemini_v2_summary.md](../docs/external_review/summaries/gemini_v2_summary.md)`, `[generation_method.md](../docs/release/generation_method.md)`, `[leakage_probes.py](../leadforge/validation/leakage_probes.py)`, `[v1_acceptance_gates_bands.yaml](../docs/release/v1_acceptance_gates_bands.yaml)`, `[channel_signal_audit.md](../docs/release/channel_signal_audit.md)`, `[break_me_guide.md](../docs/release/break_me_guide.md)`, `[feature_dictionary.md](../docs/release/feature_dictionary.md)`, plus two `.github/ISSUE_TEMPLATE/*.yml` references \u2014 none of which ship in the release bundle.",
+      "id": "F003",
+      "reproducer": "grep -nE '\\]\\(\\.\\./' release/README.md",
+      "rubric_dimension": "D8",
+      "severity": "medium",
+      "suggested_fix": "Replace each `../<path>` link with an absolute URL of the form `https://github.com/leadforge-dev/leadforge/blob/v1.0.0/<path>` so off-platform links resolve from Kaggle / HF; ship a thin `docs/release/` redirect inside the bundle for the two files external readers actually need (generation_method.md and break_me_guide.md)."
+    },
+    {
+      "category": "pedagogy",
+      "claim": "`break_me_guide.md` pattern 5 covers train/test contamination on `account_id` but ignores the parallel hazard on `contact_id`, despite contacts being shared at a similar magnitude given the lead-keyed split.",
+      "evidence": "Test-split sample shows `contact_id` unique=684/750; with 4,200 contacts split across 3,500/750/750 task rows and the splitter keyed only on `lead_id` (per task_manifest.json policy referenced in break_me_guide \u00a75), contact-level overlap is structurally guaranteed. Pattern 5 names only `account_id` and lists no contact-keyed analogue.",
+      "id": "F004",
+      "reproducer": "python -c \"import pandas as pd; tr=pd.read_parquet('release/intermediate/tasks/converted_within_90_days/train.parquet'); te=pd.read_parquet('release/intermediate/tasks/converted_within_90_days/test.parquet'); print('contact overlap:', len(set(tr.contact_id)&set(te.contact_id)), '/', te.contact_id.nunique())\"",
+      "rubric_dimension": "D9",
+      "severity": "medium",
+      "suggested_fix": "Extend break_me_guide \u00a75 to enumerate `account_id`, `contact_id`, and any other reusable foreign-key column (e.g. derived `industry \u00d7 region` strata) as group-leakage axes; reuse the same overlap-snippet template per key."
+    },
+    {
+      "category": "pedagogy",
+      "claim": "The advanced-tier headline `calibration_max_bin_error = 0.5234` is driven by 2- and 3-sample high-probability bins, and the validation report surfaces the headline without the n-count caveat.",
+      "evidence": "`$.tiers.advanced.per_seed[1].calibration_bins[5]` records `{bin_lower: 0.5, mean_actual: 0.0, mean_predicted: 0.5234, n: 2}` \u2014 the bin that drives the 0.5234 headline; `validation_report.md` 'Per-tier headline metrics' table reports 0.5234 with no minimum-bin-count footnote.",
+      "id": "F005",
+      "reproducer": "python -c \"import json; r=json.load(open('release/validation/validation_report.json')); [print(b['n'], b['mean_predicted']-b['mean_actual']) for b in r['tiers']['advanced']['per_seed'][1]['calibration_bins']]\"",
+      "rubric_dimension": "D5",
+      "severity": "medium",
+      "suggested_fix": "Compute `calibration_max_bin_error` only over bins with `n >= 20` (or expose both raw and n-weighted variants) and add a footnote to the headline table noting that low-positive-rate tiers can show large bin-errors driven by small-n high-probability bins."
+    },
+    {
+      "category": "documentation",
+      "claim": "release/README.md 'Dataset summary' table claims '24\u201361%' / '12\u201331%' / '4\u201312%' as the conversion-rate recipe bands, but the validation report shows observed test conversion-rate spreads only 8\u201310% / 18\u201322% / 34\u201343% across seeds 42\u201346, so the bands are documented as recipe-acceptance windows without saying so.",
+      "evidence": "release/README.md 'Conversion rate (recipe band)' row vs `$.tiers.{intro,intermediate,advanced}.per_seed[*].conversion_rate_test` actual values (intro 0.3427\u20130.4347, intermediate 0.176\u20130.2227, advanced 0.0787\u20130.0987).",
+      "id": "F006",
+      "reproducer": "python -c \"import json; r=json.load(open('release/validation/validation_report.json'))['tiers']; [print(t, sorted(s['conversion_rate_test'] for s in r[t]['per_seed'])) for t in r]\"",
+      "rubric_dimension": "D1",
+      "severity": "low",
+      "suggested_fix": "Rename the column header to 'Conversion rate (acceptance band, gate G7.*)' and add a one-sentence note that observed five-seed spreads sit comfortably inside the gate band \u2014 otherwise readers infer that the simulator can produce 4% or 61% on the same tier, which it can't."
+    }
+  ],
+  "input_bundle_sha256": "ce1e4c204f6f3747dc050f3323accd56dabb669d679db7c0eb6272aa76fb7540",
+  "missing_sections": [
+    "missing: Datasheets \u00a7Biases \u2014 the README out-of-scope mentions fairness research is unsupported but does not enumerate which biases the synthetic generator does encode (industry/region/persona uniformity, channel-conditional independence per known-limitations).",
+    "missing: Datasheets \u00a7Privacy \u2014 the README treats 'fictional' as sufficient privacy disclosure but does not state that no real CRM was used as seed data, that no PII-shaped strings (job titles, emails, names) appear, and that the recipe is reproducible from public artefacts only.",
+    "missing: dataset_card.md \u00a7Group-split warning \u2014 no per-bundle disclosure of account_id / contact_id overlap across train/valid/test (see F001, F004)."
+  ],
+  "model": "claude-opus-4-7",
+  "overall_assessment": "The bundle ships cleanly on the structural axes \u2014 manifest fields are complete, redaction contract is single-sourced, validation report reconciles against the README headline table, and the documented `total_touches_all` trap is consistently flagged across card, dictionary, and break-me guide. No high-severity leakage path beyond the documented trap surfaces in the inputs. The one high-severity issue is pedagogical: the 93% account_id overlap between train and test is fully described in `break_me_guide.md` \u00a75 but absent from the dataset card and README, so a notebook-01 student will silently train an account-leaky baseline. Remaining findings are noise-injection realism gaps, relative-path hygiene for Kaggle/HF, and adversarial-framing completeness around contact-level contamination.",
+  "overall_score": 7,
+  "questions_for_maintainer": [
+    "Does the simulator window event tables before or after Gaussian-noise injection on float features \u2014 i.e. is the 43.46-day `days_since_first_touch` a windowing bug or an intended noise artefact?",
+    "Is `top_decile_rate` defined as precision at top 10% or recall at top 10%, and should the validation_report.md headline rename it accordingly so it isn't read as a synonym for P@100?",
+    "Will Kaggle / Hugging Face uploads include the `docs/release/` and `docs/external_review/` subtrees, or only the `release/` subtree \u2014 the answer determines whether F003 is medium or high?"
+  ],
+  "release_id": "leadforge-lead-scoring-v1",
+  "run_timestamp": "2026-05-08T20:43:59.124834Z",
+  "thinking_mode": "adaptive"
+}
