@@ -39,7 +39,6 @@ import argparse
 import http.server
 import json
 import re
-import socketserver
 import sys
 import webbrowser
 from collections.abc import Sequence
@@ -61,10 +60,6 @@ from _release_common import replace_file  # noqa: E402 — must follow sys.path 
 DEFAULT_RELEASE_DIR: Final[Path] = Path("release")
 DEFAULT_OUT_DIR: Final[Path] = Path("release/_preview/kaggle")
 DEFAULT_PORT: Final[int] = 8765
-
-#: The committed sample HTML used by the audit-artefact-sync test.
-#: Located outside ``release/_preview/`` so it is not gitignored.
-COMMITTED_SAMPLE_PATH: Final[Path] = Path("release/_preview_committed/kaggle.html")
 
 
 # ---------------------------------------------------------------------------
@@ -443,14 +438,12 @@ class PreviewOutcome:
 def _resolve_cover_image(release_dir: Path, image_name: str) -> Path:
     """Locate the cover image referenced by the metadata's ``image``.
 
-    The Kaggle packager (PR 5.1) copies the cover image into
-    ``release/kaggle/`` next to ``dataset-metadata.json`` AND leaves
-    the master copy at ``release/dataset-cover-image.png``.  We
-    prefer the kaggle-tree copy (closer to the artefact the publish
-    PR will upload) and fall back to ``release_dir`` for the
-    bare-basename case.  Returning the resolved path here mirrors
-    ``_release_common.resolve_cover_image_path`` so the assembler and
-    inputs cannot disagree.
+    Lookup order: ``release/kaggle/<image_name>`` (assembled
+    upload-tree copy, present after the maintainer runs the Kaggle
+    packager — gitignored, so absent on a fresh checkout) →
+    ``release/<image_name>`` (the committed master copy).  Returning
+    the resolved path here mirrors ``_release_common.resolve_cover_image_path``
+    so the assembler and inputs cannot disagree.
     """
 
     candidates = [
@@ -504,9 +497,15 @@ def run_preview(config: PreviewConfig) -> PreviewOutcome:
 def _serve(directory: Path, port: int, *, open_browser: bool) -> None:
     """Start a stdlib HTTP server rooted at ``directory`` and block.
 
-    Uses ``ThreadingHTTPServer`` so the maintainer's browser can fetch
+    Uses ``http.server.ThreadingHTTPServer`` so the browser can fetch
     the cover image alongside the HTML without serialising requests.
-    Block on ``serve_forever()``; KeyboardInterrupt (Ctrl-C) is the
+    ``ThreadingHTTPServer`` (unlike bare ``socketserver.ThreadingTCPServer``)
+    inherits ``allow_reuse_address = True`` from ``HTTPServer`` —
+    matters because Ctrl-C → re-run within ~60s would otherwise
+    raise ``OSError: [Errno 48] Address already in use`` while the
+    socket sits in TIME_WAIT.
+
+    Blocks on ``serve_forever()``; KeyboardInterrupt (Ctrl-C) is the
     documented exit path.  No coverage here — tests exercise the
     pure renderer and ``--no-serve`` path; serving is glue that
     requires a live socket.
@@ -517,7 +516,7 @@ def _serve(directory: Path, port: int, *, open_browser: bool) -> None:
     print(f"serving {directory} at {url} — Ctrl-C to stop", file=sys.stderr)
     if open_browser:
         webbrowser.open(url)
-    with socketserver.ThreadingTCPServer(("", port), handler_factory) as httpd:
+    with http.server.ThreadingHTTPServer(("", port), handler_factory) as httpd:
         httpd.serve_forever()
 
 

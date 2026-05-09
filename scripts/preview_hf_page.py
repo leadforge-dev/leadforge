@@ -38,7 +38,6 @@ from __future__ import annotations
 import argparse
 import http.server
 import re
-import socketserver
 import sys
 import webbrowser
 from collections.abc import Sequence
@@ -62,15 +61,10 @@ DEFAULT_OUT_DIR_PUBLIC: Final[Path] = Path("release/_preview/huggingface")
 DEFAULT_OUT_DIR_INSTRUCTOR: Final[Path] = Path("release/_preview/huggingface-instructor")
 DEFAULT_PORT: Final[int] = 8766
 
-#: Per-variant relative paths to the README (under ``release_dir``)
-#: and the committed sample HTML (under ``release/_preview_committed/``).
+#: Per-variant relative path to the README (under ``release_dir``).
 _VARIANT_README_REL: Final[dict[str, Path]] = {
     "public": Path("huggingface/README.md"),
     "instructor": Path("huggingface-instructor/README.md"),
-}
-_VARIANT_SAMPLE_PATH: Final[dict[str, Path]] = {
-    "public": Path("release/_preview_committed/huggingface_public.html"),
-    "instructor": Path("release/_preview_committed/huggingface_instructor.html"),
 }
 VALID_VARIANTS: Final[tuple[str, ...]] = ("public", "instructor")
 
@@ -467,7 +461,8 @@ def run_preview(config: PreviewConfig) -> PreviewOutcome:
 def _serve(directory: Path, port: int, *, open_browser: bool) -> None:
     """Start a stdlib HTTP server rooted at ``directory`` and block.
 
-    Same posture as the Kaggle preview — see that module for rationale.
+    Same posture as the Kaggle preview — see that module for the
+    ``allow_reuse_address`` rationale.
     """
 
     handler_factory = _make_handler_factory(directory)
@@ -475,7 +470,7 @@ def _serve(directory: Path, port: int, *, open_browser: bool) -> None:
     print(f"serving {directory} at {url} — Ctrl-C to stop", file=sys.stderr)
     if open_browser:
         webbrowser.open(url)
-    with socketserver.ThreadingTCPServer(("", port), handler_factory) as httpd:
+    with http.server.ThreadingHTTPServer(("", port), handler_factory) as httpd:
         httpd.serve_forever()
 
 
