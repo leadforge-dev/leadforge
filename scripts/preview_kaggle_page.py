@@ -37,7 +37,12 @@ from typing import Any, Final
 # (CLI entrypoint, ``importlib.util.spec_from_file_location`` from tests).
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _preview_common import escape, serve  # noqa: E402 — must follow sys.path insert
+from _preview_common import (  # noqa: E402 — must follow sys.path insert
+    escape,
+    plural,
+    render_cover,
+    serve,
+)
 from _release_common import replace_file  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -117,20 +122,6 @@ def _render_header(metadata: dict[str, Any]) -> str:
 </header>"""
 
 
-def _render_cover(cover_image_filename: str) -> str:
-    """Render the cover-image block.
-
-    Sibling-relative ``src`` so the same HTML works against both the
-    runtime preview tree (where the image was copied in) and the
-    committed sample (which is byte-compared, not served).
-    """
-
-    src = escape(cover_image_filename)
-    return f"""<section class="cover">
-  <img class="cover__image" src="{src}" alt="Dataset cover image">
-</section>"""
-
-
 def _render_description(description_md: str) -> str:
     """Render the inlined README body as HTML."""
 
@@ -158,14 +149,13 @@ def _render_file_tree(resources: list[dict[str, Any]]) -> str:
         blocks.append(
             f'  <details class="tier" open>\n'
             f'    <summary class="tier__name">{tier_label}/ '
-            f'<span class="tier__count">({len(tier_resources)} files)</span>'
+            f'<span class="tier__count">({plural(len(tier_resources), "file")})</span>'
             f"</summary>\n"
             f'    <ul class="tier__files">\n' + "\n".join(items) + "\n    </ul>\n"
             "  </details>"
         )
-    file_count = len(resources)
     return f"""<section class="files">
-  <h2 class="section__heading">Data Files <span class="section__count">({file_count} total)</span></h2>
+  <h2 class="section__heading">Data Files <span class="section__count">({len(resources)} total)</span></h2>
 {chr(10).join(blocks)}
 </section>"""
 
@@ -199,7 +189,7 @@ def _render_schema_tables(resources: list[dict[str, Any]]) -> str:
         blocks.append(
             f'  <details class="schema" open>\n'
             f'    <summary class="schema__path"><code>{path}</code> '
-            f'<span class="schema__count">({len(fields)} columns)</span>'
+            f'<span class="schema__count">({plural(len(fields), "column")})</span>'
             f"</summary>\n"
             f'    <table class="schema__table">\n'
             f"      <thead><tr><th>Column</th><th>Type</th><th>Description</th></tr></thead>\n"
@@ -208,7 +198,7 @@ def _render_schema_tables(resources: list[dict[str, Any]]) -> str:
             "  </details>"
         )
     return f"""<section class="schemas">
-  <h2 class="section__heading">Schema / Columns <span class="section__count">({total_columns} columns across {len(blocks)} tabular files)</span></h2>
+  <h2 class="section__heading">Schema / Columns <span class="section__count">({plural(total_columns, "column")} across {plural(len(blocks), "tabular file")})</span></h2>
 {chr(10).join(blocks)}
 </section>"""
 
@@ -325,7 +315,7 @@ def render_kaggle_html(metadata: dict[str, Any], cover_image_filename: str) -> s
 
     body_parts = [
         _render_header(metadata),
-        _render_cover(cover_image_filename),
+        render_cover(cover_image_filename),
         _render_description(metadata.get("description", "")),
         _render_file_tree(metadata.get("resources", [])),
         _render_schema_tables(metadata.get("resources", [])),
@@ -363,6 +353,42 @@ class PreviewOutcome:
     cover_path: Path
 
 
+#: Required keys the renderer indexes directly (without ``.get``);
+#: validated up-front in ``run_preview`` so a malformed metadata file
+#: surfaces as ``ValueError`` → CLI rc=2 rather than a ``KeyError``
+#: traceback mid-render (Copilot finding COPILOT-1).
+_REQUIRED_METADATA_KEYS: Final[tuple[str, ...]] = (
+    "title",
+    "subtitle",
+    "id",
+    "expectedUpdateFrequency",
+    "image",
+)
+
+
+def _validate_required_metadata(metadata: dict[str, Any], path: Path) -> None:
+    """Raise ``ValueError`` if required Kaggle metadata keys are missing.
+
+    Catches the case where ``dataset-metadata.json`` is hand-edited or
+    produced by a future broken packager; the renderer's
+    ``_render_header`` / ``_render_footer`` index these directly and
+    would otherwise raise ``KeyError`` mid-render, bypassing
+    ``main()``'s rc=2 handling.
+    """
+
+    missing = sorted(k for k in _REQUIRED_METADATA_KEYS if k not in metadata)
+    licenses = metadata.get("licenses")
+    if (
+        not isinstance(licenses, list)
+        or not licenses
+        or not isinstance(licenses[0], dict)
+        or "name" not in licenses[0]
+    ):
+        missing.append("licenses[0].name")
+    if missing:
+        raise ValueError(f"{path} is missing required key(s): {', '.join(missing)}")
+
+
 def _resolve_cover_image(release_dir: Path, image_name: str) -> Path:
     """Locate the cover image referenced by the metadata's ``image``.
 
@@ -395,8 +421,9 @@ def run_preview(config: PreviewConfig) -> PreviewOutcome:
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     if not isinstance(metadata, dict):
         raise ValueError(f"{metadata_path} is not a JSON object")
+    _validate_required_metadata(metadata, metadata_path)
 
-    cover_name = metadata.get("image", "")
+    cover_name = metadata["image"]
     if not cover_name:
         raise ValueError(f"{metadata_path} declares no 'image' (cover image filename)")
     cover_src = _resolve_cover_image(config.release_dir, cover_name)

@@ -47,6 +47,39 @@ def escape(value: str) -> str:
     )
 
 
+def plural(n: int, singular: str, plural_form: str | None = None) -> str:
+    """Return ``f"{n} <word>"`` with ``<word>`` pluralised when ``n != 1``.
+
+    Default pluralisation is the trailing-``s`` rule; pass
+    ``plural_form`` for irregular cases (none today).  Used by the
+    preview-page section-heading counts so output reads as "1 config"
+    rather than "1 configs" — the latter was caught in PR review on
+    the instructor sample (Copilot finding COPILOT-3).
+    """
+
+    word = singular if n == 1 else (plural_form or singular + "s")
+    return f"{n} {word}"
+
+
+def render_cover(filename: str) -> str:
+    """Render a sibling-relative cover-image block.
+
+    Used by both preview scripts; the HF preview previously copied
+    the cover into the preview tree without ever rendering it
+    (Copilot finding COPILOT-2 — either drop the copy or display
+    it; we picked display for symmetry with Kaggle and because HF's
+    live page shows the dataset cover too).  Sibling-relative
+    ``src`` so the same HTML works for both the runtime preview
+    tree (where the image was copied in) and the committed sample
+    (which is byte-compared, not served).
+    """
+
+    src = escape(filename)
+    return f"""<section class="cover">
+  <img class="cover__image" src="{src}" alt="Dataset cover image">
+</section>"""
+
+
 def _make_handler_factory(directory: Path) -> type[http.server.SimpleHTTPRequestHandler]:
     """Build a handler subclass that serves from ``directory``.
 

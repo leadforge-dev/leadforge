@@ -151,7 +151,9 @@ def test_render_schema_table_lists_every_column() -> None:
     assert "Opaque id." in html
     assert "(2 columns)" in html  # per-table column count
     # Resources without a schema (manifest.json) do not appear in the table.
-    assert "(2 columns across 1 tabular files)" in html
+    # Note singular "tabular file" — the plural() helper kicks in only when
+    # n != 1 (Copilot finding COPILOT-3).
+    assert "(2 columns across 1 tabular file)" in html
 
 
 def test_render_keywords_appear_as_chips_in_footer() -> None:
@@ -339,11 +341,71 @@ def test_run_preview_raises_on_malformed_metadata(tmp_path: Path) -> None:
         preview.run_preview(config)
 
 
-def test_run_preview_raises_on_missing_cover_image(tmp_path: Path) -> None:
+def test_run_preview_raises_on_missing_required_metadata_keys(tmp_path: Path) -> None:
+    """Pre-flight required-key check (Copilot finding COPILOT-1).
+
+    The renderer's _render_header / _render_footer / _render_cover
+    index ``title`` / ``subtitle`` / ``id`` / ``image`` /
+    ``licenses[0].name`` / ``expectedUpdateFrequency`` directly; a
+    malformed metadata file would otherwise raise ``KeyError``
+    mid-render and bypass main()'s rc=2 translation.  The validator
+    surfaces every missing key in one message, not just the first.
+    """
+
     fake_release = tmp_path / "release"
     (fake_release / "kaggle").mkdir(parents=True)
+    # Drop several required keys at once.
     (fake_release / "kaggle" / "dataset-metadata.json").write_text(
-        json.dumps({"image": "missing.png", "resources": []}), encoding="utf-8"
+        json.dumps(
+            {
+                "subtitle": "only the subtitle survives",
+                "licenses": [{"NOT_NAME": "MIT"}],  # malformed: no 'name' inside [0]
+                "image": "dataset-cover-image.png",
+            }
+        ),
+        encoding="utf-8",
+    )
+    config = preview.PreviewConfig(
+        release_dir=fake_release,
+        out_dir=tmp_path / "preview",
+        port=8765,
+        open_browser=False,
+        serve=False,
+    )
+    with pytest.raises(ValueError, match="missing required key") as exc_info:
+        preview.run_preview(config)
+    msg = str(exc_info.value)
+    # All four missing keys reported in one error, alphabetised.
+    assert "expectedUpdateFrequency" in msg
+    assert "id" in msg
+    assert "title" in msg
+    assert "licenses[0].name" in msg
+
+
+def test_validate_required_metadata_accepts_well_formed_payload(tmp_path: Path) -> None:
+    """Sanity gate the validator does not over-fire on the canonical fixture."""
+
+    preview._validate_required_metadata(_minimal_metadata(), tmp_path / "any.json")
+
+
+def test_run_preview_raises_on_missing_cover_image(tmp_path: Path) -> None:
+    """A well-formed metadata payload that points at a missing cover
+    image surfaces FileNotFoundError, not a required-key ValueError.
+
+    The required-key validator (Copilot finding COPILOT-1) runs
+    BEFORE the cover-existence check, so the fixture must include
+    every required key for this assertion to test the cover-path
+    rather than the validator.
+    """
+
+    fake_release = tmp_path / "release"
+    (fake_release / "kaggle").mkdir(parents=True)
+    well_formed = {
+        **_minimal_metadata(),
+        "image": "missing.png",  # the file does not exist on disk
+    }
+    (fake_release / "kaggle" / "dataset-metadata.json").write_text(
+        json.dumps(well_formed), encoding="utf-8"
     )
     config = preview.PreviewConfig(
         release_dir=fake_release,
@@ -427,6 +489,24 @@ def test_tier_of_extracts_leading_path_segment() -> None:
 # Server smoke test — covers _preview_common.make_server / serve glue
 # (folded back from self-review pass 3 — _serve was previously untested)
 # ---------------------------------------------------------------------------
+
+
+def test_plural_helper_handles_singular_zero_and_n() -> None:
+    """``_preview_common.plural`` is the one helper behind every count
+    heading in both preview scripts.  Pin n=1 → singular, n=0/2/N →
+    plural (Copilot finding COPILOT-3 — instructor sample previously
+    rendered "(1 configs)" because the plural was always ``+ 's'``)."""
+
+    import _preview_common  # noqa: PLC0415 — local import for the helper test
+
+    assert _preview_common.plural(1, "config") == "1 config"
+    assert _preview_common.plural(2, "config") == "2 configs"
+    assert _preview_common.plural(0, "config") == "0 configs"  # zero is plural in English
+    assert _preview_common.plural(1, "tabular file") == "1 tabular file"
+    assert _preview_common.plural(5, "tabular file") == "5 tabular files"
+    # Irregular plural form is supported via explicit override (none today).
+    assert _preview_common.plural(1, "child", "children") == "1 child"
+    assert _preview_common.plural(3, "child", "children") == "3 children"
 
 
 def test_make_server_binds_and_serves_index(tmp_path: Path) -> None:

@@ -162,6 +162,45 @@ def test_render_data_files_appear_under_each_config() -> None:
     assert "intermediate/train.parquet" in html
 
 
+def test_render_includes_cover_image_block() -> None:
+    """The HF preview must render the cover image (Copilot finding
+    COPILOT-2 — the driver was copying the cover into the preview
+    tree without ever rendering it; either drop the copy or display
+    it; we picked display for symmetry with Kaggle and because HF's
+    live page shows the dataset cover too)."""
+
+    html = preview.render_hf_html(_minimal_doc(), variant="public")
+    assert 'class="cover"' in html
+    assert 'src="dataset-cover-image.png"' in html
+    assert 'alt="Dataset cover image"' in html
+
+
+def test_render_configs_heading_uses_singular_for_one_config() -> None:
+    """Instructor sample previously rendered "(1 configs)" — plural()
+    helper now uses the singular form when n == 1 (Copilot finding
+    COPILOT-3)."""
+
+    one_config_doc = preview.HuggingFaceDoc(
+        frontmatter={
+            "pretty_name": "T",
+            "license": "mit",
+            "configs": [
+                {
+                    "config_name": "intermediate",
+                    "default": True,
+                    "data_files": [{"split": "train", "path": "intermediate/train.parquet"}],
+                },
+            ],
+        },
+        body="body\n",
+    )
+    html = preview.render_hf_html(one_config_doc, variant="instructor")
+    assert "(1 config)" in html  # heading
+    assert "(1 split)" in html  # per-config splits count
+    assert "(1 configs)" not in html
+    assert "(1 splits)" not in html
+
+
 def test_render_does_not_emit_files_declared_section() -> None:
     """Real HF doesn't surface a "files declared in YAML" section —
     showing one would be an internal-concept leak that omits the bulk
@@ -362,6 +401,35 @@ def test_run_preview_raises_on_malformed_readme(tmp_path: Path) -> None:
     config = _make_config(fake_release, tmp_path / "preview")
     with pytest.raises(ValueError, match="missing a YAML frontmatter"):
         preview.run_preview(config)  # type: ignore[arg-type]
+
+
+def test_run_preview_raises_on_missing_required_frontmatter_keys(tmp_path: Path) -> None:
+    """Pre-flight required-key check (Copilot finding COPILOT-1,
+    applied symmetrically to the HF script).  Missing pretty_name /
+    license would otherwise render a half-blank header."""
+
+    fake_release = tmp_path / "release"
+    (fake_release / "huggingface").mkdir(parents=True)
+    (fake_release / "huggingface" / "README.md").write_text(
+        "---\nlanguage:\n  - en\n---\nbody\n", encoding="utf-8"
+    )
+    config = _make_config(fake_release, tmp_path / "preview")
+    with pytest.raises(ValueError, match="missing required key") as exc_info:
+        preview.run_preview(config)  # type: ignore[arg-type]
+    msg = str(exc_info.value)
+    assert "pretty_name" in msg
+    assert "license" in msg
+
+
+def test_validate_required_frontmatter_treats_empty_string_as_missing(tmp_path: Path) -> None:
+    """Whitespace-only or empty values count as missing — a blank
+    pretty_name renders an empty <h1>, which is what the validator
+    is supposed to prevent."""
+
+    with pytest.raises(ValueError, match="missing required key"):
+        preview._validate_required_frontmatter(
+            {"pretty_name": "   ", "license": ""}, tmp_path / "any.md"
+        )
 
 
 def test_run_preview_raises_on_missing_cover(tmp_path: Path) -> None:

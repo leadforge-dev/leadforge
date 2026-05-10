@@ -41,7 +41,12 @@ import yaml
 # Make ``scripts/`` importable regardless of how this file is loaded.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _preview_common import escape, serve  # noqa: E402 — must follow sys.path insert
+from _preview_common import (  # noqa: E402 — must follow sys.path insert
+    escape,
+    plural,
+    render_cover,
+    serve,
+)
 from _release_common import replace_file  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -180,7 +185,7 @@ def _render_configs(frontmatter: dict[str, Any]) -> str:
         blocks.append(
             f'  <details class="config" open>\n'
             f'    <summary class="config__name"><code>{config_name}</code>{default_badge} '
-            f'<span class="config__count">({len(data_files)} splits)</span>'
+            f'<span class="config__count">({plural(len(data_files), "split")})</span>'
             f"</summary>\n"
             f'    <table class="config__table">\n'
             f"      <thead><tr><th>Split</th><th>Path</th></tr></thead>\n"
@@ -189,7 +194,7 @@ def _render_configs(frontmatter: dict[str, Any]) -> str:
             f"  </details>"
         )
     return f"""<section class="configs">
-  <h2 class="section__heading">Configurations / Subsets <span class="section__count">({len(configs)} configs)</span></h2>
+  <h2 class="section__heading">Configurations / Subsets <span class="section__count">({plural(len(configs), "config")})</span></h2>
 {chr(10).join(blocks)}
 </section>"""
 
@@ -224,6 +229,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helve
 .dataset-header__title { font-size: 1.8em; margin: 0 0 12px 0; }
 .dataset-header__pills { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 8px; }
 .pill { background: var(--pill-bg); border-radius: 12px; padding: 4px 12px; font-size: 0.85em; color: var(--fg); }
+.cover { margin: 0 0 24px 0; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+.cover__image { display: block; max-width: 100%; height: auto; }
 .tags { margin: 0 0 24px 0; }
 .chip { display: inline-block; background: var(--pill-bg); border-radius: 12px; padding: 2px 10px; margin: 2px 4px 2px 0; font-size: 0.85em; color: var(--fg); }
 .section__heading { font-size: 1.3em; border-bottom: 2px solid var(--accent); padding-bottom: 4px; margin-top: 32px; }
@@ -270,15 +277,32 @@ def _wrap_html(*, title: str, body: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def render_hf_html(doc: HuggingFaceDoc, *, variant: str) -> str:
+#: Cover-image filename in the HF upload tree.  Pinned (not derived
+#: from the YAML — HF's dataset card doesn't reference the cover; the
+#: file lives at the root of the upload directory and is consumed by
+#: HF's UI, not the README body) so the preview's cover render is
+#: deterministic given just the parsed doc.
+HF_COVER_IMAGE_FILENAME: Final[str] = "dataset-cover-image.png"
+
+
+def render_hf_html(
+    doc: HuggingFaceDoc,
+    *,
+    variant: str,
+    cover_image_filename: str = HF_COVER_IMAGE_FILENAME,
+) -> str:
     """Render the full HF preview HTML.
 
-    Pure: same ``(doc, variant)`` → byte-identical HTML.  No I/O,
-    no clock, no random.
+    Pure: same ``(doc, variant, cover_image_filename)`` → byte-identical
+    HTML.  No I/O, no clock, no random.  The cover-image block was
+    added in self-review pass 4 (Copilot finding COPILOT-2 — the
+    driver was copying the cover into the preview tree without ever
+    rendering it).
     """
 
     body_parts = [
         _render_header(doc.frontmatter),
+        render_cover(cover_image_filename),
         _render_tags(doc.frontmatter),
         _render_configs(doc.frontmatter),
         _render_readme_body(doc.body),
@@ -319,6 +343,29 @@ class PreviewOutcome:
     cover_path: Path
 
 
+#: Required frontmatter keys the renderer indexes directly; validated
+#: up-front in ``run_preview`` so a malformed README surfaces as
+#: ``ValueError`` → CLI rc=2 rather than silently rendering empty
+#: pretty_name / license pills (Copilot finding COPILOT-1, applied
+#: symmetrically to the HF script).
+_REQUIRED_FRONTMATTER_KEYS: Final[tuple[str, ...]] = ("pretty_name", "license")
+
+
+def _validate_required_frontmatter(frontmatter: dict[str, Any], path: Path) -> None:
+    """Raise ``ValueError`` if required HF frontmatter keys are missing.
+
+    ``pretty_name`` and ``license`` are the two HF requires *and* the
+    two we display prominently; missing or empty values would render
+    a half-blank header that's easy to miss.
+    """
+
+    missing = sorted(
+        k for k in _REQUIRED_FRONTMATTER_KEYS if not str(frontmatter.get(k, "")).strip()
+    )
+    if missing:
+        raise ValueError(f"{path} frontmatter is missing required key(s): {', '.join(missing)}")
+
+
 def _resolve_cover_image(release_dir: Path, variant: str) -> Path:
     """Locate the cover image for the variant.
 
@@ -354,6 +401,7 @@ def run_preview(config: PreviewConfig) -> PreviewOutcome:
             f"regenerate via scripts/package_hf_release.py --variant={config.variant} first"
         )
     doc = parse_hf_readme(readme_path.read_text(encoding="utf-8"))
+    _validate_required_frontmatter(doc.frontmatter, readme_path)
 
     cover_src = _resolve_cover_image(config.release_dir, config.variant)
     if not cover_src.is_file():
