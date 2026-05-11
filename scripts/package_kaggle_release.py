@@ -66,10 +66,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # rewritten README content; its presence here is a public-symbol
 # contract, not a local consumer.
 from _release_common import (  # noqa: E402,F401 — must follow sys.path insert
+    AGENT_REVIEWABLE_DOCS_DIR,
+    AGENT_REVIEWABLE_ROOT_FILES,
     GITHUB_BLOB_BASE,
     SOURCE_TREE_BLOCK,
     ValidationError,
     load_manifest,
+    load_relational_column_descriptions,
     replace_dir,
     replace_file,
     resolve_cover_image_path,
@@ -223,11 +226,15 @@ KAGGLE_UPLOAD_TREE_BLOCK: Final[str] = """```
 .
 ├── intro/ intermediate/ advanced/    # student_public bundles, one per difficulty tier
 │   ├── manifest.json                 # provenance + file hashes
+│   ├── metrics.json                  # per-tier headline metrics (medians + spreads)
 │   ├── dataset_card.md               # auto-rendered per-bundle card
 │   ├── feature_dictionary.csv        # authoritative column spec
 │   ├── lead_scoring.csv              # flat convenience CSV (all splits)
 │   ├── tables/*.parquet              # 7 snapshot-safe relational tables
 │   └── tasks/converted_within_90_days/{train,valid,test}.parquet
+├── docs/                             # vendored DGP / leakage / break-me docs (agent-readable)
+├── metrics.json                      # top-level cross-tier metrics summary
+├── claims_register.{md,json}         # claims → backing-artifact map (agent-readable)
 ├── dataset-metadata.json             # Kaggle dataset metadata
 ├── dataset-cover-image.png           # Kaggle cover image
 ├── README.md                         # Kaggle package README
@@ -519,18 +526,41 @@ def _kaggle_type_from_arrow(dtype: pa.DataType) -> str:
     return "string"
 
 
-def fields_from_parquet(path: Path) -> tuple[FieldDescriptor, ...]:
+def fields_from_parquet(
+    path: Path,
+    *,
+    column_descriptions: dict[tuple[str, str], str] | None = None,
+    table_name: str | None = None,
+) -> tuple[FieldDescriptor, ...]:
     """Read parquet schema from ``path`` and return ``FieldDescriptor`` rows.
 
     Kaggle accepts Frictionless schemas on parquet resources too; the
     parquet file's own Arrow metadata is the ground truth for column
     order and types, so we read directly rather than mirroring a CSV
-    header.  ``description`` is omitted for parquet fields — relational
-    tables don't have per-column docs in the bundle.
+    header.  When the caller passes ``column_descriptions`` (loaded
+    from ``release/docs/relational_table_schemas.csv``) and a
+    ``table_name``, descriptions are attached to each field — the
+    earlier behaviour shipped empty ``col__desc`` cells in the preview
+    HTML for every relational table, which left agent reviewers without
+    per-column documentation for ``touches.touch_timestamp`` etc.
+    Tables not present in the descriptions map fall back to the prior
+    no-description shape.
     """
 
     schema = pq.read_schema(path)
-    return tuple(FieldDescriptor(name=f.name, type=_kaggle_type_from_arrow(f.type)) for f in schema)
+    fields: list[FieldDescriptor] = []
+    for f in schema:
+        description: str | None = None
+        if column_descriptions is not None and table_name is not None:
+            description = column_descriptions.get((table_name, f.name))
+        fields.append(
+            FieldDescriptor(
+                name=f.name,
+                type=_kaggle_type_from_arrow(f.type),
+                description=description,
+            )
+        )
+    return tuple(fields)
 
 
 # ``_load_manifest`` is now ``load_manifest`` in ``_release_common``.
@@ -546,8 +576,10 @@ def build_tier_resources(
 
     Order: flat CSV (with full ``schema.fields``) → feature dictionary
     → task splits (parquet, schema from Arrow) → relational tables
-    (parquet, schema from Arrow) → dataset card → manifest.  Kaggle
-    renders this list in declared order on the dataset page.
+    (parquet, schema from Arrow, per-column descriptions from
+    ``release/docs/relational_table_schemas.csv`` when present) →
+    dataset card → per-tier metrics.json → manifest.  Kaggle renders
+    this list in declared order on the dataset page.
     """
 
     tier_dir = release_dir / tier
@@ -562,6 +594,8 @@ def build_tier_resources(
     manifest = load_manifest(tier_dir / "manifest.json")
     table_inventory = manifest.get("tables", {})
     snapshot_day = manifest.get("snapshot_day")
+
+    column_descriptions = load_relational_column_descriptions(release_dir)
 
     resources: list[Resource] = []
 
@@ -609,7 +643,13 @@ def build_tier_resources(
                 description=(
                     f"{tier.capitalize()} tier `{table}` relational table{suffix} — snapshot-safe."
                 ),
-                schema=ResourceSchema(fields=fields_from_parquet(table_path)),
+                schema=ResourceSchema(
+                    fields=fields_from_parquet(
+                        table_path,
+                        column_descriptions=column_descriptions,
+                        table_name=table,
+                    )
+                ),
             )
         )
 
@@ -619,6 +659,16 @@ def build_tier_resources(
             description=f"{tier.capitalize()} tier auto-rendered dataset card.",
         )
     )
+    if (tier_dir / "metrics.json").is_file():
+        resources.append(
+            Resource(
+                path=f"{tier}/metrics.json",
+                description=(
+                    f"{tier.capitalize()} tier headline metrics (cross-seed medians + spreads, "
+                    f"difficulty knobs, JSON-path back-reference to validation_report.json)."
+                ),
+            )
+        )
     resources.append(
         Resource(
             path=f"{tier}/manifest.json",
@@ -629,6 +679,103 @@ def build_tier_resources(
         )
     )
     return tuple(resources)
+
+
+# ---------------------------------------------------------------------------
+# Agent-reviewable root-level resources (docs/, claims register, metrics)
+# ---------------------------------------------------------------------------
+
+
+#: Per-vendored-doc description used in the Kaggle resources list.
+#: Same map used by both the metadata builder and the upload-tree
+#: assembler so the list of agent-reviewable files is single-sourced.
+_AGENT_DOC_DESCRIPTIONS: Final[dict[str, str]] = {
+    "docs/generation_method.md": (
+        "Generation method (DGP description) — what is and isn't modelled by the simulator."
+    ),
+    "docs/channel_signal_audit.md": (
+        "Empirical backing for the 'channel signal is weak' claim — out-of-sample univariate "
+        "AUCs of `lead_source` per tier."
+    ),
+    "docs/break_me_guide.md": (
+        "Adversarial-framing guide: nine breakage patterns (leakage, split contamination, "
+        "ranking inversions, calibration drift) with worked-example detection recipes."
+    ),
+    "docs/feature_dictionary.md": (
+        "Long-form per-feature documentation grouped by analytical role; companion to the "
+        "per-tier `feature_dictionary.csv` machine-readable spec."
+    ),
+    "docs/v1_acceptance_gates_bands.yaml": (
+        "Operational acceptance bands per gate (G5–G8); the source-of-truth thresholds the "
+        "validator checks against."
+    ),
+    "docs/v2_decision_log.md": (
+        "Accepted-for-v2 findings register — issues flagged in v1 that are scoped to the v2 "
+        "release."
+    ),
+    "docs/relational_table_schemas.csv": (
+        "Per-column descriptions for the 7 public relational tables (and the 2 "
+        "instructor-only ones) — surfaced into the schema-section of this page."
+    ),
+}
+
+
+def _agent_reviewable_resources(release_dir: Path) -> list[Resource]:
+    """Resources for the top-level agent-reviewable artifacts.
+
+    These describe the files the assembler will copy into the upload
+    root: ``metrics.json``, ``claims_register.{md,json}``,
+    ``claims_register_source.yaml`` (when present), and every file
+    under ``docs/``.  Skipping files that don't exist on disk keeps
+    the metadata in sync with whatever the maintainer actually
+    assembled — running the script on a freshly-cloned checkout
+    won't pretend that ungenerated files will appear in the upload.
+    """
+
+    resources: list[Resource] = []
+
+    if (release_dir / "metrics.json").is_file():
+        resources.append(
+            Resource(
+                path="metrics.json",
+                description=(
+                    "Top-level cross-tier headline metrics (medians + spreads + cohort-shift "
+                    "+ cross-tier ordering booleans). Machine-readable summary backing the "
+                    "README's Calibration table."
+                ),
+            )
+        )
+
+    for filename in ("claims_register.md", "claims_register.json", "claims_register_source.yaml"):
+        if (release_dir / filename).is_file():
+            if filename.endswith(".json"):
+                desc = (
+                    "Claims register (machine-readable). Each numerical / structural claim in "
+                    "the README paired with its backing artifact and JSON / YAML path."
+                )
+            elif filename.endswith(".md"):
+                desc = (
+                    "Claims register (human-readable table). Rendered from "
+                    "`claims_register_source.yaml`."
+                )
+            else:
+                desc = (
+                    "Claims-register source YAML — hand-edited; `claims_register.{md,json}` "
+                    "are rendered from this."
+                )
+            resources.append(Resource(path=filename, description=desc))
+
+    docs_dir = release_dir / AGENT_REVIEWABLE_DOCS_DIR
+    if docs_dir.is_dir():
+        for filename in sorted(p.name for p in docs_dir.iterdir() if p.is_file()):
+            rel = f"{AGENT_REVIEWABLE_DOCS_DIR}/{filename}"
+            description = _AGENT_DOC_DESCRIPTIONS.get(
+                rel,
+                f"Vendored release doc ({filename}).",
+            )
+            resources.append(Resource(path=rel, description=description))
+
+    return resources
 
 
 def build_metadata(
@@ -662,6 +809,7 @@ def build_metadata(
     resources: list[Resource] = []
     for tier in tiers:
         resources.extend(build_tier_resources(release_dir, tier, task=task))
+    resources.extend(_agent_reviewable_resources(release_dir))
 
     return DatasetMetadata(
         title=title,
@@ -816,6 +964,20 @@ def assemble_upload_dir(
             _kaggle_readme_text(readme_src.read_text(encoding="utf-8")),
             encoding="utf-8",
         )
+
+    # Agent-reviewable root files (metrics.json, claims_register.{md,json,yaml})
+    # — straight copies; these are committed artifacts that ride along
+    # so the published bundle is self-verifiable without GitHub access.
+    for rel, _required in AGENT_REVIEWABLE_ROOT_FILES:
+        src = release_dir / rel
+        if src.is_file():
+            replace_file(src, kaggle_dir / rel)
+
+    # Vendored docs (release/docs/) — full directory copy, mirrors how
+    # we treat per-tier bundle dirs.
+    docs_src = release_dir / AGENT_REVIEWABLE_DOCS_DIR
+    if docs_src.is_dir():
+        replace_dir(docs_src, kaggle_dir / AGENT_REVIEWABLE_DOCS_DIR)
 
     # Per-tier bundles — full directory copies.
     for tier in tiers:

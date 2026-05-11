@@ -258,6 +258,33 @@ def test_render_escapes_html_in_field_values() -> None:
     assert "&lt;script&gt;x&lt;/script&gt;" in html
 
 
+def test_render_emits_jsonld_dataset_block() -> None:
+    """schema.org Dataset JSON-LD lands in the <head> for agent ingestion."""
+
+    html = preview.render_hf_html(_minimal_doc(), variant="public")
+    assert '<script type="application/ld+json">' in html
+    assert '"@type": "Dataset"' in html
+    assert "https://opensource.org/licenses/MIT" in html
+
+
+def test_jsonld_identical_across_variants_for_same_doc() -> None:
+    """Variant differences are localised to the footer marker; the
+    JSON-LD block (which an agent reads structurally) must be byte-identical
+    between public and instructor renderings of the same minimal doc."""
+
+    public = preview.render_hf_html(_minimal_doc(), variant="public")
+    instructor = preview.render_hf_html(_minimal_doc(), variant="instructor")
+    # Crude extraction good enough for byte-compare of the JSON-LD block.
+    import re
+
+    block_re = re.compile(r'<script type="application/ld\+json">(.*?)</script>', re.DOTALL)
+    pub_match = block_re.search(public)
+    inst_match = block_re.search(instructor)
+    assert pub_match is not None
+    assert inst_match is not None
+    assert pub_match.group(1) == inst_match.group(1)
+
+
 # ---------------------------------------------------------------------------
 # Markdown link resolution (the leakage / link-rewrite regression guard)
 # ---------------------------------------------------------------------------

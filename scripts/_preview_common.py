@@ -21,6 +21,7 @@ allocation race.
 from __future__ import annotations
 
 import http.server
+import json
 import sys
 import webbrowser
 from pathlib import Path
@@ -59,6 +60,87 @@ def plural(n: int, singular: str, plural_form: str | None = None) -> str:
 
     word = singular if n == 1 else (plural_form or singular + "s")
     return f"{n} {word}"
+
+
+def render_jsonld_dataset(
+    *,
+    name: str,
+    description: str,
+    license_url: str,
+    keywords: list[str],
+    citation: str | None = None,
+    distribution_paths: list[str] | None = None,
+    same_as: list[str] | None = None,
+    creator: str | None = None,
+    version: str | None = None,
+) -> str:
+    """Render a schema.org ``Dataset`` JSON-LD ``<script>`` block.
+
+    Goes in the ``<head>`` of the preview HTML so an AI reviewer can
+    read structured fields (name, license, keywords, distribution,
+    citation) without parsing the markdown body or the bespoke schema
+    tables.  The shape mirrors what Kaggle and HuggingFace inject into
+    their live dataset pages — keeping the mock previews aligned with
+    what the published page will eventually expose.
+    """
+
+    payload: dict[str, Any] = {
+        "@context": "https://schema.org",
+        "@type": "Dataset",
+        "name": name,
+        "description": description,
+        "license": license_url,
+        "keywords": sorted(set(keywords)),
+        "isAccessibleForFree": True,
+    }
+    if creator is not None:
+        payload["creator"] = {"@type": "Organization", "name": creator}
+    if version is not None:
+        payload["version"] = version
+    if citation is not None:
+        payload["citation"] = citation
+    if distribution_paths:
+        payload["distribution"] = [
+            {
+                "@type": "DataDownload",
+                "encodingFormat": _encoding_format_for(path),
+                "contentUrl": path,
+            }
+            for path in distribution_paths
+        ]
+    if same_as:
+        payload["sameAs"] = list(same_as)
+    rendered = json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False)
+    # HTML-safe JSON-LD: escape ``<`` / ``>`` / ``&`` to their JSON
+    # unicode-escape forms so a hostile string in any value (notably a
+    # frontmatter ``pretty_name`` that contains ``<script>``) cannot
+    # close the surrounding ``<script type="application/ld+json">``
+    # block or get re-interpreted by an HTML parser.  Match the
+    # convention used by ``json.dumps(default=...)`` ports of this
+    # trick in major frameworks (Rails, Django).
+    rendered = rendered.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+    return f'<script type="application/ld+json">{rendered}</script>'
+
+
+def _encoding_format_for(path: str) -> str:
+    """Map a filename suffix to a MIME-ish encoding-format token.
+
+    Limited to the suffixes used in the release bundle (parquet, CSV,
+    JSON, Markdown, YAML, PNG).  Falls back to ``application/octet-
+    stream`` for unknowns — keeps the JSON-LD block well-typed without
+    surprising consumers with empty strings.
+    """
+
+    suffix = path.rsplit(".", 1)[-1].lower() if "." in path else ""
+    return {
+        "parquet": "application/vnd.apache.parquet",
+        "csv": "text/csv",
+        "json": "application/json",
+        "md": "text/markdown",
+        "yaml": "application/x-yaml",
+        "yml": "application/x-yaml",
+        "png": "image/png",
+    }.get(suffix, "application/octet-stream")
 
 
 def render_cover(filename: str) -> str:

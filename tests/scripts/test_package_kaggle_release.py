@@ -609,3 +609,26 @@ def test_committed_kaggle_metadata_matches_fresh_regeneration(tmp_path: Path) ->
     for r in flat_csvs:
         assert r["schema"]["fields"][0]["name"] == "split"
         assert r["schema"]["fields"][-1]["name"] == "converted_within_90_days"
+
+    # Per-relational-table parquet resources now carry per-column
+    # descriptions sourced from release/docs/relational_table_schemas.csv
+    # — the preview's col__desc cells were previously empty for these.
+    touches_resources = [
+        r for r in parsed["resources"] if r["path"].endswith("/tables/touches.parquet")
+    ]
+    assert len(touches_resources) == len(packager.DEFAULT_TIERS)
+    for r in touches_resources:
+        for fd in r["schema"]["fields"]:
+            assert fd.get("description"), f"touches.{fd['name']} missing description"
+
+    # Agent-reviewable root resources land on the published file list.
+    paths = {r["path"] for r in parsed["resources"]}
+    assert "metrics.json" in paths
+    assert "claims_register.md" in paths
+    assert "claims_register.json" in paths
+    assert "docs/break_me_guide.md" in paths
+    assert "docs/v1_acceptance_gates_bands.yaml" in paths
+    assert "docs/relational_table_schemas.csv" in paths
+    # Per-tier metrics.json is also enumerated.
+    for tier in packager.DEFAULT_TIERS:
+        assert f"{tier}/metrics.json" in paths

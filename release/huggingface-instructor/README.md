@@ -55,6 +55,8 @@ on the public bundle.
 │   ├── tables/*.parquet              # full-horizon tables (incl. customers, subscriptions)
 │   ├── tasks/converted_within_90_days/{train,valid,test}.parquet
 │   └── metadata/                     # world_spec, graph.{graphml,json}, latent_registry, etc.
+├── docs/                             # vendored DGP / leakage / break-me docs (agent-readable)
+├── claims_register.{md,json}         # claims → backing-artifact map (agent-readable)
 ├── README.md                         # this file (HF dataset card)
 ├── dataset-cover-image.png           # dataset thumbnail
 └── LICENSE
@@ -142,6 +144,25 @@ customers = pd.read_parquet(
   version stamped in `manifest.json` along with SHA-256 hashes for
   every parquet file.
 - **Bundle schema version.**  5 (matches the public dataset).
+
+## Agent-reviewable artifacts
+
+The companion ships the same self-contained review surface as the public
+bundle so an AI reviewer (or a researcher without GitHub access) can
+verify claims locally:
+
+- ``docs/`` — vendored copies of the generation method, leakage probes
+  contract, acceptance bands, break-me guide, v2 decision log, and the
+  per-relational-table column descriptions (`relational_table_schemas.csv`).
+- ``claims_register.{md,json}`` — every numerical / structural claim
+  in this card paired with the artifact and path that backs it.
+- ``intermediate/manifest.json`` and ``intermediate/feature_dictionary.csv``
+  — SHA-256-hashed provenance and the authoritative column spec.
+
+The instructor companion intentionally omits the top-level
+``metrics.json`` (cross-tier medians would be misleading for a single
+tier).  Use the public dataset's ``metrics.json`` when comparing tier
+behaviour.
 
 ## Maintenance, license
 
