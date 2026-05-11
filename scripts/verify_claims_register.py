@@ -53,6 +53,19 @@ DEFAULT_SOURCE: Final[Path] = DEFAULT_RELEASE_DIR / "claims_register_source.yaml
 TIER_PLACEHOLDER: Final[str] = "<tier>"
 TIERS: Final[tuple[str, ...]] = ("intro", "intermediate", "advanced")
 
+#: Path prefixes that are gitignored — i.e. live only in a built
+#: bundle, not in the source tree.  Missing files under these prefixes
+#: are demoted from "hard error" to "soft skip" so the verifier works
+#: on a fresh checkout where the bundles haven't been generated yet.
+#: ``--strict`` upgrades the soft skips back to errors (use on a
+#: release-readiness run where the bundles are expected to be present).
+_GITIGNORED_BUNDLE_PREFIXES: Final[tuple[str, ...]] = (
+    "release/intro/",
+    "release/intermediate/",
+    "release/advanced/",
+    "release/intermediate_instructor/",
+)
+
 #: Absolute tolerance for numeric comparisons.  The README rounds
 #: medians to three decimals; metrics.json keeps four; the recipe is
 #: exact.  ``1e-3`` is loose enough to absorb the rounding without
@@ -113,6 +126,18 @@ def _is_opaque_path(path: str) -> bool:
     if not path or path.strip().lower() == "n/a":
         return True
     return any(token in path for token in _OPAQUE_PATH_TOKENS)
+
+
+def _is_gitignored_bundle_path(artifact: str, strict: bool) -> bool:
+    """Is ``artifact`` under one of the gitignored bundle dirs?
+
+    ``strict=True`` defeats the soft-skip — release-readiness CI passes
+    ``--strict`` because the bundles MUST be present at release time.
+    """
+
+    if strict:
+        return False
+    return any(artifact.startswith(prefix) for prefix in _GITIGNORED_BUNDLE_PREFIXES)
 
 
 def _split_json_path(json_path: str) -> list[str]:
@@ -309,7 +334,7 @@ def _verify_one(
     if _is_opaque_path(path_template) and TIER_PLACEHOLDER not in artifact_template:
         # Still check the artifact exists when it has a concrete path.
         path = REPO_ROOT / artifact_template
-        if not path.is_file():
+        if not path.is_file() and not _is_gitignored_bundle_path(artifact_template, strict):
             failures.append(
                 VerificationFailure(cid, f"backing artifact does not exist: {artifact_template}")
             )
@@ -320,13 +345,16 @@ def _verify_one(
     for tier, artifact, path in _expand_tiers(artifact_template, path_template):
         artifact_path = REPO_ROOT / artifact
         if not artifact_path.is_file():
-            # Per-tier metrics.json + per-tier manifest.json are
-            # produced by separate build steps; absent on a fresh
-            # checkout where the bundle dirs haven't been built.
-            # ``--strict`` upgrades this to an error.
-            msg = f"backing artifact does not exist: {artifact} (tier={tier})"
-            if strict:
-                failures.append(VerificationFailure(cid, msg))
+            # Bundle dirs are gitignored — missing files there are
+            # soft-skipped unless ``--strict`` is set.  Anything else
+            # missing is a real bug (committed artifact gone) and
+            # always fails.
+            if _is_gitignored_bundle_path(artifact, strict):
+                continue
+            msg = f"backing artifact does not exist: {artifact}"
+            if tier is not None:
+                msg += f" (tier={tier})"
+            failures.append(VerificationFailure(cid, msg))
             continue
 
         data = _load_artifact(artifact_path)
