@@ -42,9 +42,14 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _preview_common import (  # noqa: E402 — must follow sys.path insert
+    JSONLD_CITATION,
+    JSONLD_CREATOR,
+    JSONLD_VERSION,
+    LICENSE_URL_MIT,
     escape,
     plural,
     render_cover,
+    render_jsonld_dataset,
     serve,
 )
 from _release_common import replace_file  # noqa: E402
@@ -255,13 +260,14 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helve
 """
 
 
-def _wrap_html(*, title: str, body: str) -> str:
+def _wrap_html(*, title: str, body: str, jsonld: str) -> str:
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <title>HF preview — {escape(title)}</title>
   <style>{_PAGE_CSS}</style>
+  {jsonld}
 </head>
 <body>
 <main class="container">
@@ -270,6 +276,51 @@ def _wrap_html(*, title: str, body: str) -> str:
 </body>
 </html>
 """
+
+
+def _jsonld_for_hf(frontmatter: dict[str, Any], variant: str) -> str:
+    """Build the schema.org ``Dataset`` JSON-LD block for HF previews.
+
+    Sources: pretty_name / license / tags / configs from the YAML
+    frontmatter.  License URL, citation, creator, version come from
+    shared constants in ``_preview_common``.  ``distribution``
+    enumerates the data_files paths declared under ``configs`` —
+    short, deterministic, and reads as the same agent-facing shape
+    Kaggle surfaces.
+
+    Description is variant-agnostic on purpose — including the
+    variant token here would diverge the JSON-LD between public /
+    instructor renderings, breaking the variant-localisation
+    invariant the regression suite asserts.  Variant is implied by
+    the distribution_paths and the page footer.
+    """
+
+    keywords = list(frontmatter.get("tags", []) or [])
+    configs = frontmatter.get("configs", []) or []
+    distribution_paths: list[str] = []
+    for config in configs:
+        for df in config.get("data_files", []) or []:
+            path = df.get("path")
+            if path:
+                distribution_paths.append(str(path))
+    distribution_paths = distribution_paths[:12]
+
+    same_as = [
+        "https://github.com/leadforge-dev/leadforge",
+        "https://huggingface.co/datasets/leadforge/leadforge-lead-scoring-v1",
+    ]
+
+    return render_jsonld_dataset(
+        name=str(frontmatter.get("pretty_name", "")),
+        description="Hugging Face preview of leadforge-lead-scoring-v1.",
+        license_url=LICENSE_URL_MIT,
+        keywords=keywords,
+        citation=JSONLD_CITATION,
+        distribution_paths=distribution_paths,
+        same_as=same_as,
+        creator=JSONLD_CREATOR,
+        version=JSONLD_VERSION,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -311,6 +362,7 @@ def render_hf_html(
     return _wrap_html(
         title=str(doc.frontmatter.get("pretty_name", "")),
         body="\n".join(p for p in body_parts if p),
+        jsonld=_jsonld_for_hf(doc.frontmatter, variant),
     )
 
 

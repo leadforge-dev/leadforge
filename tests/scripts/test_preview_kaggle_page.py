@@ -184,6 +184,26 @@ def test_render_escapes_html_in_field_values() -> None:
     assert "&lt;script&gt;" in html
 
 
+def test_render_emits_jsonld_dataset_block() -> None:
+    """A schema.org ``Dataset`` JSON-LD block lands in the ``<head>``
+    so agent reviewers can read structured metadata without parsing the
+    bespoke tables further down the page."""
+
+    html = preview.render_kaggle_html(_minimal_metadata(), "dataset-cover-image.png")
+    assert '<script type="application/ld+json">' in html
+    assert '"@type": "Dataset"' in html
+    assert '"name": "TestSet: Lead Scoring Mock"' in html
+    # license is the SPDX URL, not the bare name.
+    assert "https://opensource.org/licenses/MIT" in html
+
+
+def test_jsonld_is_in_head_not_body() -> None:
+    html = preview.render_kaggle_html(_minimal_metadata(), "dataset-cover-image.png")
+    head, body = html.split("<body>", 1)
+    assert '<script type="application/ld+json">' in head
+    assert '<script type="application/ld+json">' not in body
+
+
 # ---------------------------------------------------------------------------
 # Schema-fields exhaustiveness (audit-style, against committed metadata)
 # ---------------------------------------------------------------------------

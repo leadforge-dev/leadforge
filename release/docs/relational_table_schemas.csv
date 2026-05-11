@@ -1,0 +1,65 @@
+table,column,dtype,description,bundle_visibility
+accounts,account_id,string,"Opaque account identifier (e.g. ``acct_000001``). Primary key.",public+instructor
+accounts,company_name,string,"Synthetic display name for the account (fictional). Not a feature in the snapshot.",public+instructor
+accounts,industry,string,"Industry vertical of the buying organisation; one of the recipe's industry vocabulary.",public+instructor
+accounts,region,string,"Geographic region of the account's headquarters (e.g. ``US``, ``UK``).",public+instructor
+accounts,employee_band,string,"Banded employee headcount of the account (e.g. ``200-500``, ``500-1000``, ``1000-2000``).",public+instructor
+accounts,estimated_revenue_band,string,"Banded estimated annual revenue of the account.",public+instructor
+accounts,process_maturity_band,string,"Banded internal process-maturity score of the account (drives ICP fit).",public+instructor
+accounts,created_at,string,"ISO-8601 timestamp when the account was first observed (synthetic creation time).",public+instructor
+contacts,contact_id,string,"Opaque contact identifier (e.g. ``cont_000001``). Primary key.",public+instructor
+contacts,account_id,string,"FK to ``accounts.account_id`` — the buying organisation this contact belongs to.",public+instructor
+contacts,job_title,string,"Free-text job title (fictional). Used only for narrative colour; not a feature.",public+instructor
+contacts,role_function,string,"Functional area of the contact (e.g. ``finance``, ``ops``, ``it``, ``procurement``).",public+instructor
+contacts,seniority,string,"Seniority band of the contact (e.g. ``c_level``, ``vp``, ``director``, ``manager``).",public+instructor
+contacts,buyer_role,string,"Buyer-role classification (``economic_buyer``, ``champion``, ``technical_evaluator``, ``end_user``).",public+instructor
+contacts,email_domain_type,string,"Type of email domain (e.g. ``corporate``, ``free``); never resolves to a real domain.",public+instructor
+contacts,created_at,string,"ISO-8601 timestamp when the contact record was first observed.",public+instructor
+leads,lead_id,string,"Opaque lead identifier (e.g. ``lead_000001``). Primary key for the lead-scoring task.",public+instructor
+leads,contact_id,string,"FK to ``contacts.contact_id`` — the primary contact attached to this lead.",public+instructor
+leads,account_id,string,"FK to ``accounts.account_id`` — the buying organisation this lead belongs to.",public+instructor
+leads,lead_created_at,string,"ISO-8601 timestamp at which the lead was created (= snapshot anchor t=0).",public+instructor
+leads,lead_source,string,"Origination source of the lead (e.g. ``inbound_form``, ``sdr_outbound``, ``partner``).",public+instructor
+leads,first_touch_channel,string,"Marketing channel responsible for the first recorded touch.",public+instructor
+leads,owner_rep_id,string,"Opaque sales-rep id (e.g. ``rep_000001``) owning the lead at snapshot time.",public+instructor
+leads,current_stage,string,"Funnel stage at snapshot time. REDACTED in public bundles — the post-snapshot stage trajectory would leak the outcome.",instructor_only
+leads,is_sql,bool,"Whether the lead has been marked Sales Qualified by snapshot time. REDACTED in public bundles — derived from post-snapshot SDR activity.",instructor_only
+leads,converted_within_90_days,bool,"Target label (event-derived from a ``closed_won`` event within 90 days). REDACTED from ``tables/leads.parquet`` in public bundles; lives in ``tasks/converted_within_90_days/*.parquet`` instead.",instructor_only
+leads,conversion_timestamp,string,"ISO-8601 timestamp of the ``closed_won`` event, or null. REDACTED in public bundles.",instructor_only
+touches,touch_id,string,"Opaque touch identifier. Primary key.",public+instructor
+touches,lead_id,string,"FK to ``leads.lead_id``.",public+instructor
+touches,touch_timestamp,string,"ISO-8601 timestamp of the touch. Public bundles filter to ``<= lead_created_at + snapshot_day`` per the redaction contract.",public+instructor
+touches,touch_type,string,"Mechanism of the touch (e.g. ``email``, ``call``, ``ad_view``, ``content_download``).",public+instructor
+touches,touch_channel,string,"Marketing/sales channel attribution (e.g. ``paid_search``, ``content``, ``cold_outreach``).",public+instructor
+touches,touch_direction,string,"``inbound`` (lead-initiated) or ``outbound`` (vendor-initiated).",public+instructor
+touches,campaign_id,string,"Opaque campaign identifier attached to the touch, or null when unattributed.",public+instructor
+sessions,session_id,string,"Opaque session identifier. Primary key.",public+instructor
+sessions,lead_id,string,"FK to ``leads.lead_id``.",public+instructor
+sessions,session_timestamp,string,"ISO-8601 timestamp of the session start. Public bundles filter to ``<= lead_created_at + snapshot_day``.",public+instructor
+sessions,session_type,string,"Session type (e.g. ``marketing_site``, ``trial``, ``demo``).",public+instructor
+sessions,page_views,int64,"Total page views during the session.",public+instructor
+sessions,pricing_page_views,int64,"Page views landing on a pricing URL during the session.",public+instructor
+sessions,demo_page_views,int64,"Page views landing on a demo URL during the session.",public+instructor
+sessions,session_duration_seconds,int64,"Session duration in seconds.",public+instructor
+sales_activities,activity_id,string,"Opaque sales-activity identifier. Primary key.",public+instructor
+sales_activities,lead_id,string,"FK to ``leads.lead_id``.",public+instructor
+sales_activities,rep_id,string,"Opaque sales-rep id performing the activity.",public+instructor
+sales_activities,activity_timestamp,string,"ISO-8601 timestamp of the activity. Public bundles filter to ``<= lead_created_at + snapshot_day``.",public+instructor
+sales_activities,activity_type,string,"Activity mechanism (e.g. ``call``, ``email``, ``demo``, ``meeting``).",public+instructor
+sales_activities,activity_outcome,string,"Logged outcome (e.g. ``connected``, ``voicemail``, ``no_answer``, ``meeting_set``).",public+instructor
+opportunities,opportunity_id,string,"Opaque opportunity identifier. Primary key.",public+instructor
+opportunities,lead_id,string,"FK to ``leads.lead_id``.",public+instructor
+opportunities,created_at,string,"ISO-8601 timestamp the opportunity was created. Public bundles filter rows to ``<= lead_created_at + snapshot_day``.",public+instructor
+opportunities,stage,string,"Current stage at snapshot time (e.g. ``prospecting``, ``demo``, ``negotiation``).",public+instructor
+opportunities,estimated_acv,int64,"Estimated annual contract value at snapshot time (USD).",public+instructor
+opportunities,close_outcome,string,"Terminal outcome (``closed_won``/``closed_lost``). REDACTED in public bundles.",instructor_only
+opportunities,closed_at,string,"ISO-8601 timestamp of the terminal close event. REDACTED in public bundles.",instructor_only
+customers,customer_id,string,"Opaque customer identifier. Primary key. Entire ``customers`` table OMITTED from public bundles (its existence reconstructs the conversion label).",instructor_only
+customers,opportunity_id,string,"FK to ``opportunities.opportunity_id`` — the deal that converted into this customer record.",instructor_only
+customers,account_id,string,"FK to ``accounts.account_id``.",instructor_only
+customers,customer_start_at,string,"ISO-8601 timestamp the account became a paying customer.",instructor_only
+subscriptions,subscription_id,string,"Opaque subscription identifier. Primary key. Entire ``subscriptions`` table OMITTED from public bundles.",instructor_only
+subscriptions,customer_id,string,"FK to ``customers.customer_id``.",instructor_only
+subscriptions,plan_name,string,"Subscription plan name (e.g. ``starter``, ``team``, ``enterprise``).",instructor_only
+subscriptions,subscription_start_at,string,"ISO-8601 timestamp the subscription started.",instructor_only
+subscriptions,subscription_status,string,"Subscription status (e.g. ``active``, ``churned``).",instructor_only

@@ -38,9 +38,14 @@ from typing import Any, Final
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _preview_common import (  # noqa: E402 — must follow sys.path insert
+    JSONLD_CITATION,
+    JSONLD_CREATOR,
+    JSONLD_VERSION,
+    LICENSE_URL_MIT,
     escape,
     plural,
     render_cover,
+    render_jsonld_dataset,
     serve,
 )
 from _release_common import replace_file  # noqa: E402
@@ -284,13 +289,14 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 """
 
 
-def _wrap_html(*, title: str, body: str) -> str:
+def _wrap_html(*, title: str, body: str, jsonld: str) -> str:
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <title>Kaggle preview — {escape(title)}</title>
   <style>{_PAGE_CSS}</style>
+  {jsonld}
 </head>
 <body>
 <main class="container">
@@ -299,6 +305,40 @@ def _wrap_html(*, title: str, body: str) -> str:
 </body>
 </html>
 """
+
+
+def _jsonld_for_kaggle(metadata: dict[str, Any]) -> str:
+    """Build the schema.org ``Dataset`` JSON-LD block for Kaggle.
+
+    Sources: title / subtitle / id / keywords / image from the Kaggle
+    metadata.  License URL, citation, creator, version come from
+    shared constants in ``_preview_common`` so the Kaggle and HF
+    previews can't drift on them.  ``distribution`` is a short
+    representative list of file paths so an agent can see the bundle's
+    shape without enumerating every parquet — the full list lives in
+    ``resources[]`` lower on the page.
+    """
+
+    keywords = list(metadata.get("keywords", []))
+    sources = metadata.get("userSpecifiedSources", []) or []
+    same_as = [s["url"] for s in sources if isinstance(s, dict) and s.get("url")]
+
+    resources = metadata.get("resources", [])
+    representative_paths = [r["path"] for r in resources if isinstance(r, dict) and r.get("path")][
+        :12
+    ]
+
+    return render_jsonld_dataset(
+        name=str(metadata.get("title", "")),
+        description=str(metadata.get("subtitle", "")),
+        license_url=LICENSE_URL_MIT,
+        keywords=keywords,
+        citation=JSONLD_CITATION,
+        distribution_paths=representative_paths,
+        same_as=same_as,
+        creator=JSONLD_CREATOR,
+        version=JSONLD_VERSION,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -322,7 +362,11 @@ def render_kaggle_html(metadata: dict[str, Any], cover_image_filename: str) -> s
         _render_sources(metadata),
         _render_footer(metadata),
     ]
-    return _wrap_html(title=metadata.get("title", ""), body="\n".join(p for p in body_parts if p))
+    return _wrap_html(
+        title=metadata.get("title", ""),
+        body="\n".join(p for p in body_parts if p),
+        jsonld=_jsonld_for_kaggle(metadata),
+    )
 
 
 # ---------------------------------------------------------------------------

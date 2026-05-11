@@ -57,6 +57,8 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _release_common import (  # noqa: E402,F401 — must follow sys.path insert
+    AGENT_REVIEWABLE_DOCS_DIR,
+    AGENT_REVIEWABLE_ROOT_FILES,
     GITHUB_BLOB_BASE,
     SOURCE_TREE_BLOCK,
     ValidationError,
@@ -142,11 +144,15 @@ HF_UPLOAD_TREE_BLOCK: Final[str] = """```
 .
 ├── intro/ intermediate/ advanced/    # student_public bundles, one per difficulty tier
 │   ├── manifest.json                 # provenance + file hashes
+│   ├── metrics.json                  # per-tier headline metrics (medians + spreads)
 │   ├── dataset_card.md               # auto-rendered per-bundle card
 │   ├── feature_dictionary.csv        # authoritative column spec
 │   ├── lead_scoring.csv              # flat convenience CSV (all splits)
 │   ├── tables/*.parquet              # 7 snapshot-safe relational tables
 │   └── tasks/converted_within_90_days/{train,valid,test}.parquet
+├── docs/                             # vendored DGP / leakage / break-me docs (agent-readable)
+├── metrics.json                      # top-level cross-tier metrics summary
+├── claims_register.{md,json}         # claims → backing-artifact map (agent-readable)
 ├── README.md                         # this file (HF dataset card)
 ├── dataset-cover-image.png           # dataset thumbnail
 └── LICENSE
@@ -161,6 +167,8 @@ HF_INSTRUCTOR_UPLOAD_TREE_BLOCK: Final[str] = """```
 │   ├── tables/*.parquet              # full-horizon tables (incl. customers, subscriptions)
 │   ├── tasks/converted_within_90_days/{train,valid,test}.parquet
 │   └── metadata/                     # world_spec, graph.{graphml,json}, latent_registry, etc.
+├── docs/                             # vendored DGP / leakage / break-me docs (agent-readable)
+├── claims_register.{md,json}         # claims → backing-artifact map (agent-readable)
 ├── README.md                         # this file (HF dataset card)
 ├── dataset-cover-image.png           # dataset thumbnail
 └── LICENSE
@@ -297,6 +305,25 @@ customers = pd.read_parquet(
   version stamped in `manifest.json` along with SHA-256 hashes for
   every parquet file.
 - **Bundle schema version.**  5 (matches the public dataset).
+
+## Agent-reviewable artifacts
+
+The companion ships the same self-contained review surface as the public
+bundle so an AI reviewer (or a researcher without GitHub access) can
+verify claims locally:
+
+- ``docs/`` — vendored copies of the generation method, leakage probes
+  contract, acceptance bands, break-me guide, v2 decision log, and the
+  per-relational-table column descriptions (`relational_table_schemas.csv`).
+- ``claims_register.{{md,json}}`` — every numerical / structural claim
+  in this card paired with the artifact and path that backs it.
+- ``intermediate/manifest.json`` and ``intermediate/feature_dictionary.csv``
+  — SHA-256-hashed provenance and the authoritative column spec.
+
+The instructor companion intentionally omits the top-level
+``metrics.json`` (cross-tier medians would be misleading for a single
+tier).  Use the public dataset's ``metrics.json`` when comparing tier
+behaviour.
 
 ## Maintenance, license
 
@@ -696,6 +723,37 @@ def assemble_upload_dir(
     license_src = release_dir / "LICENSE"
     if license_src.exists():
         replace_file(license_src, upload_dir / "LICENSE")
+
+    # Agent-reviewable root files (metrics.json, claims_register.*).
+    # The public variant ships the cross-tier ``metrics.json``; the
+    # instructor companion intentionally omits it (single-tier dataset
+    # — cross-tier numbers would mislead).  Both variants ship the
+    # claims register and the vendored docs subtree so an AI reviewer
+    # never has to follow github.com/blob/main/... links to verify
+    # whatever's on the README.
+    public_root_files = {
+        "metrics.json",
+        "claims_register.md",
+        "claims_register.json",
+        "claims_register_source.yaml",
+    }
+    instructor_root_files = {
+        "claims_register.md",
+        "claims_register.json",
+        "claims_register_source.yaml",
+    }
+    allow_for_variant = public_root_files if variant == "public" else instructor_root_files
+    for rel, _required in AGENT_REVIEWABLE_ROOT_FILES:
+        if rel not in allow_for_variant:
+            continue
+        src = release_dir / rel
+        if src.is_file():
+            replace_file(src, upload_dir / rel)
+
+    # Vendored docs subtree.
+    docs_src = release_dir / AGENT_REVIEWABLE_DOCS_DIR
+    if docs_src.is_dir():
+        replace_dir(docs_src, upload_dir / AGENT_REVIEWABLE_DOCS_DIR)
 
     # Per-tier bundles — full directory copies.  The instructor variant
     # flattens its source dir name.

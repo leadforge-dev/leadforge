@@ -62,6 +62,29 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
 
+  release-artifacts-sync:
+    name: Release artifacts in sync (PR 7.2.1)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      # Each script's --check mode reports drift as exit-code-1 without
+      # touching disk; the verifier is exit-code-1 on a real claim drift.
+      # Running them in CI is the only way the audit-sync guarantee
+      # actually holds — without this job, a stale metrics.json /
+      # claims_register / docs/ copy could land on main unnoticed.
+      - name: docs/ vendored copies are in sync
+        run: python scripts/sync_release_docs.py --check
+      - name: release/metrics.json + per-tier metrics.json are in sync
+        run: python scripts/build_release_metrics.py --check
+      - name: release/claims_register.{md,json} are in sync with source.yaml
+        run: python scripts/build_claims_register.py --check
+      - name: every claim in claims_register_source.yaml resolves & values match
+        run: python scripts/verify_claims_register.py
+
   validate-dataset:
     name: Validate lead scoring dataset
     runs-on: ubuntu-latest

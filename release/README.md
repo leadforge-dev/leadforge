@@ -29,13 +29,17 @@ rose materially in 2024).
 release/
 ├── intro/ intermediate/ advanced/    # student_public bundles, one per difficulty tier
 │   ├── manifest.json                 # provenance + file hashes
+│   ├── metrics.json                  # per-tier headline metrics (medians + spreads)
 │   ├── dataset_card.md               # auto-rendered per-bundle card
 │   ├── feature_dictionary.csv        # authoritative column spec
 │   ├── lead_scoring.csv              # flat convenience CSV (all splits)
 │   ├── tables/*.parquet              # 7 snapshot-safe relational tables
 │   └── tasks/converted_within_90_days/{train,valid,test}.parquet
 ├── intermediate_instructor/          # research companion: full-horizon tables + metadata/
+├── docs/                             # vendored DGP / leakage / break-me docs (agent-readable)
 ├── notebooks/                        # 01 baseline · 02 relational · 03 leakage · 04 calibration
+├── metrics.json                      # top-level cross-tier metrics summary
+├── claims_register.{md,json}         # claims → backing-artifact map (agent-readable)
 └── validation/                       # validation_report.{json,md} + figures
 ```
 
@@ -44,6 +48,35 @@ release/
 hidden causal structure (DAG, latent registry, mechanism summary)
 under `metadata/`. The full layout is documented in each bundle's
 `manifest.json`.
+
+### Agent-reviewable artifacts
+
+The published bundle is self-contained for AI review and offline
+auditing — every numeric / structural claim on this page can be
+verified without following an external link:
+
+- **`metrics.json` (root) + `<tier>/metrics.json`** — deterministic
+  JSON view of the headline LR AUC / AP / P@100 / Brier / conversion
+  rate / cohort-shift / cross-tier-ordering medians, with JSON-path
+  back-references to `validation/validation_report.json` (the
+  source of truth).
+- **`claims_register.{md,json}`** — every numerical or structural
+  claim on this page paired with the artifact and path that backs it.
+  Rendered from `claims_register_source.yaml` by
+  `scripts/build_claims_register.py`.
+- **`docs/`** — vendored copies of `generation_method.md`,
+  `channel_signal_audit.md`, `break_me_guide.md`,
+  `feature_dictionary.md`, `v1_acceptance_gates_bands.yaml`,
+  `v2_decision_log.md`, plus a hand-authored
+  `relational_table_schemas.csv` documenting every column of every
+  relational table.  These match the GitHub-blob links cited below but
+  ship inside the bundle so a reviewer never needs network access.
+- **`<tier>/manifest.json`** — SHA-256 hash for every file plus the
+  full redaction contract (`structural_redactions.columns`,
+  `omitted_tables`, `relational_snapshot_safe`, `snapshot_day`).
+- Kaggle / HuggingFace preview pages additionally inject a
+  `schema.org/Dataset` JSON-LD block in their `<head>` for agent
+  ingestion without HTML parsing.
 
 ## Quick start
 

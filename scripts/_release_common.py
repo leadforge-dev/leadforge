@@ -95,13 +95,17 @@ SOURCE_TREE_BLOCK: Final[str] = """```
 release/
 ├── intro/ intermediate/ advanced/    # student_public bundles, one per difficulty tier
 │   ├── manifest.json                 # provenance + file hashes
+│   ├── metrics.json                  # per-tier headline metrics (medians + spreads)
 │   ├── dataset_card.md               # auto-rendered per-bundle card
 │   ├── feature_dictionary.csv        # authoritative column spec
 │   ├── lead_scoring.csv              # flat convenience CSV (all splits)
 │   ├── tables/*.parquet              # 7 snapshot-safe relational tables
 │   └── tasks/converted_within_90_days/{train,valid,test}.parquet
 ├── intermediate_instructor/          # research companion: full-horizon tables + metadata/
+├── docs/                             # vendored DGP / leakage / break-me docs (agent-readable)
 ├── notebooks/                        # 01 baseline · 02 relational · 03 leakage · 04 calibration
+├── metrics.json                      # top-level cross-tier metrics summary
+├── claims_register.{md,json}         # claims → backing-artifact map (agent-readable)
 └── validation/                       # validation_report.{json,md} + figures
 ```"""
 
@@ -299,3 +303,64 @@ def load_manifest(path: Path) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError(f"manifest.json at {path} is not a JSON object")
     return payload
+
+
+# ---------------------------------------------------------------------------
+# Per-table column descriptions (vendored under release/docs/)
+# ---------------------------------------------------------------------------
+
+#: Path within the release tree of the per-table column descriptions
+#: hand-authored CSV.  Keyed by ``(table, column)``; consumed by the
+#: Kaggle packager so ``resources[].schema.fields[].description`` is
+#: populated for parquet tables (the preview's ``col__desc`` column
+#: was previously empty for relational tables — a thin spot for AI
+#: reviewers who can't open the parquet directly).
+RELATIONAL_TABLE_SCHEMAS_REL: Final[Path] = Path("docs/relational_table_schemas.csv")
+
+
+def load_relational_column_descriptions(release_dir: Path) -> dict[tuple[str, str], str]:
+    """Load per-table column descriptions keyed by ``(table, column)``.
+
+    Returns an empty dict if the CSV is missing — callers should treat
+    the description as optional (matches the pre-PR behaviour where
+    parquet schemas shipped without column docs).
+    """
+
+    import csv
+
+    path = release_dir / RELATIONAL_TABLE_SCHEMAS_REL
+    if not path.is_file():
+        return {}
+    descriptions: dict[tuple[str, str], str] = {}
+    with path.open(encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            table = row.get("table", "").strip()
+            column = row.get("column", "").strip()
+            description = (row.get("description") or "").strip()
+            if table and column and description:
+                descriptions[(table, column)] = description
+    return descriptions
+
+
+# ---------------------------------------------------------------------------
+# Agent-reviewable artifact set
+# ---------------------------------------------------------------------------
+
+#: Files at the release root that should ship in every platform's upload
+#: tree to make the bundle self-contained for agent / human review
+#: without needing GitHub access.  Path tuples are ``(source_rel,
+#: optional_required)``: ``required=True`` causes the packager to
+#: surface a ValidationError if the file is missing at packaging time
+#: (these are committed artifacts; their absence indicates the release
+#: was incomplete).
+AGENT_REVIEWABLE_ROOT_FILES: Final[tuple[tuple[str, bool], ...]] = (
+    ("metrics.json", True),
+    ("claims_register.md", True),
+    ("claims_register.json", True),
+    ("claims_register_source.yaml", False),
+)
+
+#: Sub-directory under the release root containing vendored docs
+#: (DGP description, leakage / acceptance bands, break-me guide, etc.).
+#: Copied wholesale into the upload tree when present.
+AGENT_REVIEWABLE_DOCS_DIR: Final[str] = "docs"
