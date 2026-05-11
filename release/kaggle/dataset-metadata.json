@@ -2732,6 +2732,10 @@
       "path": "claims_register_source.yaml"
     },
     {
+      "description": "Vendoring guide for the docs/ subtree — explains that these files are mirrored copies of docs/release/ in the source repo, edits go in the source, and the sync script refuses to clobber locally-edited copies.",
+      "path": "docs/README.md"
+    },
+    {
       "description": "Adversarial-framing guide: nine breakage patterns (leakage, split contamination, ranking inversions, calibration drift) with worked-example detection recipes.",
       "path": "docs/break_me_guide.md"
     },

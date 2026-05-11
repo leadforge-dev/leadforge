@@ -39,6 +39,7 @@ import argparse
 import shutil
 import sys
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
@@ -79,17 +80,42 @@ def _bytes(path: Path) -> bytes:
     return path.read_bytes()
 
 
-def sync_docs(repo_root: Path, *, check_only: bool) -> tuple[list[Path], list[Path]]:
+@dataclass(frozen=True)
+class _SyncResult:
+    """Outcome of a sync run.
+
+    * ``stale`` — destinations whose content differs from the source
+      (overwritten unless ``check_only=True``).
+    * ``missing_sources`` — sources declared in ``VENDORED_DOCS`` but
+      absent on disk.
+    * ``orphan_destinations`` — destinations whose content differs from
+      the source AND whose mtime is newer than the source.  These look
+      like local edits to the vendored copy; the sync refuses to clobber
+      them unless ``force=True``, raising a clean error that points the
+      reader at the source path.
+    """
+
+    stale: list[Path]
+    missing_sources: list[Path]
+    orphan_destinations: list[Path]
+
+
+def sync_docs(repo_root: Path, *, check_only: bool, force: bool = False) -> _SyncResult:
     """Sync the vendored docs.
 
-    Returns ``(stale, missing_sources)``: ``stale`` is the list of
-    destination paths whose content differs from the source (and were
-    overwritten when ``check_only`` is False); ``missing_sources`` is
-    the list of source paths the caller declared but that don't exist.
+    Refuses to overwrite a destination that's newer than its source —
+    that pattern means a contributor has edited the vendored copy
+    (``release/docs/X.md``) rather than the canonical source
+    (``docs/release/X.md``) and the sync would silently destroy their
+    edit.  ``force=True`` bypasses the check (used by the
+    ``--force`` CLI flag when the maintainer has confirmed the edits
+    were intentional and is OK with discarding them).
     """
 
     stale: list[Path] = []
     missing_sources: list[Path] = []
+    orphans: list[Path] = []
+
     for src_rel, dst_rel in VENDORED_DOCS:
         src = repo_root / src_rel
         dst = repo_root / dst_rel
@@ -97,12 +123,17 @@ def sync_docs(repo_root: Path, *, check_only: bool) -> tuple[list[Path], list[Pa
             missing_sources.append(src_rel)
             continue
         src_bytes = _bytes(src)
-        if not dst.is_file() or _bytes(dst) != src_bytes:
-            stale.append(dst_rel)
-            if not check_only:
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(src, dst)
-    return stale, missing_sources
+        if dst.is_file() and _bytes(dst) == src_bytes:
+            continue
+        stale.append(dst_rel)
+        if dst.is_file() and dst.stat().st_mtime > src.stat().st_mtime and not force:
+            orphans.append(dst_rel)
+            continue
+        if not check_only:
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+
+    return _SyncResult(stale=stale, missing_sources=missing_sources, orphan_destinations=orphans)
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -116,23 +147,46 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="report stale copies as an exit-code-1 failure without overwriting (CI use)",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help=(
+            "overwrite destinations even when they appear to have been edited "
+            "in place (mtime newer than source).  Default is to refuse and "
+            "exit-code-1 so an accidental edit to release/docs/ is not silently "
+            "discarded."
+        ),
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
-    stale, missing = sync_docs(REPO_ROOT, check_only=args.check)
+    result = sync_docs(REPO_ROOT, check_only=args.check, force=args.force)
 
-    if missing:
+    if result.missing_sources:
         print("error: source docs missing:", file=sys.stderr)
-        for path in missing:
+        for path in result.missing_sources:
             print(f"  - {path}", file=sys.stderr)
         return 2
 
+    if result.orphan_destinations and not args.force:
+        print(
+            "error: release/docs/ destinations look locally edited "
+            "(mtime > source mtime).  Vendored docs are derived from "
+            "docs/release/; edit the source there, then re-run this "
+            "script.  Pass --force to discard the edits and overwrite "
+            "from source:",
+            file=sys.stderr,
+        )
+        for path in result.orphan_destinations:
+            print(f"  - {path}", file=sys.stderr)
+        return 1
+
     if args.check:
-        if stale:
+        if result.stale:
             print("error: release/docs/ is stale:", file=sys.stderr)
-            for path in stale:
+            for path in result.stale:
                 print(f"  - {path}", file=sys.stderr)
             print(
                 "run `python scripts/sync_release_docs.py` to refresh them.",
@@ -142,8 +196,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("release/docs/ is up to date.", file=sys.stderr)
         return 0
 
-    if stale:
-        for path in stale:
+    if result.stale:
+        for path in result.stale:
             print(f"updated {path}", file=sys.stderr)
     else:
         print("release/docs/ is already up to date.", file=sys.stderr)

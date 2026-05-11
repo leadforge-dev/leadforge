@@ -79,20 +79,43 @@ def _minimal_report() -> dict:
     }
 
 
-def _write_minimal_release(tmp_path: Path) -> tuple[Path, Path]:
+def _minimal_profiles_yaml() -> str:
+    """Stand-in for ``leadforge/recipes/.../difficulty_profiles.yaml``."""
+
+    return """\
+intro:
+  signal_strength: 0.90
+  noise_scale: 0.10
+  missing_rate: 0.02
+intermediate:
+  signal_strength: 0.70
+  noise_scale: 0.30
+  missing_rate: 0.08
+advanced:
+  signal_strength: 0.50
+  noise_scale: 0.55
+  missing_rate: 0.18
+"""
+
+
+def _write_minimal_release(tmp_path: Path) -> tuple[Path, Path, Path]:
     release_dir = tmp_path / "release"
     (release_dir / "validation").mkdir(parents=True)
     report_path = release_dir / "validation" / "validation_report.json"
     report_path.write_text(json.dumps(_minimal_report()), encoding="utf-8")
+    profiles_path = tmp_path / "difficulty_profiles.yaml"
+    profiles_path.write_text(_minimal_profiles_yaml(), encoding="utf-8")
     for tier in ("intro", "intermediate", "advanced"):
         (release_dir / tier).mkdir()
-    return release_dir, report_path
+    return release_dir, report_path, profiles_path
 
 
 def test_top_level_payload_contains_expected_keys(tmp_path: Path) -> None:
     mod = _load_module()
-    release_dir, report_path = _write_minimal_release(tmp_path)
-    stale, top = mod.write_metrics(release_dir, report_path, check_only=False)
+    release_dir, report_path, profiles_path = _write_minimal_release(tmp_path)
+    stale, top = mod.write_metrics(
+        release_dir, report_path, check_only=False, profiles_path=profiles_path
+    )
     assert "tiers" in top
     assert set(top["tiers"]) == {"intro", "intermediate", "advanced"}
     assert top["release_id"] == "leadforge-lead-scoring-v1"
@@ -102,8 +125,8 @@ def test_top_level_payload_contains_expected_keys(tmp_path: Path) -> None:
 
 def test_per_tier_files_written_when_dir_exists(tmp_path: Path) -> None:
     mod = _load_module()
-    release_dir, report_path = _write_minimal_release(tmp_path)
-    mod.write_metrics(release_dir, report_path, check_only=False)
+    release_dir, report_path, profiles_path = _write_minimal_release(tmp_path)
+    mod.write_metrics(release_dir, report_path, check_only=False, profiles_path=profiles_path)
     for tier in ("intro", "intermediate", "advanced"):
         path = release_dir / tier / "metrics.json"
         assert path.is_file()
@@ -115,24 +138,28 @@ def test_per_tier_files_written_when_dir_exists(tmp_path: Path) -> None:
 
 def test_precision_at_100_median_attached_to_per_tier_metrics(tmp_path: Path) -> None:
     mod = _load_module()
-    release_dir, report_path = _write_minimal_release(tmp_path)
-    mod.write_metrics(release_dir, report_path, check_only=False)
+    release_dir, report_path, profiles_path = _write_minimal_release(tmp_path)
+    mod.write_metrics(release_dir, report_path, check_only=False, profiles_path=profiles_path)
     intro = json.loads((release_dir / "intro" / "metrics.json").read_text(encoding="utf-8"))
     assert intro["medians"]["precision_at_100"] == 0.80
 
 
 def test_idempotent_writes(tmp_path: Path) -> None:
     mod = _load_module()
-    release_dir, report_path = _write_minimal_release(tmp_path)
-    mod.write_metrics(release_dir, report_path, check_only=False)
-    stale, _ = mod.write_metrics(release_dir, report_path, check_only=False)
+    release_dir, report_path, profiles_path = _write_minimal_release(tmp_path)
+    mod.write_metrics(release_dir, report_path, check_only=False, profiles_path=profiles_path)
+    stale, _ = mod.write_metrics(
+        release_dir, report_path, check_only=False, profiles_path=profiles_path
+    )
     assert stale == []
 
 
 def test_check_mode_flags_drift_on_missing_files(tmp_path: Path) -> None:
     mod = _load_module()
-    release_dir, report_path = _write_minimal_release(tmp_path)
-    stale, _ = mod.write_metrics(release_dir, report_path, check_only=True)
+    release_dir, report_path, profiles_path = _write_minimal_release(tmp_path)
+    stale, _ = mod.write_metrics(
+        release_dir, report_path, check_only=True, profiles_path=profiles_path
+    )
     assert stale  # nothing written yet
     assert not (release_dir / "metrics.json").is_file()
 
@@ -142,11 +169,13 @@ def test_skips_tier_dir_when_absent(tmp_path: Path) -> None:
     must skip silently rather than error."""
 
     mod = _load_module()
-    release_dir, report_path = _write_minimal_release(tmp_path)
+    release_dir, report_path, profiles_path = _write_minimal_release(tmp_path)
     # Remove the bundle dirs so only the top-level path can be written.
     for tier in ("intro", "intermediate", "advanced"):
         (release_dir / tier).rmdir()
-    stale, _ = mod.write_metrics(release_dir, report_path, check_only=False)
+    stale, _ = mod.write_metrics(
+        release_dir, report_path, check_only=False, profiles_path=profiles_path
+    )
     # Top-level file is the only one stale (and now written).
     assert (release_dir / "metrics.json").is_file()
     for tier in ("intro", "intermediate", "advanced"):

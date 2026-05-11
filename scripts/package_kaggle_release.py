@@ -690,6 +690,11 @@ def build_tier_resources(
 #: Same map used by both the metadata builder and the upload-tree
 #: assembler so the list of agent-reviewable files is single-sourced.
 _AGENT_DOC_DESCRIPTIONS: Final[dict[str, str]] = {
+    "docs/README.md": (
+        "Vendoring guide for the docs/ subtree — explains that these files are "
+        "mirrored copies of docs/release/ in the source repo, edits go in the "
+        "source, and the sync script refuses to clobber locally-edited copies."
+    ),
     "docs/generation_method.md": (
         "Generation method (DGP description) — what is and isn't modelled by the simulator."
     ),

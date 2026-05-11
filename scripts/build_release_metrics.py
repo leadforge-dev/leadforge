@@ -37,20 +37,44 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Final
 
+import yaml
+
 REPO_ROOT: Final[Path] = Path(__file__).resolve().parent.parent
 
 DEFAULT_RELEASE_DIR: Final[Path] = REPO_ROOT / "release"
 DEFAULT_REPORT_PATH: Final[Path] = DEFAULT_RELEASE_DIR / "validation" / "validation_report.json"
+DEFAULT_RECIPE_PROFILES_PATH: Final[Path] = (
+    REPO_ROOT / "leadforge" / "recipes" / "b2b_saas_procurement_v1" / "difficulty_profiles.yaml"
+)
 
-#: Per-tier "difficulty knobs" surfaced in the README.  Sourced once
-#: here so the per-tier metrics file can include them inline; if the
-#: recipe ever changes these, update both this constant and the
-#: README's "Dataset summary" table.
-DIFFICULTY_KNOBS: Final[dict[str, dict[str, float]]] = {
-    "intro": {"signal_strength": 0.90, "noise_scale": 0.10, "missing_rate": 0.02},
-    "intermediate": {"signal_strength": 0.70, "noise_scale": 0.30, "missing_rate": 0.08},
-    "advanced": {"signal_strength": 0.50, "noise_scale": 0.55, "missing_rate": 0.18},
-}
+#: Knob fields surfaced alongside the medians.  Read live from the
+#: recipe YAML — hardcoding them in this script invited drift the
+#: moment someone retuned the difficulty profiles without thinking to
+#: re-edit a metrics builder.
+_KNOB_FIELDS: Final[tuple[str, ...]] = ("signal_strength", "noise_scale", "missing_rate")
+
+
+def load_difficulty_knobs(profiles_path: Path) -> dict[str, dict[str, float]]:
+    """Read the per-tier difficulty knobs from the recipe YAML.
+
+    Only the three knob fields surfaced in the README's "Dataset
+    summary" table are extracted; everything else in the recipe
+    profile (conversion_rate_range, outlier_rate, category boosts) is
+    ignored.  Missing the YAML or a tier raises — we'd rather fail
+    loud than ship a metrics.json with empty knobs.
+    """
+
+    parsed = yaml.safe_load(profiles_path.read_text(encoding="utf-8"))
+    if not isinstance(parsed, dict):
+        raise ValueError(f"{profiles_path}: expected top-level mapping")
+    knobs: dict[str, dict[str, float]] = {}
+    for tier in ("intro", "intermediate", "advanced"):
+        tier_block = parsed.get(tier)
+        if not isinstance(tier_block, dict):
+            raise ValueError(f"{profiles_path}: missing or non-mapping tier {tier!r}")
+        knobs[tier] = {field: float(tier_block[field]) for field in _KNOB_FIELDS}
+    return knobs
+
 
 TIER_ORDER: Final[tuple[str, ...]] = ("intro", "intermediate", "advanced")
 
@@ -109,7 +133,11 @@ def _precision_at_100_median(per_seed: list[dict[str, Any]]) -> float | None:
     return values[n // 2] if n % 2 else 0.5 * (values[n // 2 - 1] + values[n // 2])
 
 
-def _tier_summary(tier: str, tier_block: dict[str, Any]) -> dict[str, Any]:
+def _tier_summary(
+    tier: str,
+    tier_block: dict[str, Any],
+    knobs: dict[str, dict[str, float]],
+) -> dict[str, Any]:
     """Per-tier slice for the metrics files."""
 
     medians = tier_block.get("medians", {})
@@ -129,7 +157,7 @@ def _tier_summary(tier: str, tier_block: dict[str, Any]) -> dict[str, Any]:
         "tier": tier,
         "n_seeds": n_seeds,
         "seeds": list(tier_block.get("seeds", [])) or sorted(int(s.get("seed")) for s in per_seed),
-        "difficulty_knobs": DIFFICULTY_KNOBS.get(tier, {}),
+        "difficulty_knobs": knobs.get(tier, {}),
         "medians": medians_out,
         "spreads_max_minus_min": spreads_out,
         "source_of_truth": {
@@ -140,10 +168,17 @@ def _tier_summary(tier: str, tier_block: dict[str, Any]) -> dict[str, Any]:
             "file": "release/docs/v1_acceptance_gates_bands.yaml",
             "yaml_path": f"per_tier.{tier}",
         },
+        "difficulty_knobs_source": {
+            "file": "leadforge/recipes/b2b_saas_procurement_v1/difficulty_profiles.yaml",
+            "yaml_path": f"{tier}",
+        },
     }
 
 
-def build_top_level_metrics(report: dict[str, Any]) -> dict[str, Any]:
+def build_top_level_metrics(
+    report: dict[str, Any],
+    knobs: dict[str, dict[str, float]],
+) -> dict[str, Any]:
     """Assemble the top-level ``release/validation/metrics.json`` payload."""
 
     tiers = report.get("tiers", {})
@@ -151,7 +186,7 @@ def build_top_level_metrics(report: dict[str, Any]) -> dict[str, Any]:
     ordering = report.get("cross_tier_ordering", {})
 
     tier_summaries = {
-        tier: _tier_summary(tier, tiers[tier]) for tier in TIER_ORDER if tier in tiers
+        tier: _tier_summary(tier, tiers[tier], knobs) for tier in TIER_ORDER if tier in tiers
     }
 
     cohort_out = {
@@ -200,16 +235,20 @@ def write_metrics(
     report_path: Path,
     *,
     check_only: bool,
+    profiles_path: Path = DEFAULT_RECIPE_PROFILES_PATH,
 ) -> tuple[list[Path], dict[str, Any]]:
     """Write (or check) the metrics files.  Returns ``(stale, top_level)``."""
 
     if not report_path.is_file():
         raise FileNotFoundError(f"validation report not found at {report_path}")
+    if not profiles_path.is_file():
+        raise FileNotFoundError(f"difficulty profiles not found at {profiles_path}")
     report = json.loads(report_path.read_text(encoding="utf-8"))
     if not isinstance(report, dict):
         raise ValueError(f"{report_path} is not a JSON object")
 
-    top_level = build_top_level_metrics(report)
+    knobs = load_difficulty_knobs(profiles_path)
+    top_level = build_top_level_metrics(report, knobs)
     stale: list[Path] = []
 
     def _write(path: Path, content: str) -> None:

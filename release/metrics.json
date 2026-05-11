@@ -78,6 +78,10 @@
         "noise_scale": 0.55,
         "signal_strength": 0.5
       },
+      "difficulty_knobs_source": {
+        "file": "leadforge/recipes/b2b_saas_procurement_v1/difficulty_profiles.yaml",
+        "yaml_path": "advanced"
+      },
       "medians": {
         "brier_score": 0.0611,
         "calibration_max_bin_error": 0.5234,
@@ -127,6 +131,10 @@
         "noise_scale": 0.3,
         "signal_strength": 0.7
       },
+      "difficulty_knobs_source": {
+        "file": "leadforge/recipes/b2b_saas_procurement_v1/difficulty_profiles.yaml",
+        "yaml_path": "intermediate"
+      },
       "medians": {
         "brier_score": 0.1096,
         "calibration_max_bin_error": 0.249,
@@ -175,6 +183,10 @@
         "missing_rate": 0.02,
         "noise_scale": 0.1,
         "signal_strength": 0.9
+      },
+      "difficulty_knobs_source": {
+        "file": "leadforge/recipes/b2b_saas_procurement_v1/difficulty_profiles.yaml",
+        "yaml_path": "intro"
       },
       "medians": {
         "brier_score": 0.1301,
