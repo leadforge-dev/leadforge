@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>HF preview — LeadForge: Synthetic B2B Lead Scoring (v1) — Instructor companion</title>
+  <style>:root { --bg:#fff; --fg:#1f2937; --muted:#6b7280; --accent:#ff9d00; --border:#e5e7eb; --pill-bg:#f3f4f6; --code-bg:#f9fafb; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, sans-serif; color: var(--fg); background: var(--bg); margin: 0; padding: 0; line-height: 1.6; }
+.container { max-width: 1100px; margin: 0 auto; padding: 24px 32px; }
+.dataset-header { border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 24px; }
+.dataset-header__namespace { color: var(--muted); font-size: 0.85em; font-family: monospace; margin-bottom: 4px; }
+.dataset-header__title { font-size: 1.8em; margin: 0 0 12px 0; }
+.dataset-header__pills { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.pill { background: var(--pill-bg); border-radius: 12px; padding: 4px 12px; font-size: 0.85em; color: var(--fg); }
+.cover { margin: 0 0 24px 0; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+.cover__image { display: block; max-width: 100%; height: auto; }
+.tags { margin: 0 0 24px 0; }
+.chip { display: inline-block; background: var(--pill-bg); border-radius: 12px; padding: 2px 10px; margin: 2px 4px 2px 0; font-size: 0.85em; color: var(--fg); }
+.section__heading { font-size: 1.3em; border-bottom: 2px solid var(--accent); padding-bottom: 4px; margin-top: 32px; }
+.section__count { color: var(--muted); font-size: 0.7em; font-weight: normal; }
+.config { border: 1px solid var(--border); border-radius: 4px; padding: 8px 12px; margin: 8px 0; }
+.config__name { cursor: pointer; font-weight: 600; }
+.config__count { color: var(--muted); font-weight: normal; font-size: 0.85em; }
+.badge { display: inline-block; padding: 1px 8px; border-radius: 4px; font-size: 0.75em; font-weight: 600; vertical-align: middle; margin-left: 4px; }
+.badge--default { background: var(--accent); color: white; }
+.config__table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 0.9em; }
+.config__table th, .config__table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.config__table th { background: var(--pill-bg); font-weight: 600; }
+.readme { margin: 24px 0; }
+.readme code { background: var(--code-bg); padding: 1px 4px; border-radius: 2px; font-size: 0.9em; }
+.readme pre { background: var(--code-bg); padding: 12px; border-radius: 4px; overflow-x: auto; }
+.readme pre code { background: none; padding: 0; }
+.readme table { border-collapse: collapse; margin: 12px 0; }
+.readme th, .readme td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
+.readme blockquote { border-left: 3px solid var(--accent); padding-left: 12px; color: var(--muted); margin: 12px 0; }
+.dataset-footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.9em; }
+.dataset-footer__note { font-style: italic; margin-top: 8px; }
+</style>
+</head>
+<body>
+<main class="container">
+<header class="dataset-header">
+  <div class="dataset-header__namespace">huggingface.co/datasets</div>
+  <h1 class="dataset-header__title">LeadForge: Synthetic B2B Lead Scoring (v1) — Instructor companion</h1>
+  <ul class="dataset-header__pills">
+    <li class="pill pill--license">License: mit</li>
+    <li class="pill pill--task">Task: tabular-classification</li>
+    <li class="pill pill--size">Size: 1K&lt;n&lt;10K</li>
+    <li class="pill pill--language">Language: en</li>
+  </ul>
+</header>
+<section class="cover">
+  <img class="cover__image" src="dataset-cover-image.png" alt="Dataset cover image">
+</section>
+<section class="tags">
+  <span class="chip">b2b</span> <span class="chip">crm</span> <span class="chip">datasets</span> <span class="chip">lead-scoring</span> <span class="chip">pandas</span> <span class="chip">synthetic-data</span> <span class="chip">tabular</span>
+</section>
+<section class="configs">
+  <h2 class="section__heading">Configurations / Subsets <span class="section__count">(1 config)</span></h2>
+  <details class="config" open>
+    <summary class="config__name"><code>intermediate</code> <span class="badge badge--default">default</span> <span class="config__count">(3 splits)</span></summary>
+    <table class="config__table">
+      <thead><tr><th>Split</th><th>Path</th></tr></thead>
+      <tbody>
+      <tr><td>train</td><td><code>intermediate/tasks/converted_within_90_days/train.parquet</code></td></tr>
+      <tr><td>validation</td><td><code>intermediate/tasks/converted_within_90_days/valid.parquet</code></td></tr>
+      <tr><td>test</td><td><code>intermediate/tasks/converted_within_90_days/test.parquet</code></td></tr>
+      </tbody>
+    </table>
+  </details>
+</section>
+<section class="readme">
+<h1>LeadForge: Synthetic B2B Lead Scoring (v1) — Instructor companion</h1>
+<p>This is the <strong>research / instructor companion</strong> to the public
+<a href="https://huggingface.co/datasets/leadforge/leadforge-lead-scoring-v1"><code>leadforge/leadforge-lead-scoring-v1</code></a>
+dataset.  It exposes the <strong>full-horizon</strong> view of a single difficulty
+tier (<code>intermediate</code>) plus the <strong>hidden causal structure</strong> that the
+public dataset deliberately redacts: the world graph (DAG), latent
+trait registry, mechanism summary, and full-horizon relational tables
+including <code>customers</code> and <code>subscriptions</code>.</p>
+<p>It exists for instructors who want to walk students through how the
+public dataset was generated, and for researchers who want to verify
+that the public redactions actually remove the leakage paths the
+dataset advertises.  <strong>It is not a replacement for the public dataset
+in any teaching or modelling context</strong> — students should still train
+on the public bundle.</p>
+<h2>What this companion contains</h2>
+<pre><code>.
+├── intermediate/                     # research_instructor companion: full-horizon
+│   ├── manifest.json                 # provenance + file hashes
+│   ├── dataset_card.md               # auto-rendered per-bundle card
+│   ├── feature_dictionary.csv        # authoritative column spec
+│   ├── tables/*.parquet              # full-horizon tables (incl. customers, subscriptions)
+│   ├── tasks/converted_within_90_days/{train,valid,test}.parquet
+│   └── metadata/                     # world_spec, graph.{graphml,json}, latent_registry, etc.
+├── README.md                         # this file (HF dataset card)
+├── dataset-cover-image.png           # dataset thumbnail
+└── LICENSE
+</code></pre>
+<p>The single <code>intermediate</code> config exposes the same train/valid/test
+parquet splits as the public dataset's <code>intermediate</code> config — same
+seeds, same row counts (3,500 / 750 / 750), same target.  The
+difference lives in the relational tables and metadata:</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Public <code>intermediate</code></th>
+<th>Instructor companion</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tables/leads.parquet</code></td>
+<td>redacted (label dropped)</td>
+<td>full (label retained)</td>
+</tr>
+<tr>
+<td><code>tables/opportunities.parquet</code></td>
+<td>snapshot-filtered + redacted</td>
+<td>full-horizon, full columns</td>
+</tr>
+<tr>
+<td><code>tables/customers.parquet</code></td>
+<td>omitted (would leak label)</td>
+<td>included</td>
+</tr>
+<tr>
+<td><code>tables/subscriptions.parquet</code></td>
+<td>omitted (would leak label)</td>
+<td>included</td>
+</tr>
+<tr>
+<td><code>tables/touches.parquet</code> etc.</td>
+<td>filtered to ≤ snapshot day</td>
+<td>full 90-day horizon</td>
+</tr>
+<tr>
+<td><code>metadata/world_spec.json</code></td>
+<td>absent</td>
+<td>included (DGP + recipe)</td>
+</tr>
+<tr>
+<td><code>metadata/graph.{graphml,json}</code></td>
+<td>absent</td>
+<td>included (hidden DAG)</td>
+</tr>
+<tr>
+<td><code>metadata/latent_registry.json</code></td>
+<td>absent</td>
+<td>included (latent traits)</td>
+</tr>
+<tr>
+<td><code>metadata/mechanism_summary.json</code></td>
+<td>absent</td>
+<td>included (per-edge mechanisms)</td>
+</tr>
+</tbody>
+</table>
+<p>The redaction contract is single-sourced in
+<a href="https://github.com/leadforge-dev/leadforge/blob/main/leadforge/validation/leakage_probes.py"><code>leadforge/validation/leakage_probes.py</code></a>
+and re-applied by
+<a href="https://github.com/leadforge-dev/leadforge/blob/main/leadforge/render/relational_snapshot_safe.py"><code>leadforge/render/relational_snapshot_safe.py</code></a>
+when the public bundle is built; this companion is the unfiltered
+source view, so the two are always consistent by construction.</p>
+<h2>Quick start</h2>
+<pre><code class="language-python">from datasets import load_dataset
+
+# Loads the same train/valid/test splits as the public 'intermediate'
+# config; differs only in what `tables/` and `metadata/` provide.
+ds = load_dataset(
+    &quot;leadforge/leadforge-lead-scoring-v1-instructor&quot;,
+    name=&quot;intermediate&quot;,
+)
+train = ds[&quot;train&quot;].to_pandas()
+
+# Full-horizon relational tables — includes customers and subscriptions
+# (omitted from the public dataset because their existence reconstructs
+# the conversion label).
+import pandas as pd
+customers = pd.read_parquet(
+    &quot;hf://datasets/leadforge/leadforge-lead-scoring-v1-instructor/intermediate/tables/customers.parquet&quot;
+)
+</code></pre>
+<h2>Intended uses</h2>
+<ul>
+<li>Teaching the <strong>public-vs-instructor split</strong> itself: load both
+datasets side-by-side, show students which columns and tables were
+redacted, and walk through why each was a leakage path.</li>
+<li><strong>Verifying the redaction contract:</strong> train a model on the
+full-horizon tables, train another on the snapshot-safe public
+tables, compare AUC.  The gap is the redaction's effect.</li>
+<li>Teaching <strong>causal structure and DGP transparency</strong> using
+<code>metadata/world_spec.json</code> + <code>metadata/graph.json</code>.</li>
+<li>Reproducing the public dataset from the instructor view via
+<a href="https://github.com/leadforge-dev/leadforge/blob/main"><code>leadforge</code></a> source code.</li>
+</ul>
+<h2>Out-of-scope uses</h2>
+<ul>
+<li><strong>Production lead scoring.</strong>  Same as the public dataset; the
+company, product, and customers are fictional.</li>
+<li><strong>Modelling with the unredacted view as a baseline.</strong>  Models
+trained against the full-horizon tables look strong because they're
+directly seeing post-conversion events.  That number is not a
+baseline; it's the ceiling.</li>
+<li><strong>Demographic / fairness research.</strong>  v1 does not model protected
+attributes.</li>
+</ul>
+<h2>Composition</h2>
+<ul>
+<li><strong>Entities.</strong>  9 relational tables (accounts, contacts, leads,
+touches, sessions, sales_activities, opportunities, customers,
+subscriptions); per-row counts in <code>manifest.json</code>.</li>
+<li><strong>Splits.</strong>  Identical to the public <code>intermediate</code> config: 70/15/15
+train/valid/test, deterministic given seed 42, recorded in
+<code>tasks/converted_within_90_days/task_manifest.json</code>.</li>
+<li><strong>Provenance.</strong>  Recipe <code>b2b_saas_procurement_v1</code>, seed 42, package
+version stamped in <code>manifest.json</code> along with SHA-256 hashes for
+every parquet file.</li>
+<li><strong>Bundle schema version.</strong>  5 (matches the public dataset).</li>
+</ul>
+<h2>Maintenance, license</h2>
+<p>We <em>want</em> the dataset to be broken.  See the
+<a href="https://huggingface.co/datasets/leadforge/leadforge-lead-scoring-v1">public dataset card</a>
+for the adversarial-framing pointers, the issue templates, and the
+break-me guide.  File issues at
+<a href="https://github.com/leadforge-dev/leadforge">leadforge-dev/leadforge</a>;
+PRs welcome.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Generator</td>
+<td>leadforge <code>1.0.0+</code></td>
+</tr>
+<tr>
+<td>Recipe</td>
+<td><code>b2b_saas_procurement_v1</code></td>
+</tr>
+<tr>
+<td>Canonical seed</td>
+<td>42</td>
+</tr>
+<tr>
+<td>Bundle schema version</td>
+<td>5</td>
+</tr>
+<tr>
+<td>Format</td>
+<td>Parquet (canonical)</td>
+</tr>
+<tr>
+<td>License</td>
+<td>MIT — see <a href="LICENSE">LICENSE</a></td>
+</tr>
+<tr>
+<td>Public dataset</td>
+<td><a href="https://huggingface.co/datasets/leadforge/leadforge-lead-scoring-v1">link</a></td>
+</tr>
+</tbody>
+</table>
+<p>Verify integrity with <code>leadforge validate &lt;bundle_dir&gt;</code>; every file is
+hashed in <code>manifest.json</code>.</p>
+</section>
+<footer class="dataset-footer">
+  <div class="dataset-footer__license">License: mit</div>
+  <div class="dataset-footer__variant">Variant: <code>instructor</code></div>
+  <div class="dataset-footer__note">Local Hugging Face publication-readiness preview rendered by scripts/preview_hf_page.py — not the live dataset page.</div>
+</footer>
+</main>
+</body>
+</html>

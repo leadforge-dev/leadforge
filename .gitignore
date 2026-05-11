@@ -233,3 +233,9 @@ release/huggingface/*
 !release/huggingface/README.md
 release/huggingface-instructor/*
 !release/huggingface-instructor/README.md
+
+# Generated local preview-page output (PR 7.2) — runtime HTML rendered
+# by scripts/preview_{kaggle,hf}_page.py.  The committed sample HTML
+# under release/_preview_committed/ is the audit-artefact-sync gate
+# and is checked into git separately.
+release/_preview/

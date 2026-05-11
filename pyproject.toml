@@ -40,6 +40,13 @@ dev = [
     "types-pyyaml>=6.0",
     "scikit-learn>=1.3",
     "matplotlib>=3.7",
+    # PR 7.2: the preview-page renderers (scripts/preview_{kaggle,hf}_page.py)
+    # call into markdown-it-py at test time via render_*_html().  Keeping
+    # the dep here as well as in [publish] means CI's "test" job (which
+    # installs only [dev]) does not ImportError mid-test.  pytest.importorskip
+    # would also work, but the rendering tests are the primary coverage of
+    # this PR — gating them off would defeat the purpose.
+    "markdown-it-py>=3.0",
 ]
 scripts = [
     "scikit-learn>=1.3",
@@ -49,10 +56,14 @@ scripts = [
 # this extra (``pip install -e ".[publish]"``) enables the gated
 # ``load_dataset()`` / Kaggle-CLI smoke tests that verify G11.3 (Kaggle
 # package) and G12.3 / G12.4 (HF load_dataset round-trip) without
-# pulling the heavy SDKs into the default dev install.
+# pulling the heavy SDKs into the default dev install.  PR 7.2 adds
+# ``markdown-it-py`` for the local Kaggle / HF preview pages
+# (``scripts/preview_{kaggle,hf}_page.py``) — same publish-extra
+# posture, missing import raises a clean error pointing at this extra.
 publish = [
     "datasets>=2.14",
     "kaggle>=1.6",
+    "markdown-it-py>=3.0",
 ]
 # Optional dependencies for executing the public release notebooks.
 # Installing this extra (``pip install -e ".[notebooks]"``) enables the
@@ -103,6 +114,13 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "PT", "S"]
 # Line length is a property of the rendered cell, not the .py source,
 # so 100c is the wrong yardstick here.
 "scripts/build_release_notebook_*.py" = ["E501"]
+# Preview-page scripts (PR 7.2) carry inlined CSS + multi-attribute
+# HTML strings inside f-string templates; the rendered HTML is the
+# product, so wrapping the source CSS at 100c is line noise.
+"scripts/preview_kaggle_page.py" = ["E501"]
+"scripts/preview_hf_page.py" = ["E501"]
+# _preview_common is plain Python (no inline HTML / CSS); leaving
+# E501 enabled.
 
 [tool.mypy]
 python_version = "3.11"
