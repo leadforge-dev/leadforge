@@ -38,8 +38,6 @@ from leadforge.pipelines.ml import (
 # ---------------------------------------------------------------------------
 # Thresholds
 # ---------------------------------------------------------------------------
-EXPECTED_ROWS = 1200
-ROW_TOLERANCE = 100  # allow 1000-1500
 AUC_LOWER = 0.62
 AUC_UPPER = 0.80
 PR_AUC_LOWER = 0.35
@@ -318,11 +316,16 @@ def validate(csv_path: str, out_json: str | None = None) -> int:
     print("=" * 60)
     errs = check_basic(df)
     print(f"  Shape: {df.shape[0]} rows x {df.shape[1]} cols")
-    print(f"  Conversion rate: {df[TARGET].mean():.1%}")
+    if TARGET in df.columns:
+        conv_rate = df[TARGET].mean()
+        print(f"  Conversion rate: {conv_rate:.1%}")
+        report["conversion_rate"] = float(conv_rate)
+    else:
+        print("  Conversion rate: N/A (target column missing)")
+        report["conversion_rate"] = None
     print(f"  Status: {'FAIL' if errs else 'PASS'}")
     all_errors.extend(errs)
     report["shape"] = list(df.shape)
-    report["conversion_rate"] = float(df[TARGET].mean())
 
     print("\nSCHEMA CHECKS")
     print("=" * 60)
