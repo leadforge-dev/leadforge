@@ -358,7 +358,17 @@ def deploy_site(out_dir: Path, project_name: str, cf_env_path: Path) -> None:
         file=sys.stderr,
     )
     result = subprocess.run(
-        ["wrangler", "pages", "deploy", str(out_dir), "--project-name", project_name],
+        [
+            "wrangler",
+            "pages",
+            "deploy",
+            str(out_dir),
+            "--project-name",
+            project_name,
+            "--branch",
+            "main",  # deploy to production slot, not a branch preview
+            "--commit-dirty=true",  # suppress the "uncommitted changes" warning
+        ],
         env=env,
     )
     if result.returncode != 0:
