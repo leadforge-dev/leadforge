@@ -235,7 +235,7 @@ def make_dataset_config(tier_data: dict, config_dir: Path, readme_html: str) -> 
         "language": "English",
         "rowCount": n_leads,
         "splits": ["train", "valid", "test"],
-        "subsets": ["leadforge-lead-scoring-v1"],
+        "subsets": [f"leadforge-lead-scoring-v1-{tier}"],
         "coverImage": cover_rel,
         "descriptionHtml": readme_html,
         "tags": [
