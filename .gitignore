@@ -239,3 +239,8 @@ release/huggingface-instructor/*
 # under release/_preview_committed/ is the audit-artefact-sync gate
 # and is checked into git separately.
 release/_preview/
+
+# Generated ShmuggingFace site output (PR 7.3) — config + dist built by
+# scripts/build_shmuggingface_site.py; deployed to Cloudflare Pages.
+release/_shmuggingface/
+.wrangler/
