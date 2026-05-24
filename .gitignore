@@ -240,7 +240,11 @@ release/huggingface-instructor/*
 # and is checked into git separately.
 release/_preview/
 
-# Generated ShmuggingFace site output (PR 7.3) — config + dist built by
+# Generated ShmuggingFace site output (PR 7.2.2) — config + dist built by
 # scripts/build_shmuggingface_site.py; deployed to Cloudflare Pages.
 release/_shmuggingface/
 .wrangler/
+
+# Node tooling for ShmuggingFace preview (package.json + package-lock.json
+# are committed; node_modules/ is not).
+node_modules/

@@ -18,8 +18,9 @@ Options
     Output directory for the generated static site.
     Default: ``release/_shmuggingface/dist``.
 --smf-core PATH
-    Path to a local ShmuggingFaceCore checkout.  If absent the repo is
-    cloned to ``/tmp/shmuggingface-core`` (and pulled on subsequent runs).
+    Path to a local ShmuggingFaceCore checkout.  Overrides the default,
+    which is the npm-installed package at ``node_modules/@shmuggingface/core``
+    (pinned to v1.0.0 via ``package.json``).  Run ``npm install`` first.
 --deploy
     Deploy the built site to Cloudflare Pages after building.
 --cf-env PATH
@@ -54,8 +55,8 @@ TIERS = ["intro", "intermediate", "advanced"]
 TASK = "converted_within_90_days"
 
 GITHUB_BLOB_BASE = "https://github.com/leadforge-dev/leadforge/blob/main"
-SMF_CORE_REPO = "https://github.com/ShmuggingFace/ShmuggingFaceCore.git"
-SMF_CORE_CACHE = Path("/tmp/shmuggingface-core")
+# Pinned via package.json → package-lock.json; `npm install` resolves it.
+SMF_CORE_NPM = Path(__file__).parent.parent / "node_modules/@shmuggingface/core"
 DEFAULT_CF_ENV = Path.home() / ".config/adanim/cloudflare_api_token.env"
 DEFAULT_PROJECT = "leadforge-lead-scoring-v1-preview"
 
@@ -277,27 +278,35 @@ def write_config(site_config: dict, datasets: list[dict], config_path: Path) -> 
 
 
 def ensure_smf_core(smf_core: Path | None) -> Path:
-    """Return path to a working ShmuggingFaceCore checkout, cloning if needed."""
+    """Return path to a working ShmuggingFaceCore installation.
+
+    Resolution order:
+    1. ``--smf-core PATH`` override (for local dev / CI with a custom checkout).
+    2. npm-installed package at ``node_modules/@shmuggingface/core`` — the
+       canonical path when ``npm install`` has been run from the repo root
+       (pinned to v1.0.0 via ``package.json`` / ``package-lock.json``).
+
+    Exits with an informative error if neither source is available.
+    """
     if smf_core is not None:
         entry = smf_core / "bin/shmuggingface.mjs"
         if not entry.exists():
             sys.exit(f"ShmuggingFaceCore entry point not found at {entry}")
         return smf_core
 
-    entry = SMF_CORE_CACHE / "bin/shmuggingface.mjs"
-    if SMF_CORE_CACHE.exists() and entry.exists():
-        print(f"  Updating ShmuggingFaceCore cache at {SMF_CORE_CACHE}", file=sys.stderr)
-        subprocess.run(
-            ["git", "-C", str(SMF_CORE_CACHE), "pull", "--quiet"],
-            check=False,
-        )
-    else:
-        print(f"  Cloning ShmuggingFaceCore → {SMF_CORE_CACHE}", file=sys.stderr)
-        subprocess.run(
-            ["git", "clone", "--depth=1", SMF_CORE_REPO, str(SMF_CORE_CACHE)],
-            check=True,
-        )
-    return SMF_CORE_CACHE
+    entry = SMF_CORE_NPM / "bin/shmuggingface.mjs"
+    if entry.exists():
+        pkg = SMF_CORE_NPM / "package.json"
+        version = json.loads(pkg.read_text()).get("version", "unknown")
+        print(f"  Using npm-installed @shmuggingface/core v{version}", file=sys.stderr)
+        return SMF_CORE_NPM
+
+    sys.exit(
+        "ShmuggingFaceCore not found.\n"
+        f"  Expected npm installation at: {SMF_CORE_NPM}\n"
+        "  Run `npm install` from the repo root to install the pinned v1.0.0 release,\n"
+        "  or pass --smf-core PATH to a local checkout."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -410,7 +419,10 @@ def main() -> None:
         type=Path,
         default=None,
         metavar="PATH",
-        help="Path to a local ShmuggingFaceCore checkout (auto-cloned if absent)",
+        help=(
+            "Path to a local ShmuggingFaceCore checkout "
+            "(default: node_modules/@shmuggingface/core from `npm install`)"
+        ),
     )
     parser.add_argument(
         "--deploy",
