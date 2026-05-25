@@ -642,7 +642,7 @@ def test_committed_hf_readme_matches_fresh_regeneration(tmp_path: Path) -> None:
     assert len(fm["configs"]) == 3
     defaults = [c for c in fm["configs"] if c.get("default")]
     assert len(defaults) == 1
-    assert defaults[0]["config_name"] == "intermediate"
+    assert defaults[0]["config_name"] == "intro"  # intro is the default entry point
     # Body inherited the rewritten release card content.
     assert "What's inside" in body
     assert "Why lead scoring matters" in body

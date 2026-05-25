@@ -101,7 +101,6 @@ release/
 │   ├── lead_scoring.csv              # flat convenience CSV (all splits)
 │   ├── tables/*.parquet              # 7 snapshot-safe relational tables
 │   └── tasks/converted_within_90_days/{train,valid,test}.parquet
-├── intermediate_instructor/          # research companion: full-horizon tables + metadata/
 ├── docs/                             # vendored DGP / leakage / break-me docs (agent-readable)
 ├── notebooks/                        # 01 baseline · 02 relational · 03 leakage · 04 calibration
 ├── metrics.json                      # top-level cross-tier metrics summary

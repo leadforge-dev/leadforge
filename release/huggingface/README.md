@@ -17,6 +17,7 @@ tags:
   - tabular
 configs:
   - config_name: intro
+    default: true
     data_files:
       - split: train
         path: intro/tasks/converted_within_90_days/train.parquet
@@ -25,7 +26,6 @@ configs:
       - split: test
         path: intro/tasks/converted_within_90_days/test.parquet
   - config_name: intermediate
-    default: true
     data_files:
       - split: train
         path: intermediate/tasks/converted_within_90_days/train.parquet
@@ -154,14 +154,31 @@ exception is `total_touches_all`, the leakage trap — flagged
 `leakage_risk=True` in `feature_dictionary.csv`. Drop it from your
 feature set unless you're demonstrating leakage detection.
 
+## Evaluation note — account overlap
+
+**518 of 557 test accounts (≈93 %) appear in train** on the intermediate
+bundle; the other tiers are similar. The random-split headline metrics
+therefore ride account-level signal across the split boundary and
+over-estimate generalisation to unseen accounts. For a faithful
+out-of-sample number, retrain with `GroupKFold(account_id)` and report
+both metrics. Notebook 02 demonstrates the detection recipe;
+[`break_me_guide.md`](https://github.com/leadforge-dev/leadforge/blob/main/docs/release/break_me_guide.md) §5 gives
+the worked example.
+
 ## Dataset summary
+
+**Tiers are prevalence and noise axes, not modelling-complexity axes.**
+LR AUC is ~0.88 in every tier by design. The tiers differ in conversion
+rate, missingness, and noise — not rank discrimination. Choose a tier
+based on the teaching exercise, not on expected AUC:
 
 | | Intro | Intermediate | Advanced |
 |---|---|---|---|
+| **Tier purpose** | High-prevalence warm-up | Default benchmark | Low-prevalence · calibration · noise exercise |
 | Leads | 5,000 | 5,000 | 5,000 |
 | Accounts | 1,500 | 1,500 | 1,500 |
 | Contacts | 4,200 | 4,200 | 4,200 |
-| Snapshot columns | 32 / 34* | 32 / 34* | 32 / 34* |
+| Snapshot columns | 31 / 34* | 31 / 34* | 31 / 34* |
 | Target | `converted_within_90_days` | `converted_within_90_days` | `converted_within_90_days` |
 | Conversion rate (acceptance band, gate G7.\*) | 24–61% | 12–31% | 4–12% |
 | Conversion rate (observed median, seeds 42–46) | 42.67% | 21.60% | 8.40% |
@@ -223,14 +240,22 @@ with bands declared in
 [`docs/release/v1_acceptance_gates_bands.yaml`](https://github.com/leadforge-dev/leadforge/blob/main/docs/release/v1_acceptance_gates_bands.yaml).
 Headline cross-seed medians (seeds 42–46):
 
-| Tier | LR AUC | AP | P@100 | Brier |
-|---|---|---|---|---|
-| intro | 0.879 | 0.761 | 0.80 | 0.130 |
-| intermediate | 0.886 | 0.575 | 0.59 | 0.110 |
-| advanced | 0.886 | 0.351 | 0.34 | 0.061 |
+| Tier | LR AUC | AP | P@100 | Brier | Cal. max-bin err |
+|---|---|---|---|---|---|
+| intro | 0.879 | 0.761 | 0.80 | 0.130 | 0.25 |
+| intermediate | 0.886 | 0.575 | 0.59 | 0.110 | 0.25 |
+| advanced | 0.886 | 0.351 | 0.34 | 0.061 | **0.52** |
+
+**Reading this table:** LR AUC is flat across tiers by design — the
+tiers are a prevalence / noise axis, not a rank-discrimination axis.
+Brier score *improves* as prevalence falls (a prevalence effect, not
+better calibration); use `calibration_max_bin_error` to assess
+calibration quality. Advanced's 0.52 max-bin error means the model's
+predicted probabilities are materially mis-scaled against actual
+conversion rates — a realistic miscalibration exercise.
 
 AP, P@100, conversion-rate, and lift orderings hold across the
-intended difficulty axis (intro > intermediate > advanced).
+intended prevalence axis (intro > intermediate > advanced).
 
 ## Intended uses
 
@@ -256,9 +281,15 @@ intended difficulty axis (intro > intermediate > advanced).
 
 ## Known limitations
 
-- **Difficulty signal on raw AUC is flat.** LR AUC is ~0.88 across
-  every tier. Difficulty is visible in AP, P@K, Brier, and value
-  capture. Treat AUC as a sanity check, not a difficulty signal.
+- **Tiers are a prevalence / noise axis, not a modelling-complexity
+  axis.** LR AUC is ~0.88 in every tier; the three tiers differ in
+  conversion rate (43% / 22% / 8%), noise scale, and missingness —
+  not in rank discrimination. Use AP, P@K, and calibration metrics
+  to see the difficulty gradient; AUC alone will not show it.
+- **93% account overlap across train / test splits.** Random splits are
+  keyed on lead ID; most test accounts also appear in train. Headline
+  metrics over-state generalisation to unseen accounts. Use
+  `GroupKFold(account_id)` for a faithful estimate.
 - **GBM does not consistently beat LR (gate G7.4.4).** GBM−LR AUC delta
   is slightly negative in every tier (intro −0.0045, intermediate
   −0.0072, advanced −0.0133); v1's snapshot is dominated by linear
@@ -272,6 +303,13 @@ intended difficulty axis (intro > intermediate > advanced).
 - **Cohort-shift degradation is small.** v1 has no time-of-year drift
   baked in; the cohort-shift gate (G6.4) is informational and will
   bite in v2.
+- **Advanced-tier noise can produce non-physical values.** With
+  `noise_scale=0.55` and `missing_rate=18%`, Gaussian noise injection
+  can yield negative values in count and duration columns before MCAR
+  fill (e.g. a negative `days_since_last_touch`). These are treated
+  as real-world data-messiness artifacts; the snapshot builder clamps
+  them to zero, but some residual distortion is intentional as a
+  data-cleaning exercise.
 
 ## Composition
 
@@ -287,15 +325,8 @@ intended difficulty axis (intro > intermediate > advanced).
   the simulator. Never sampled directly.
 - **Splits.** 70/15/15 train/valid/test, deterministic given seed;
   recorded in `tasks/converted_within_90_days/task_manifest.json`.
-  **Group-leakage warning:** the splitter is keyed on `lead_id` only,
-  not on `account_id` or `contact_id`. On the as-shipped intermediate
-  bundle, **518 of 557 test accounts (≈93 %) also appear in train**;
-  the contact-level overlap is similar in magnitude. A flat baseline
-  trained on the random split rides account-level signal across the
-  split boundary. For a generalisation-faithful number, retrain with
-  `GroupKFold(account_id)` (or `contact_id`) and report both — see
-  [`break_me_guide.md`](https://github.com/leadforge-dev/leadforge/blob/main/docs/release/break_me_guide.md) §5 for the
-  detection recipe.
+  Splits are keyed on `lead_id`; see the *Evaluation note* above for
+  the account-overlap caveat.
 - **Provenance.** Recipe `b2b_saas_procurement_v1`, seed 42, package
   version stamped in `manifest.json`.
 
