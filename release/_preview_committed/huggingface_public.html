@@ -262,11 +262,13 @@ computed strictly over events on days <code>[0, 30]</code>. The deliberate
 exception is <code>total_touches_all</code>, the leakage trap — flagged
 <code>leakage_risk=True</code> in <code>feature_dictionary.csv</code>. Drop it from your
 feature set unless you're demonstrating leakage detection.</p>
-<h2>Evaluation note — account overlap</h2>
+<h2>Evaluation note — account and contact overlap</h2>
 <p><strong>518 of 557 test accounts (≈93 %) appear in train</strong> on the intermediate
-bundle; the other tiers are similar. The random-split headline metrics
-therefore ride account-level signal across the split boundary and
-over-estimate generalisation to unseen accounts. For a faithful
+bundle; the other tiers are similar. Contact-level overlap is comparable
+in magnitude: most test contacts also have activity in the training set.
+The random-split headline metrics therefore ride both account-level and
+contact-level signal across the split boundary and over-estimate
+generalisation to unseen accounts and contacts. For a faithful
 out-of-sample number, retrain with <code>GroupKFold(account_id)</code> and report
 both metrics. Notebook 02 demonstrates the detection recipe;
 <a href="https://github.com/leadforge-dev/leadforge/blob/main/docs/release/break_me_guide.md"><code>break_me_guide.md</code></a> §5 gives
@@ -433,7 +435,7 @@ Headline cross-seed medians (seeds 42–46):</p>
 <th>AP</th>
 <th>P@100</th>
 <th>Brier</th>
-<th>Cal. max-bin err</th>
+<th><code>calibration_max_bin_error</code></th>
 </tr>
 </thead>
 <tbody>
@@ -501,10 +503,11 @@ axis.</strong> LR AUC is ~0.88 in every tier; the three tiers differ in
 conversion rate (43% / 22% / 8%), noise scale, and missingness —
 not in rank discrimination. Use AP, P@K, and calibration metrics
 to see the difficulty gradient; AUC alone will not show it.</li>
-<li><strong>93% account overlap across train / test splits.</strong> Random splits are
-keyed on lead ID; most test accounts also appear in train. Headline
-metrics over-state generalisation to unseen accounts. Use
-<code>GroupKFold(account_id)</code> for a faithful estimate.</li>
+<li><strong>93% account and contact overlap across train / test splits.</strong> Random
+splits are keyed on lead ID; most test accounts and contacts also
+appear in train. Headline metrics over-state generalisation to unseen
+accounts and contacts. Use <code>GroupKFold(account_id)</code> for a faithful
+estimate.</li>
 <li><strong>GBM does not consistently beat LR (gate G7.4.4).</strong> GBM−LR AUC delta
 is slightly negative in every tier (intro −0.0045, intermediate
 −0.0072, advanced −0.0133); v1's snapshot is dominated by linear
@@ -518,13 +521,14 @@ encoding is post-v1 work.</li>
 <li><strong>Cohort-shift degradation is small.</strong> v1 has no time-of-year drift
 baked in; the cohort-shift gate (G6.4) is informational and will
 bite in v2.</li>
-<li><strong>Advanced-tier noise can produce non-physical values.</strong> With
-<code>noise_scale=0.55</code> and <code>missing_rate=18%</code>, Gaussian noise injection
-can yield negative values in count and duration columns before MCAR
-fill (e.g. a negative <code>days_since_last_touch</code>). These are treated
-as real-world data-messiness artifacts; the snapshot builder clamps
-them to zero, but some residual distortion is intentional as a
-data-cleaning exercise.</li>
+<li><strong>Advanced-tier noise can produce artifact zeros in count and duration
+columns.</strong> Gaussian noise is applied before MCAR missingness; the
+snapshot builder clamps results below zero to zero. What users observe
+is therefore not negative values but zeros that may be noise artifacts
+rather than true zero values — e.g. <code>days_since_last_touch = 0</code> might
+mean &quot;noised below zero, clamped&quot; rather than &quot;touched today&quot;. Treat
+suspicious zero clusters in the Advanced tier as intentional
+data-cleaning exercise material.</li>
 </ul>
 <h2>Composition</h2>
 <ul>
@@ -532,7 +536,7 @@ data-cleaning exercise.</li>
 sales_activities, opportunities (public); plus customers and
 subscriptions (instructor only). Per-row counts per bundle live in
 <code>manifest.json</code>.</li>
-<li><strong>Features.</strong> 32 public columns grouped by analytical role in
+<li><strong>Features.</strong> 31 public columns grouped by analytical role in
 <a href="https://github.com/leadforge-dev/leadforge/blob/main/docs/release/feature_dictionary.md"><code>docs/release/feature_dictionary.md</code></a>;
 the per-bundle <code>feature_dictionary.csv</code> is the authoritative
 machine-readable spec.</li>

@@ -821,7 +821,7 @@ def build_metadata(
         id=f"{owner}/{dataset_slug}",
         subtitle=subtitle,
         description=description,
-        isPrivate=True,
+        isPrivate=False,
         licenses=(LicenseSpec(name=license_name),),
         keywords=tuple(keywords),
         collaborators=(),

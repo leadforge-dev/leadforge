@@ -89,8 +89,9 @@ HF_SIZE_BUCKET_5K: Final[str] = "1K<n<10K"
 #: Public-tier configs land under ``intro``/``intermediate``/``advanced``;
 #: ``intro`` is the recommended entry point — students loading the dataset
 #: with no config argument land in the highest-prevalence tier, which is
-#: the most forgiving teaching context. ``intermediate`` is the default
-#: benchmark for graded assignments and course evaluation.
+#: the most forgiving teaching context. Pass ``default_config="intermediate"``
+#: for graded assignments; ``default_config="advanced"`` for calibration
+#: and noise-handling exercises.
 DEFAULT_DEFAULT_CONFIG: Final[str] = "intro"
 
 #: Allowed HF dataset-card ``task_categories`` token for tabular

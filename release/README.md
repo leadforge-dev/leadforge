@@ -108,12 +108,14 @@ exception is `total_touches_all`, the leakage trap — flagged
 `leakage_risk=True` in `feature_dictionary.csv`. Drop it from your
 feature set unless you're demonstrating leakage detection.
 
-## Evaluation note — account overlap
+## Evaluation note — account and contact overlap
 
 **518 of 557 test accounts (≈93 %) appear in train** on the intermediate
-bundle; the other tiers are similar. The random-split headline metrics
-therefore ride account-level signal across the split boundary and
-over-estimate generalisation to unseen accounts. For a faithful
+bundle; the other tiers are similar. Contact-level overlap is comparable
+in magnitude: most test contacts also have activity in the training set.
+The random-split headline metrics therefore ride both account-level and
+contact-level signal across the split boundary and over-estimate
+generalisation to unseen accounts and contacts. For a faithful
 out-of-sample number, retrain with `GroupKFold(account_id)` and report
 both metrics. Notebook 02 demonstrates the detection recipe;
 [`break_me_guide.md`](../docs/release/break_me_guide.md) §5 gives
@@ -194,7 +196,7 @@ with bands declared in
 [`docs/release/v1_acceptance_gates_bands.yaml`](../docs/release/v1_acceptance_gates_bands.yaml).
 Headline cross-seed medians (seeds 42–46):
 
-| Tier | LR AUC | AP | P@100 | Brier | Cal. max-bin err |
+| Tier | LR AUC | AP | P@100 | Brier | `calibration_max_bin_error` |
 |---|---|---|---|---|---|
 | intro | 0.879 | 0.761 | 0.80 | 0.130 | 0.25 |
 | intermediate | 0.886 | 0.575 | 0.59 | 0.110 | 0.25 |
@@ -240,10 +242,11 @@ intended prevalence axis (intro > intermediate > advanced).
   conversion rate (43% / 22% / 8%), noise scale, and missingness —
   not in rank discrimination. Use AP, P@K, and calibration metrics
   to see the difficulty gradient; AUC alone will not show it.
-- **93% account overlap across train / test splits.** Random splits are
-  keyed on lead ID; most test accounts also appear in train. Headline
-  metrics over-state generalisation to unseen accounts. Use
-  `GroupKFold(account_id)` for a faithful estimate.
+- **93% account and contact overlap across train / test splits.** Random
+  splits are keyed on lead ID; most test accounts and contacts also
+  appear in train. Headline metrics over-state generalisation to unseen
+  accounts and contacts. Use `GroupKFold(account_id)` for a faithful
+  estimate.
 - **GBM does not consistently beat LR (gate G7.4.4).** GBM−LR AUC delta
   is slightly negative in every tier (intro −0.0045, intermediate
   −0.0072, advanced −0.0133); v1's snapshot is dominated by linear
@@ -257,13 +260,14 @@ intended prevalence axis (intro > intermediate > advanced).
 - **Cohort-shift degradation is small.** v1 has no time-of-year drift
   baked in; the cohort-shift gate (G6.4) is informational and will
   bite in v2.
-- **Advanced-tier noise can produce non-physical values.** With
-  `noise_scale=0.55` and `missing_rate=18%`, Gaussian noise injection
-  can yield negative values in count and duration columns before MCAR
-  fill (e.g. a negative `days_since_last_touch`). These are treated
-  as real-world data-messiness artifacts; the snapshot builder clamps
-  them to zero, but some residual distortion is intentional as a
-  data-cleaning exercise.
+- **Advanced-tier noise can produce artifact zeros in count and duration
+  columns.** Gaussian noise is applied before MCAR missingness; the
+  snapshot builder clamps results below zero to zero. What users observe
+  is therefore not negative values but zeros that may be noise artifacts
+  rather than true zero values — e.g. `days_since_last_touch = 0` might
+  mean "noised below zero, clamped" rather than "touched today". Treat
+  suspicious zero clusters in the Advanced tier as intentional
+  data-cleaning exercise material.
 
 ## Composition
 
@@ -271,7 +275,7 @@ intended prevalence axis (intro > intermediate > advanced).
   sales_activities, opportunities (public); plus customers and
   subscriptions (instructor only). Per-row counts per bundle live in
   `manifest.json`.
-- **Features.** 32 public columns grouped by analytical role in
+- **Features.** 31 public columns grouped by analytical role in
   [`docs/release/feature_dictionary.md`](../docs/release/feature_dictionary.md);
   the per-bundle `feature_dictionary.csv` is the authoritative
   machine-readable spec.
