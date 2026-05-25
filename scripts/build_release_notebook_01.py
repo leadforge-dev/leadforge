@@ -56,6 +56,18 @@ def cells() -> list[nbf.NotebookNode]:
             never depend on instructor-only artefacts.
             """
         ),
+        md(
+            """
+            > ⚠️ **Validation-panel notebook — leakage trap retained intentionally.**
+            >
+            > This notebook reproduces the metrics published in
+            > `release/validation/validation_report.json` and therefore **keeps
+            > `total_touches_all`** in the feature set (see §4 for the full
+            > explanation).  If your goal is to build a clean production-ready
+            > model, **start at Notebook 02**, which drops the trap and adds
+            > relational feature engineering on the snapshot-safe tables.
+            """
+        ),
         md("## 1. Setup"),
         code(
             """
@@ -191,9 +203,9 @@ def cells() -> list[nbf.NotebookNode]:
             AUC is barely above 0.55 (see the *post_snapshot_aggregates*
             baseline column in the report) and (b) the report exists to
             measure the v1 dataset's *as-shipped* difficulty, leakage trap
-            included. **Notebook 03** *(coming in PR 6.2)* walks through
-            what dropping the trap does to performance and how to detect
-            similar traps from feature audits alone.
+            included. **Notebook 03** walks through what dropping the trap
+            does to performance and how to detect similar traps from feature
+            audits alone.
             """
         ),
         code(
@@ -414,10 +426,10 @@ def cells() -> list[nbf.NotebookNode]:
             - **Notebook 02** — engineer features by joining the snapshot-
               safe relational tables under `release/intermediate/tables/`,
               then measure the lift over the flat-CSV LR baseline above.
-            - **Notebook 03** *(coming in PR 6.2)* — leakage and time-window
-              walkthrough; works through what `total_touches_all` does to
-              your AUC if you forget to drop it.
-            - **Notebook 04** *(coming in PR 6.2)* — value-aware ranking
+            - **Notebook 03** — leakage and time-window walkthrough; works
+              through what `total_touches_all` does to your AUC if you
+              forget to drop it.
+            - **Notebook 04** — value-aware ranking
               (`expected_acv` × P(convert)), threshold selection, and the
               cohort-shift stress test.
             """

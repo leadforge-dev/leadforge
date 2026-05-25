@@ -267,6 +267,120 @@ def cells() -> list[nbf.NotebookNode]:
         ),
         md(
             """
+            ### 3a. Advanced tier: watch calibration break
+
+            The intermediate tier's max-bin error is ≈ 0.13 (the panel above).
+            The **Advanced tier's published median is 0.52** — the model's
+            predicted probabilities are materially mis-scaled against actual
+            conversion rates. This is the intended exercise: low prevalence
+            (≈ 8 % base rate) combined with high noise makes isotonic
+            recalibration non-trivial.
+
+            Swap `BUNDLE` to `../advanced` and re-run the cells above to see
+            the reliability diagram shift. The code below does it inline for
+            comparison, reusing the same binning logic.
+            """
+        ),
+        code(
+            """
+            ADV_BUNDLE = Path("../advanced")
+
+            adv_train = pd.read_parquet(ADV_BUNDLE / "tasks" / TASK / "train.parquet")
+            adv_test  = pd.read_parquet(ADV_BUNDLE / "tasks" / TASK / "test.parquet")
+
+            # Same preprocessing — drop IDs, trap, label; keep everything else
+            adv_headline_cols = [c for c in adv_train.columns if c not in EXCLUDE_HEADLINE]
+            adv_cat = [
+                c for c in adv_headline_cols
+                if not (
+                    pd.api.types.is_bool_dtype(adv_train[c])
+                    or pd.api.types.is_numeric_dtype(adv_train[c])
+                )
+            ]
+            adv_num = [c for c in adv_headline_cols if c not in adv_cat]
+
+
+            def _sanitize_adv(df: pd.DataFrame) -> pd.DataFrame:
+                out = df.copy()
+                for c in adv_cat:
+                    out[c] = out[c].astype(object).where(out[c].notna(), None)
+                return out
+
+
+            adv_pipe = build_pipeline(adv_num, adv_cat, model="lr")
+            adv_pipe.fit(
+                _sanitize_adv(adv_train[adv_headline_cols]),
+                adv_train[TASK].astype("boolean").fillna(False).astype(int),
+            )
+            adv_probs = adv_pipe.predict_proba(_sanitize_adv(adv_test[adv_headline_cols]))[:, 1]
+            adv_y = adv_test[TASK].astype("boolean").fillna(False).astype(int).to_numpy()
+
+            # Calibration bins — same edges as intermediate above
+            adv_pred: list[float] = []
+            adv_actual: list[float] = []
+            adv_n: list[int] = []
+            for idx in range(10):
+                lo, hi = edges[idx], edges[idx + 1]
+                mask = (adv_probs >= lo) & (
+                    (adv_probs <= hi) if idx == 9 else (adv_probs < hi)
+                )
+                if mask.sum() == 0:
+                    continue
+                adv_pred.append(float(adv_probs[mask].mean()))
+                adv_actual.append(float(adv_y[mask].mean()))
+                adv_n.append(int(mask.sum()))
+
+            adv_max_bin_err = max(
+                abs(p - a) for p, a in zip(adv_pred, adv_actual, strict=False)
+            )
+
+            # Side-by-side reliability diagram
+            fig, axes = plt.subplots(1, 2, figsize=(11, 4.5), sharey=False)
+            for ax, preds, actuals, ns, label, _mbe in [
+                (
+                    axes[0], mean_pred, mean_actual, bin_n,
+                    f"Intermediate (max-bin err = {max_bin_err:.3f})", max_bin_err,
+                ),
+                (
+                    axes[1], adv_pred, adv_actual, adv_n,
+                    f"Advanced (max-bin err = {adv_max_bin_err:.3f})", adv_max_bin_err,
+                ),
+            ]:
+                ax.plot([0, 1], [0, 1], "k--", lw=1, label="Perfect")
+                sc = ax.scatter(preds, actuals, c=ns, cmap="Blues", s=70, vmin=0, zorder=3)
+                plt.colorbar(sc, ax=ax, label="bin n")
+                ax.set_xlabel("Mean predicted probability")
+                ax.set_ylabel("Mean actual conversion rate")
+                ax.set_title(label)
+                ax.set_xlim(-0.02, 1.02)
+                ax.set_ylim(-0.02, 1.02)
+            fig.suptitle(
+                "Reliability diagram: intermediate vs advanced tier", fontweight="bold"
+            )
+            plt.tight_layout()
+            plt.show()
+
+            print(
+                f"Advanced tier: AUC = {roc_auc_score(adv_y, adv_probs):.4f}  "
+                f"(cf. intermediate {roc_auc_score(y_test, lr_probs):.4f})"
+            )
+            print(
+                f"Advanced tier: max-bin error = {adv_max_bin_err:.4f}  "
+                f"(cf. intermediate {max_bin_err:.4f})"
+            )
+            print()
+            print(
+                "Take-away: AUC barely moves across tiers (tiers are a prevalence "
+                "axis, not a rank-discrimination axis)."
+            )
+            print(
+                "           Calibration quality deteriorates sharply on the "
+                "Advanced tier — that is the intended exercise."
+            )
+            """
+        ),
+        md(
+            """
             ## 4. Lift and cumulative gains
 
             Two complementary curves:

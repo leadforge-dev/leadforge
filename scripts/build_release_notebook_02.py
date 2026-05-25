@@ -615,7 +615,7 @@ def cells() -> list[nbf.NotebookNode]:
             `tiers.intermediate.spreads.gbm_auc`), so a single-seed lift
             of this size is **suggestive, not conclusive**. Confirming a
             real signal needs a seed sweep — see the cohort-shift / seed
-            harness coming in PR 6.2's notebook 04.
+            harness in Notebook 04.
 
             The lift also does **not** flip the sign of the GBM-vs-LR
             comparison: GBM(eng) is still slightly below LR(flat). This
@@ -640,12 +640,89 @@ def cells() -> list[nbf.NotebookNode]:
 
             ## Next
 
-            - **Notebook 03** *(coming in PR 6.2)* — leakage and
-              time-window walkthrough, including the deliberate
-              `total_touches_all` trap notebook 01 keeps and this notebook
-              drops.
-            - **Notebook 04** *(coming in PR 6.2)* — value-aware ranking,
-              calibration, and cohort-shift evaluation with a seed sweep.
+            - **Notebook 03** — leakage and time-window walkthrough,
+              including the deliberate `total_touches_all` trap Notebook 01
+              keeps and this notebook drops.
+            - **Notebook 04** — value-aware ranking, calibration, and
+              cohort-shift evaluation with a seed sweep.
+            - **§9 below** — `GroupKFold(account_id)` evaluation: the
+              faithful generalisation estimate for this bundle.
+            """
+        ),
+        md(
+            """
+            ## 9. Account-level split: the faithful generalisation estimate
+
+            The dataset card's top disclosed limitation is **93 % account overlap
+            across train / test**: the random split is keyed on `lead_id`, so most
+            test accounts also appear in train. A model trained on the random split
+            can ride account-level signal across the boundary, overstating
+            generalisation to truly unseen accounts.
+
+            The antidote is `GroupKFold(account_id)`: each fold holds out a disjoint
+            set of accounts, so the evaluation is faithful to a production scenario
+            where you score leads from companies you have never sold to before.
+
+            **What to expect.** Because the intermediate bundle's signal comes
+            mostly from lead-level engagement aggregates (not account-level
+            features), the AUC drop is small — typically 0.01–0.05 on this DGP.
+            The exercise matters anyway: it quantifies the optimism in the headline
+            number and is required for any published benchmark claim.
+            """
+        ),
+        code(
+            """
+            from sklearn.model_selection import GroupKFold
+
+            # Pool train + test (same 5,000 leads, different slices)
+            all_data = pd.concat([train, test], ignore_index=True)
+            groups = all_data["account_id"].to_numpy()
+
+            # Reuse the flat-baseline column set from §5 (base_cols, no trap, no IDs)
+            X_all = all_data[base_cols]
+            y_all = all_data[TASK].astype(int).to_numpy()
+
+            # 5-fold account-grouped CV with LR (fast; GBM adds ~4× wall time for
+            # a small AUC difference on this DGP)
+            N_SPLITS = 5
+            gkf = GroupKFold(n_splits=N_SPLITS)
+            fold_aucs: list[float] = []
+
+            for fold_idx, (tr_idx, va_idx) in enumerate(gkf.split(X_all, y_all, groups)):
+                X_tr, X_va = X_all.iloc[tr_idx], X_all.iloc[va_idx]
+                y_tr, y_va = y_all[tr_idx], y_all[va_idx]
+
+                X_tr_s = _sanitize(X_tr, cat_base)
+                X_va_s = _sanitize(X_va, cat_base)
+
+                pipe = build_pipeline(num_base, cat_base, model="lr")
+                pipe.fit(X_tr_s, y_tr)
+                fold_aucs.append(float(roc_auc_score(y_va, pipe.predict_proba(X_va_s)[:, 1])))
+                n_accounts_held_out = len(set(groups[va_idx]))
+                print(
+                    f"  fold {fold_idx + 1}/{N_SPLITS}: "
+                    f"AUC={fold_aucs[-1]:.4f}  "
+                    f"({n_accounts_held_out} held-out accounts, "
+                    f"{len(va_idx):,} leads)"
+                )
+
+            gkf_mean = float(sum(fold_aucs) / len(fold_aucs))
+            random_split_auc = float(roc_auc_score(y_test, probs_lr_flat))
+
+            print()
+            print(f"GroupKFold mean AUC (account-level CV): {gkf_mean:.4f}")
+            print(f"Random-split AUC (headline):            {random_split_auc:.4f}")
+            print(f"Optimism in headline number:            {random_split_auc - gkf_mean:+.4f}")
+            print()
+            print(
+                "GroupKFold AUC is the honest estimate for generalisation to "
+                "unseen accounts."
+            )
+            print(
+                "The optimism is typically small on this DGP (lead-level signal "
+                "dominates); it may\\nbe larger on real CRM data where account "
+                "identity is a stronger predictor."
+            )
             """
         ),
     ]
