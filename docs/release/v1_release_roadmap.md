@@ -38,15 +38,18 @@ A release candidate is v1-ready when **all** of the following hold. Concrete ban
 
 | Phase | Title | Size | PRs | Depends on | Status |
 |---|---|---|---:|---|---|
-| 1 | Audit and naming | S | 1 | — | not started |
-| 2 | Snapshot-safe relational export | M | 2 | 1 | not started |
-| 3 | Release validation hardening | L | 3 | 2 | not started |
-| 4 | Channel-signal audit + dataset card | M-S | 1 | 3 | not started |
-| 5 | Platform packaging | M | 2 | 4 | not started |
-| 6 | Notebook sequence + adversarial framing | M-L | 3 | 5 | not started |
-| 7 | LLM critique + publish | M | 3 | 6 | not started |
+| 1 | Audit and naming | S | 1 | — | ✓ done |
+| 2 | Snapshot-safe relational export | M | 2 | 1 | ✓ done |
+| 3 | Release validation hardening | L | 3 | 2 | ✓ done |
+| 4 | Channel-signal audit + dataset card | M-S | 1 | 3 | ✓ done |
+| 5 | Platform packaging | M | 2 | 4 | ✓ done |
+| 6 | Notebook sequence + adversarial framing | M-L | 3 | 5 | ✓ done |
+| 7 | LLM critique + preview site | M | 4+1† | 6 | in progress (7.1–7.2.2 ✓; 7.3 blocked on Phase 8) |
+| 8 | Pre-publish review-driven fixes | M-L | 4 | 7 (partial) | not started |
 
-**Total: 15 PRs.** Each PR follows the `CLAUDE.md` workflow: branch → commit → update `.agent-plan.md` → PR with type+layer labels → milestone assignment (`dataset: leadforge-lead-scoring-v1`). PR-level decomposition is in the **PR breakdown** section immediately below.
+† Phase 7 grew from 3 to 4+1 PRs: 7.2.1 (agent-reviewable artifacts) and 7.2.2 (ShmuggingFace preview site) were added; 7.3 (publish) is deferred until Phase 8 completes.
+
+**Total: 19 PRs** (15 original + 4 Phase-8 additions). Each PR follows the `CLAUDE.md` workflow: branch → commit → update `.agent-plan.md` → PR with type+layer labels → milestone assignment (`dataset: leadforge-lead-scoring-v1`). PR-level decomposition is in the **PR breakdown** section immediately below.
 
 ## PR breakdown
 
@@ -176,7 +179,7 @@ First-cut decomposition of the 7 phases into ~15 PRs. The numbering `phase.seq` 
   - Labels: `type: feature`, `layer: cli`
   - Size: M (~600 lines — two HTML templates + two render scripts + two test files)
 
-- **PR 7.3** — `feat(scripts): publish_kaggle + publish_hf + tag v1 release`
+- **PR 7.3** — `feat(scripts): publish_kaggle + publish_hf + tag v1 release` ⚠️ **depends on Phase 8**
   - `scripts/publish_kaggle.py`
   - `scripts/publish_hf.py`
   - `docs/release/v1_release_notes.md`
@@ -184,6 +187,61 @@ First-cut decomposition of the 7 phases into ~15 PRs. The numbering `phase.seq` 
   - Tag `leadforge-lead-scoring-v1`
   - Labels: `type: feature`, `layer: cli`
   - Size: S (~300 lines code + manual publish step)
+
+---
+
+### Phase 8 — Pre-publish review-driven fixes (4 PRs)
+
+_Source: external three-model review (Claude, ChatGPT, Gemini) of the v1 preview site, 2026-05-25. Full synthesis in `docs/external_review/summaries/v1_release_review_synthesis.md`. Blocked by Phase 7 (partial: PRs 7.1–7.2.2). Blocks PR 7.3._
+
+- **PR 8.1** — `fix(render,validation,schema): snapshot fixes + noise clamps + schema cleanup + bundle regen`
+  - **`has_open_opportunity` / `opportunity_estimated_acv` post-snapshot leak**: `render/snapshots.py` — the open/closed gate currently uses `close_outcome.isna()`, a full-horizon terminal field; correct it to `closed_at is null OR closed_at > lead_created_at + snapshot_day`. Highest-severity correctness finding across all three external models; directly violates CLAUDE.md Hard Constraints.
+  - **Flat-feature snapshot-consistency probe**: `validation/leakage_probes.py` — new probe that recomputes opportunity-derived features under the corrected semantics and asserts equality with the shipped column values. Closes the probe gap that allowed the bug above to ship undetected.
+  - **`to_dataframes_snapshot_safe` guard**: assert `"lead_id" in events.columns` per `SNAPSHOT_FILTERED_TABLES` entry; fail loud rather than silently producing all-NaT cutoffs.
+  - **Clamp Gaussian noise**: post-distortion clamp per column type in `_apply_difficulty_distortions` (`days_since_x ≥ 0`, monetary ≥ 0). Removes the non-physical-values known limitation at essentially zero cost.
+  - **Exempt `total_touches_all` from distortion**: remove from `_NUMERIC_DISTORTION_COLS`. Up to 18% NaN injected into the trap in Advanced muddies the leakage lesson it's supposed to deliver cleanly.
+  - **Drop `first_touch_channel`**: remove from `LEAD_SNAPSHOT_FEATURES`, flat export, and feature dictionary. Byte-identical to `lead_source` in v1 — documented redundancy that removes itself.
+  - **Rename `touches_week_1` → `touches_days_0_7`**: the implementation spans days 0–7 inclusive (8 day values); the name implies 7.
+  - **Label window `<` → `<=`**: `engine.py` — "converted within 90 days" is inclusive; the break-me guide explicitly invites students to audit this boundary.
+  - Regenerate all three public bundles; rerun `validate_release_candidate`; sync claims register; measure and document AUC delta from the snapshot fix.
+  - Labels: `type: bugfix`, `layer: render`, `layer: validation`, `layer: schema`
+  - Size: M-L (~400 lines + regenerated bundles)
+
+- **PR 8.2** — `docs(release): difficulty-axis reframe + disclosure hardening`
+  - **Reframe difficulty axis throughout all copy**: README, dataset card, Kaggle/HF metadata, tier table, notebook headers. AUC is flat (0.879/0.886/0.886) across tiers; what differs is conversion rate (42.7/21.6/8.4%), AP, P@K, Brier, missingness, and noise. Reframe as prevalence/noise tiers: "Intro = high-prevalence classroom warm-up; Intermediate = default benchmark; Advanced = low-prevalence, calibration, and noise-handling exercise — not harder nonlinear modelling."
+  - **Add `calibration_max_bin_error` to README calibration table**: advanced tier is at 0.52; the current table shows only Brier (which *improves* with falling prevalence, actively misleading). One row.
+  - **Clarify acceptance bands are descriptive regression fences**: `docs/release/v1_acceptance_gates.md` — state plainly that bands are fitted to the generator's output, not external realism thresholds. The YAML inline comments already say this; the README does not.
+  - **Fix `isPrivate: true`**: `release/kaggle/dataset-metadata.json` — one character; absolute publish blocker.
+  - **Change HF default config to `intro`**: `release/huggingface/README.md` — `intermediate` is currently `default: true`; students executing `load_dataset(...)` with no arguments should land in the easiest tier.
+  - **Remove `intermediate_instructor/` from public README tree**: instructor bundle reconstructs the label by construction; listing it in the public-facing tree is a redaction bypass risk.
+  - **Elevate 93% account overlap to primary evaluation warning**: move above the tier table in README; add cross-reference to `GroupKFold(account_id)` notebook section.
+  - **Add "non-physical values" bullet to known limitations**: "Advanced-tier noise can produce negative duration/monetary values; treat as synthetic distortion artifacts."
+  - **Reconcile CLAUDE.md package layout**: delete or annotate aspirational modules; add modules that exist but are missing.
+  - Labels: `type: docs`
+  - Size: M (~250 lines across multiple files)
+
+- **PR 8.3** — `docs(notebooks): teaching improvements`
+  - **Fix stale internal forward-references**: Notebooks 01 and 02 still contain "Notebook 03 *(coming in PR 6.2)*" etc. Internal PR numbers in published teaching material.
+  - **Add banner to Notebook 01**: nb01 deliberately keeps `total_touches_all` to reproduce the validation panel; a banner is needed: "⚠️ This notebook reproduces the published validation panel and intentionally includes the leakage trap — do not use its feature selection block as a modelling template."
+  - **Add "switch to Advanced, watch calibration break" cell to Notebook 04**: nb04 teaches calibration on Intermediate (max-bin error ~0.13, looks fine); the Advanced tier at 0.52 is never shown to students who are invited to "graduate" to it.
+  - **Add `GroupKFold(account_id)` section to Notebook 02 or 04**: 93% account overlap is the README's top disclosed limitation; not showing it in any notebook leaves the stated "group-split evaluation" intended use invisible.
+  - Labels: `type: docs`
+  - Size: S (~200 lines across 4 notebooks)
+
+- **PR 8.4** — `feat(scripts): integration script + preview hardening`
+  - **Regenerate lockfile + bump to v1.0.1**: delete `package-lock.json`, update `package.json` pin to `github:ShmuggingFace/ShmuggingFaceCore#v1.0.1`, regenerate. Fixes SSH lockfile breakage and picks up the upstream socks/laundry copy fix in one step.
+  - **Remove fabricated Kaggle usability/medals**: delete `TIER_USABILITY` and `TIER_MEDAL` constants from `build_shmuggingface_site.py`. Dead config today; latent misinformation.
+  - **Make build script read and diff against canonical metadata files**: load `release/kaggle/dataset-metadata.json` and `release/huggingface/README.md`; compare `isPrivate`, tags, license, task, and per-split row counts against the generated config; exit non-zero on mismatch. This is the structural gap that made the `isPrivate: true` bug invisible.
+  - **Raise on missing/malformed manifest+metrics fields**: replace `manifest.get("n_leads", 5000)` style silent defaults with explicit key lookups and clear error messages.
+  - **Use per-tier `dataset_card.md` as tier page body**: currently all three tier pages render the same global README; one-line change per tier in the config builder.
+  - **Pin `wrangler` as devDependency + default to preview branch**: add `wrangler` to `package.json`; change default `--branch` from `main` to a preview branch; add `--production` flag. Prevents clobbering production on every local run.
+  - **Add smoke tests for `build_shmuggingface_site.py`**: minimum: all three tier configs generated with non-empty file lists and correct split row counts; the diff gate catches an injected `isPrivate: true`.
+  - **Fix `_rewrite_links` bare relative links** and hardcoded org/branch constant.
+  - **Single-source the two README copies** (or auto-sync Kaggle copy from canonical).
+  - **Add `split` to feature dictionary** (or remove from CSV).
+  - Rebuild + redeploy preview site after changes.
+  - Labels: `type: feat`, `type: bugfix`, `layer: cli`
+  - Size: M (~350 lines + npm changes)
 
 ## PR breakdown — totals
 
