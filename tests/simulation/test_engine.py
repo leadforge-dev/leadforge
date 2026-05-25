@@ -520,18 +520,22 @@ class TestLabelWindowDays:
         assert conv == 0
 
     def test_late_conversions_excluded(self) -> None:
-        """Leads that convert after the label window should not be labeled positive."""
+        """Leads that convert after the label window should not be labeled positive.
+
+        With the inclusive boundary fix (<= label_window_days), a conversion on
+        day label_window_days is now correctly labeled positive.
+        """
         from datetime import date
 
         r30 = self._run_with_window(label_window_days=30, seed=42, n_leads=300)
         for lead in r30.leads:
             if lead.converted_within_90_days:
-                # If labeled positive, conversion day must be < label_window_days.
+                # If labeled positive, conversion day must be <= label_window_days.
                 assert lead.conversion_timestamp is not None
                 created = date.fromisoformat(lead.lead_created_at)
                 converted = date.fromisoformat(lead.conversion_timestamp)
                 day_offset = (converted - created).days
-                assert day_offset < 30, (
+                assert day_offset <= 30, (
                     f"Lead {lead.lead_id} labeled positive but converted on day {day_offset}"
                 )
 

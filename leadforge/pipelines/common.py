@@ -114,6 +114,8 @@ RENAME_MAP = {
     "session_count": "web_sessions",
     "activity_count": "sales_activities",
     "converted_within_90_days": "converted",
+    # touches_days_0_7 renamed back to touches_week_1 for v6/v7 CSV format compatibility.
+    "touches_days_0_7": "touches_week_1",
 }
 
 

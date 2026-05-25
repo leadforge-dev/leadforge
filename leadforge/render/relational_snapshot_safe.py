@@ -101,7 +101,7 @@ def to_dataframes_snapshot_safe(
         df = dfs[name]
         if name == "opportunities":
             df = _drop_columns(df, BANNED_OPP_COLUMNS)
-        out[name] = _filter_to_snapshot_window(df, anchor, ts_col, horizon)
+        out[name] = _filter_to_snapshot_window(df, anchor, ts_col, horizon, table_name=name)
 
     return out
 
@@ -143,9 +143,15 @@ def _filter_to_snapshot_window(
     anchor: pd.DataFrame,
     ts_col: str,
     horizon: pd.Timedelta,
+    table_name: str = "<unknown>",
 ) -> pd.DataFrame:
     if len(events) == 0:
         return events
+    if "lead_id" not in events.columns:
+        raise ValueError(
+            f"SNAPSHOT_FILTERED_TABLES entry '{table_name}' is missing a 'lead_id' column; "
+            "cannot apply per-lead snapshot filter."
+        )
     merged = events.merge(anchor, on="lead_id", how="left")
     ts = pd.to_datetime(merged[ts_col])
     cutoff = merged[_ANCHOR_COL] + horizon

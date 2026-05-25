@@ -57,7 +57,7 @@ def _make_snapshot(
             "expected_acv": rng.uniform(5_000, 200_000, size=n).round(0),
             "inbound_touch_count": rng.poisson(3, size=n),
             "outbound_touch_count": rng.poisson(2, size=n),
-            "touches_week_1": rng.poisson(2, size=n),
+            "touches_days_0_7": rng.poisson(2, size=n),
             "touches_last_7_days": rng.poisson(2, size=n),
             "days_since_first_touch": rng.uniform(0, 14, size=n).round(1),
             "session_count": rng.poisson(4, size=n).astype(float),

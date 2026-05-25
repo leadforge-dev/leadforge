@@ -150,7 +150,7 @@ def build_snapshot(
         .reset_index()
     )
 
-    # touches_week_1: count touches within first 7 days of lead creation.
+    # touches_days_0_7: count touches in days 0–7 (inclusive) after lead creation.
     # touches_last_7_days: count touches within last 7 days of snapshot window.
     if len(td_windowed) > 0:
         if "_ts" not in td_windowed.columns:
@@ -164,7 +164,7 @@ def build_snapshot(
             td_windowed_copy["_ts"] - td_windowed_copy["_lead_date"]
         ).dt.days
         week1 = td_windowed_copy[td_windowed_copy["_day"] <= 7]
-        touches_week_1 = week1.groupby("lead_id").size().reset_index(name="touches_week_1")
+        touches_days_0_7 = week1.groupby("lead_id").size().reset_index(name="touches_days_0_7")
 
         # touches_last_7_days: touches in [effective_window - 7, effective_window]
         last7 = td_windowed_copy[td_windowed_copy["_day"] > (effective_window - 7)]
@@ -180,7 +180,7 @@ def build_snapshot(
             .rename(columns={"_day": "_first_touch_day"})
         )
     else:
-        touches_week_1 = pd.DataFrame(columns=["lead_id", "touches_week_1"])
+        touches_days_0_7 = pd.DataFrame(columns=["lead_id", "touches_days_0_7"])
         touches_last_7_days = pd.DataFrame(columns=["lead_id", "touches_last_7_days"])
         first_touch_day = pd.DataFrame(columns=["lead_id", "_first_touch_day"])
 
@@ -246,8 +246,21 @@ def build_snapshot(
     any_opps = od[["lead_id"]].drop_duplicates()
     any_opps["opportunity_created"] = True
 
-    open_opps = od[od["close_outcome"].isna()][["lead_id", "estimated_acv"]]
-    open_opps = open_opps.groupby("lead_id").first().reset_index()
+    # Compute per-lead snapshot cutoffs for the opportunity open/closed check.
+    # An opportunity is "open" at snapshot date if it has not yet been closed
+    # (closed_at is NaT) OR if it was closed after the per-lead snapshot cutoff.
+    # Using close_outcome.isna() alone is wrong: an opportunity closed after the
+    # snapshot window has a non-null close_outcome set by the post-simulation pass,
+    # so it would be incorrectly treated as already closed at snapshot time.
+    if len(od) > 0:
+        od = od.copy()
+        od["_closed_at_ts"] = pd.to_datetime(od["closed_at"], errors="coerce")
+        od["_snapshot_cutoff"] = od["lead_id"].map(cutoff_map)
+        open_mask = od["_closed_at_ts"].isna() | (od["_closed_at_ts"] > od["_snapshot_cutoff"])
+        open_opps_raw = od[open_mask][["lead_id", "estimated_acv"]]
+    else:
+        open_opps_raw = od[["lead_id", "estimated_acv"]]
+    open_opps = open_opps_raw.groupby("lead_id").first().reset_index()
     open_opps = open_opps.rename(columns={"estimated_acv": "opportunity_estimated_acv"})
     open_opps["has_open_opportunity"] = True
 
@@ -259,7 +272,7 @@ def build_snapshot(
     lead_df = lead_df.merge(act_agg, on="lead_id", how="left")
     lead_df = lead_df.merge(any_opps, on="lead_id", how="left")
     lead_df = lead_df.merge(open_opps, on="lead_id", how="left")
-    lead_df = lead_df.merge(touches_week_1, on="lead_id", how="left")
+    lead_df = lead_df.merge(touches_days_0_7, on="lead_id", how="left")
     lead_df = lead_df.merge(touches_last_7_days, on="lead_id", how="left")
     lead_df = lead_df.merge(first_touch_day, on="lead_id", how="left")
     lead_df = lead_df.merge(total_touches_all, on="lead_id", how="left")
@@ -268,7 +281,7 @@ def build_snapshot(
     # opportunity_estimated_acv and days_since_last_touch intentionally stay NaN.
     int_agg_cols = [c for c in _INT_AGG_COLS if c in lead_df.columns]
     lead_df[int_agg_cols] = lead_df[int_agg_cols].fillna(0)
-    lead_df["touches_week_1"] = lead_df["touches_week_1"].fillna(0)
+    lead_df["touches_days_0_7"] = lead_df["touches_days_0_7"].fillna(0)
     lead_df["touches_last_7_days"] = lead_df["touches_last_7_days"].fillna(0)
     if "total_touches_all" in lead_df.columns:
         lead_df["total_touches_all"] = pd.to_numeric(
@@ -332,14 +345,52 @@ def build_snapshot(
 # Derive eligible columns from the feature spec rather than runtime dtype
 # sniffing.  This guarantees categoricals, booleans, IDs, and labels are
 # never distorted even if their runtime dtype happens to be numeric.
+
+# total_touches_all is a pedagogical leakage trap — distorting it muddies the
+# lesson (up to 18% NaN on Advanced tier hides the trap).  Exempt it explicitly.
+_DISTORTION_EXEMPT_COLS: frozenset[str] = frozenset({"total_touches_all"})
+
 _FLOAT_DISTORTION_COLS: list[str] = [
-    f.name for f in LEAD_SNAPSHOT_FEATURES if f.dtype in ("Float64", "float64") and not f.is_target
+    f.name
+    for f in LEAD_SNAPSHOT_FEATURES
+    if f.dtype in ("Float64", "float64")
+    and not f.is_target
+    and f.name not in _DISTORTION_EXEMPT_COLS
 ]
 _NUMERIC_DISTORTION_COLS: list[str] = [
     f.name
     for f in LEAD_SNAPSHOT_FEATURES
-    if f.dtype in ("Float64", "float64", "Int64", "int64") and not f.is_target
+    if f.dtype in ("Float64", "float64", "Int64", "int64")
+    and not f.is_target
+    and f.name not in _DISTORTION_EXEMPT_COLS
 ]
+
+# Post-noise physical-range clamps.  Applied after Gaussian noise to prevent
+# non-physical values (e.g. negative durations, negative counts).
+# Mapping: column name (or substring match prefix) → (lower_bound, upper_bound | None)
+_NONNEG_FLOAT_COLS: frozenset[str] = frozenset(
+    {
+        "days_since_last_touch",
+        "days_since_first_touch",
+        "opportunity_estimated_acv",
+        "expected_acv",
+        "total_session_duration_seconds",
+    }
+)
+_NONNEG_INT_COLS: frozenset[str] = frozenset(
+    {
+        "touch_count",
+        "inbound_touch_count",
+        "outbound_touch_count",
+        "session_count",
+        "pricing_page_views",
+        "demo_page_views",
+        "touches_week_1",
+        "touches_days_0_7",
+        "touches_last_7_days",
+        "activity_count",
+    }
+)
 
 
 def _apply_difficulty_distortions(
@@ -373,6 +424,16 @@ def _apply_difficulty_distortions(
             values = df[col].copy()
             values[valid_mask] = values[valid_mask] + noise[valid_mask.values]
             df[col] = values
+
+    # 1b. Post-noise clamp to physical ranges.
+    # Float non-negative columns: clamp to >= 0.
+    for col in _NONNEG_FLOAT_COLS:
+        if col in df.columns and df[col].notna().any():
+            df[col] = df[col].clip(lower=0)
+    # Int non-negative columns: clamp to >= 0, then restore int dtype.
+    for col in _NONNEG_INT_COLS:
+        if col in df.columns and df[col].notna().any():
+            df[col] = df[col].clip(lower=0)
 
     # 2. MCAR missingness injection (all numeric columns).
     if params.missing_rate > 0:

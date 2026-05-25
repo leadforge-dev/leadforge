@@ -198,7 +198,7 @@ class TestPipelineRename:
                 "expected_acv": [50000],
                 "inbound_touch_count": [5],
                 "outbound_touch_count": [3],
-                "touches_week_1": [2],
+                "touches_days_0_7": [2],
                 "days_since_first_touch": [10],
                 "session_count": [4],
                 "activity_count": [2],

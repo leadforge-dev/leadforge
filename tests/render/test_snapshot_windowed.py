@@ -1,6 +1,6 @@
 """Tests for windowed snapshot features (v4 engine changes).
 
-Covers: snapshot_day parameter, touches_week_1, days_since_first_touch,
+Covers: snapshot_day parameter, touches_days_0_7, days_since_first_touch,
 expected_acv, total_touches_all (leakage trap), opportunity_created.
 """
 
@@ -46,7 +46,7 @@ class TestWindowedSnapshot:
         config, population, result = sim_data
         snap = build_snapshot(result, population, snapshot_day=14)
         assert len(snap) == config.n_leads
-        assert "touches_week_1" in snap.columns
+        assert "touches_days_0_7" in snap.columns
 
     def test_windowed_touch_counts_leq_full(self, sim_data):
         """Windowed touch counts should be ≤ full-horizon counts."""
@@ -70,20 +70,20 @@ class TestWindowedSnapshot:
 
 
 # ---------------------------------------------------------------------------
-# touches_week_1
+# touches_days_0_7
 # ---------------------------------------------------------------------------
 
 
-class TestTouchesWeek1:
+class TestTouchesDays07:
     def test_non_negative(self, sim_data):
         _, population, result = sim_data
         snap = build_snapshot(result, population, snapshot_day=14)
-        assert (snap["touches_week_1"] >= 0).all()
+        assert (snap["touches_days_0_7"] >= 0).all()
 
     def test_leq_total_touches(self, sim_data):
         _, population, result = sim_data
         snap = build_snapshot(result, population, snapshot_day=14)
-        assert (snap["touches_week_1"] <= snap["touch_count"]).all()
+        assert (snap["touches_days_0_7"] <= snap["touch_count"]).all()
 
 
 # ---------------------------------------------------------------------------

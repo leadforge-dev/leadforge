@@ -57,7 +57,7 @@ V5_TASK_COLUMNS_STUDENT_PUBLIC: frozenset[str] = frozenset(
         "lead_id",
         "lead_created_at",
         "lead_source",
-        "first_touch_channel",
+        # first_touch_channel removed: byte-identical to lead_source in v1
         "touch_count",
         "inbound_touch_count",
         "outbound_touch_count",
@@ -65,7 +65,7 @@ V5_TASK_COLUMNS_STUDENT_PUBLIC: frozenset[str] = frozenset(
         "pricing_page_views",
         "demo_page_views",
         "total_session_duration_seconds",
-        "touches_week_1",
+        "touches_days_0_7",  # renamed from touches_week_1
         "touches_last_7_days",
         "days_since_first_touch",
         "activity_count",
@@ -93,7 +93,7 @@ V5_LEAD_TABLE_COLUMNS_STUDENT_PUBLIC: frozenset[str] = frozenset(
         "account_id",
         "lead_created_at",
         "lead_source",
-        "first_touch_channel",
+        "first_touch_channel",  # still present in relational leads table (entity field)
         # ``current_stage``, ``is_sql`` redacted in student_public
         "owner_rep_id",
         # ``converted_within_90_days`` / ``conversion_timestamp`` dropped
@@ -108,7 +108,7 @@ V5_LEAD_TABLE_COLUMNS_RESEARCH_INSTRUCTOR: frozenset[str] = frozenset(
         "account_id",
         "lead_created_at",
         "lead_source",
-        "first_touch_channel",
+        "first_touch_channel",  # still present in relational leads table (entity field)
         "current_stage",
         "is_sql",
         "owner_rep_id",

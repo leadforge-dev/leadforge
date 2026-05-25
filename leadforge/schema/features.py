@@ -128,12 +128,9 @@ LEAD_SNAPSHOT_FEATURES: tuple[FeatureSpec, ...] = (
         "Origination source of the lead (e.g. inbound_form, sdr_outbound).",
         "lead_meta",
     ),
-    FeatureSpec(
-        "first_touch_channel",
-        "string",
-        "Marketing channel responsible for the first recorded touch.",
-        "lead_meta",
-    ),
+    # ``first_touch_channel`` was removed: in v1 it is byte-identical to
+    # ``lead_source`` (set to the same value in population.py), so it adds
+    # no information and is cleaner to drop than to document as redundant.
     FeatureSpec(
         "current_stage",
         "string",
@@ -208,9 +205,11 @@ LEAD_SNAPSHOT_FEATURES: tuple[FeatureSpec, ...] = (
     ),
     # -- Momentum features --
     FeatureSpec(
-        "touches_week_1",
+        "touches_days_0_7",
         "Int64",
-        "Number of touches in the first 7 days after lead creation.",
+        "Number of touches in days 0–7 (inclusive) after lead creation. "
+        "Renamed from touches_week_1 for precision: the window covers 8 days "
+        "(0, 1, …, 7), not 7.",
         "engagement",
     ),
     FeatureSpec(
