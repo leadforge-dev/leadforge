@@ -363,3 +363,16 @@ AGENT_REVIEWABLE_ROOT_FILES: Final[tuple[tuple[str, bool], ...]] = (
 #: (DGP description, leakage / acceptance bands, break-me guide, etc.).
 #: Copied wholesale into the upload tree when present.
 AGENT_REVIEWABLE_DOCS_DIR: Final[str] = "docs"
+
+#: Required vendored-doc files that should be represented in the
+#: canonical platform metadata. This is separate from the directory
+#: copy contract above: packagers copy the whole docs subtree, while
+#: metadata lint requires these high-value review files to be visible
+#: in the platform file list.
+AGENT_REVIEWABLE_DOC_FILES: Final[tuple[str, ...]] = (
+    "README.md",
+    "feature_dictionary.md",
+    "generation_method.md",
+    "break_me_guide.md",
+    "relational_table_schemas.csv",
+)
