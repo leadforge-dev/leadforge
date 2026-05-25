@@ -101,7 +101,7 @@ def to_dataframes_snapshot_safe(
         df = dfs[name]
         if name == "opportunities":
             df = _drop_columns(df, BANNED_OPP_COLUMNS)
-        out[name] = _filter_to_snapshot_window(df, anchor, ts_col, horizon)
+        out[name] = _filter_to_snapshot_window(df, anchor, ts_col, horizon, table_name=name)
 
     return out
 
@@ -143,7 +143,15 @@ def _filter_to_snapshot_window(
     anchor: pd.DataFrame,
     ts_col: str,
     horizon: pd.Timedelta,
+    table_name: str = "<unknown>",
 ) -> pd.DataFrame:
+    # Column-presence guard runs before the empty check: a misconfigured table
+    # that happens to be empty should still raise, not silently pass through.
+    if "lead_id" not in events.columns:
+        raise ValueError(
+            f"SNAPSHOT_FILTERED_TABLES entry '{table_name}' is missing a 'lead_id' column; "
+            "cannot apply per-lead snapshot filter."
+        )
     if len(events) == 0:
         return events
     merged = events.merge(anchor, on="lead_id", how="left")

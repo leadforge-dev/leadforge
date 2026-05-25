@@ -3,8 +3,8 @@
 
 Companion analysis for PR 4.1 (recommendation #8 v1 scope from
 ``docs/external_review/summaries/recommendations_pass.md``).  For every
-tier in a release bundle family we compute, separately for ``lead_source``
-and ``first_touch_channel``:
+tier in a release bundle family we compute, for each channel column
+(default: ``lead_source``):
 
 * per-channel conversion rate, share, and counts on the **train** split
 * the **in-sample** univariate AUC: per-channel rates derived on train
@@ -48,7 +48,7 @@ from sklearn.metrics import roc_auc_score
 # Constants
 # ---------------------------------------------------------------------------
 
-CHANNEL_COLUMNS: Final[tuple[str, ...]] = ("lead_source", "first_touch_channel")
+CHANNEL_COLUMNS: Final[tuple[str, ...]] = ("lead_source",)
 LABEL_COLUMN: Final[str] = "converted_within_90_days"
 DEFAULT_TIERS: Final[tuple[str, ...]] = ("intro", "intermediate", "advanced")
 DEFAULT_TASK: Final[str] = "converted_within_90_days"
@@ -111,9 +111,8 @@ class ChannelAudit:
 class ChannelGroup:
     """One or more channel columns with byte-identical audit values.
 
-    v1's ``lead_source`` and ``first_touch_channel`` produce identical
-    numbers in every tier — this dataclass lets the markdown renderer
-    collapse them into one section without losing information.
+    Allows the markdown renderer to collapse deduplicate columns into one
+    section without losing information.
     """
 
     columns: tuple[str, ...]
@@ -507,7 +506,7 @@ def render_markdown(
         "external baseline. It uses train-derived rates scored against held-out test "
         "labels — the same shape as the `source_only` HistGBM baseline reported in "
         "`release/validation/validation_report.json`, which is built on the same task "
-        "splits with `lead_source` + `first_touch_channel` as the only features. The "
+        "splits with `lead_source` as the only feature. The "
         "in-sample number is biased upward by construction — small at v1's N but "
         "visible — and is reported here for transparency rather than comparison."
     )
@@ -558,7 +557,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         action="append",
         dest="channel_columns",
         default=None,
-        help="channel column to audit (repeatable; default: lead_source + first_touch_channel)",
+        help="channel column to audit (repeatable; default: lead_source)",
     )
     parser.add_argument(
         "--out-md",

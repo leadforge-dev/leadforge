@@ -97,11 +97,6 @@
             "type": "string"
           },
           {
-            "description": "Marketing channel responsible for the first recorded touch.",
-            "name": "first_touch_channel",
-            "type": "string"
-          },
-          {
             "description": "Total number of marketing/sales touches recorded before snapshot.",
             "name": "touch_count",
             "type": "integer"
@@ -137,8 +132,8 @@
             "type": "integer"
           },
           {
-            "description": "Number of touches in the first 7 days after lead creation.",
-            "name": "touches_week_1",
+            "description": "Number of touches in days 0–7 (inclusive) after lead creation. Renamed from touches_week_1 for precision: the window covers 8 days (0, 1, …, 7), not 7.",
+            "name": "touches_days_0_7",
             "type": "integer"
           },
           {
@@ -256,10 +251,6 @@
             "type": "string"
           },
           {
-            "name": "first_touch_channel",
-            "type": "string"
-          },
-          {
             "name": "touch_count",
             "type": "number"
           },
@@ -288,7 +279,7 @@
             "type": "number"
           },
           {
-            "name": "touches_week_1",
+            "name": "touches_days_0_7",
             "type": "number"
           },
           {
@@ -325,7 +316,7 @@
           },
           {
             "name": "total_touches_all",
-            "type": "number"
+            "type": "integer"
           },
           {
             "name": "converted_within_90_days",
@@ -392,10 +383,6 @@
             "type": "string"
           },
           {
-            "name": "first_touch_channel",
-            "type": "string"
-          },
-          {
             "name": "touch_count",
             "type": "number"
           },
@@ -424,7 +411,7 @@
             "type": "number"
           },
           {
-            "name": "touches_week_1",
+            "name": "touches_days_0_7",
             "type": "number"
           },
           {
@@ -461,7 +448,7 @@
           },
           {
             "name": "total_touches_all",
-            "type": "number"
+            "type": "integer"
           },
           {
             "name": "converted_within_90_days",
@@ -528,10 +515,6 @@
             "type": "string"
           },
           {
-            "name": "first_touch_channel",
-            "type": "string"
-          },
-          {
             "name": "touch_count",
             "type": "number"
           },
@@ -560,7 +543,7 @@
             "type": "number"
           },
           {
-            "name": "touches_week_1",
+            "name": "touches_days_0_7",
             "type": "number"
           },
           {
@@ -597,7 +580,7 @@
           },
           {
             "name": "total_touches_all",
-            "type": "number"
+            "type": "integer"
           },
           {
             "name": "converted_within_90_days",
@@ -995,11 +978,6 @@
             "type": "string"
           },
           {
-            "description": "Marketing channel responsible for the first recorded touch.",
-            "name": "first_touch_channel",
-            "type": "string"
-          },
-          {
             "description": "Total number of marketing/sales touches recorded before snapshot.",
             "name": "touch_count",
             "type": "integer"
@@ -1035,8 +1013,8 @@
             "type": "integer"
           },
           {
-            "description": "Number of touches in the first 7 days after lead creation.",
-            "name": "touches_week_1",
+            "description": "Number of touches in days 0–7 (inclusive) after lead creation. Renamed from touches_week_1 for precision: the window covers 8 days (0, 1, …, 7), not 7.",
+            "name": "touches_days_0_7",
             "type": "integer"
           },
           {
@@ -1154,10 +1132,6 @@
             "type": "string"
           },
           {
-            "name": "first_touch_channel",
-            "type": "string"
-          },
-          {
             "name": "touch_count",
             "type": "number"
           },
@@ -1186,7 +1160,7 @@
             "type": "number"
           },
           {
-            "name": "touches_week_1",
+            "name": "touches_days_0_7",
             "type": "number"
           },
           {
@@ -1223,7 +1197,7 @@
           },
           {
             "name": "total_touches_all",
-            "type": "number"
+            "type": "integer"
           },
           {
             "name": "converted_within_90_days",
@@ -1290,10 +1264,6 @@
             "type": "string"
           },
           {
-            "name": "first_touch_channel",
-            "type": "string"
-          },
-          {
             "name": "touch_count",
             "type": "number"
           },
@@ -1322,7 +1292,7 @@
             "type": "number"
           },
           {
-            "name": "touches_week_1",
+            "name": "touches_days_0_7",
             "type": "number"
           },
           {
@@ -1359,7 +1329,7 @@
           },
           {
             "name": "total_touches_all",
-            "type": "number"
+            "type": "integer"
           },
           {
             "name": "converted_within_90_days",
@@ -1426,10 +1396,6 @@
             "type": "string"
           },
           {
-            "name": "first_touch_channel",
-            "type": "string"
-          },
-          {
             "name": "touch_count",
             "type": "number"
           },
@@ -1458,7 +1424,7 @@
             "type": "number"
           },
           {
-            "name": "touches_week_1",
+            "name": "touches_days_0_7",
             "type": "number"
           },
           {
@@ -1495,7 +1461,7 @@
           },
           {
             "name": "total_touches_all",
-            "type": "number"
+            "type": "integer"
           },
           {
             "name": "converted_within_90_days",
@@ -1893,11 +1859,6 @@
             "type": "string"
           },
           {
-            "description": "Marketing channel responsible for the first recorded touch.",
-            "name": "first_touch_channel",
-            "type": "string"
-          },
-          {
             "description": "Total number of marketing/sales touches recorded before snapshot.",
             "name": "touch_count",
             "type": "integer"
@@ -1933,8 +1894,8 @@
             "type": "integer"
           },
           {
-            "description": "Number of touches in the first 7 days after lead creation.",
-            "name": "touches_week_1",
+            "description": "Number of touches in days 0–7 (inclusive) after lead creation. Renamed from touches_week_1 for precision: the window covers 8 days (0, 1, …, 7), not 7.",
+            "name": "touches_days_0_7",
             "type": "integer"
           },
           {
@@ -2052,10 +2013,6 @@
             "type": "string"
           },
           {
-            "name": "first_touch_channel",
-            "type": "string"
-          },
-          {
             "name": "touch_count",
             "type": "number"
           },
@@ -2084,7 +2041,7 @@
             "type": "number"
           },
           {
-            "name": "touches_week_1",
+            "name": "touches_days_0_7",
             "type": "number"
           },
           {
@@ -2121,7 +2078,7 @@
           },
           {
             "name": "total_touches_all",
-            "type": "number"
+            "type": "integer"
           },
           {
             "name": "converted_within_90_days",
@@ -2188,10 +2145,6 @@
             "type": "string"
           },
           {
-            "name": "first_touch_channel",
-            "type": "string"
-          },
-          {
             "name": "touch_count",
             "type": "number"
           },
@@ -2220,7 +2173,7 @@
             "type": "number"
           },
           {
-            "name": "touches_week_1",
+            "name": "touches_days_0_7",
             "type": "number"
           },
           {
@@ -2257,7 +2210,7 @@
           },
           {
             "name": "total_touches_all",
-            "type": "number"
+            "type": "integer"
           },
           {
             "name": "converted_within_90_days",
@@ -2324,10 +2277,6 @@
             "type": "string"
           },
           {
-            "name": "first_touch_channel",
-            "type": "string"
-          },
-          {
             "name": "touch_count",
             "type": "number"
           },
@@ -2356,7 +2305,7 @@
             "type": "number"
           },
           {
-            "name": "touches_week_1",
+            "name": "touches_days_0_7",
             "type": "number"
           },
           {
@@ -2393,7 +2342,7 @@
           },
           {
             "name": "total_touches_all",
-            "type": "number"
+            "type": "integer"
           },
           {
             "name": "converted_within_90_days",

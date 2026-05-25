@@ -8,14 +8,14 @@ analytical role and adds the prose explanation, modelling
 recommendations, and pedagogical caveats that don't fit a CSV row.
 
 The grouping below covers every feature in the public student-facing
-snapshot — the same 32 columns ship in `intro`, `intermediate`, and
+snapshot — the same 31 columns ship in `intro`, `intermediate`, and
 `advanced` bundles. The instructor companion adds the hidden truth
 in `metadata/`; it does not change the feature list.
 
 | Category | Columns | Modelling default |
 |---|---|---|
 | Lead identity & timing | 4 | drop `lead_id`; keep `lead_created_at` for cohort splits, drop for production |
-| Lead source & channel | 2 | keep both |
+| Lead source & channel | 1 | keep |
 | Firmographics | 5 | keep all |
 | Personographics | 3 | keep all (categorical encoders welcome) |
 | Engagement (snapshot-window) | 10 | keep all |
@@ -35,16 +35,18 @@ in `metadata/`; it does not change the feature list.
 
 ## Lead source and channel
 
-Two columns describe how each lead entered the funnel. They are
+One column describes how each lead entered the funnel. It is
 populated from the recipe's GTM-motion mix
-(`inbound_marketing` 45%, `sdr_outbound` 35%, `partner_referral`
-20%) and are identical between the two columns in v1 — both encode
-the same origination channel under different field names.
+(`inbound_marketing` 45%, `sdr_outbound` 35%, `partner_referral` 20%).
 
 | Column | Dtype | Why it might matter |
 |---|---|---|
 | `lead_source` | string | Origination channel; one of `inbound_marketing` / `sdr_outbound` / `partner_referral`. |
-| `first_touch_channel` | string | Marketing channel of the first recorded touch. Always equals `lead_source` in v1; the field exists to support post-v1 work where origination and first-touch can diverge. |
+
+**Note.** `first_touch_channel` was removed from the task snapshot in PR 8.1: in v1
+it is byte-identical to `lead_source` (both are set to the same origination value), so
+it adds no information. It still appears in the relational `tables/leads.parquet` for
+post-v1 use cases where origination and first-touch can diverge.
 
 **Caveat.** Per [`docs/release/channel_signal_audit.md`](channel_signal_audit.md),
 v1's channel signal is weak: per-channel rate spread ≤ 0.043 and
@@ -99,7 +101,7 @@ features cannot encode events that drove the late-window outcome.
 | `pricing_page_views` | Int64 | Cumulative pricing-page views across sessions. |
 | `demo_page_views` | Int64 | Cumulative demo-page views across sessions. |
 | `total_session_duration_seconds` | Int64 | Cumulative seconds across all sessions. |
-| `touches_week_1` | Int64 | Touches in days 0–7 inclusive (early urgency proxy; the snapshot builder uses `_day <= 7`, which is 8 day values). |
+| `touches_days_0_7` | Int64 | Touches in days 0–7 inclusive (early urgency proxy). Renamed from `touches_week_1` in PR 8.1 for precision: the window covers 8 day values (0, 1, …, 7). |
 | `touches_last_7_days` | Int64 | Touches in the last 7 days of the snapshot window — for `snapshot_day=30`, days 24–30 inclusive (the snapshot builder uses `_day > snapshot_day - 7`). |
 | `days_since_first_touch` | Float64 | NaN if the lead has had zero touches by snapshot day. |
 
@@ -183,8 +185,10 @@ in the table above, including the IDs — the recommendation is what to
 3. **Categoricals — encode.** One-hot or target-encode `industry`,
    `region`, `employee_band`, `estimated_revenue_band`,
    `process_maturity_band`, `role_function`, `seniority`,
-   `buyer_role`, `lead_source`, `first_touch_channel`. The two
-   channel columns carry identical values in v1; pick one.
+   `buyer_role`, `lead_source`.
+   (`first_touch_channel` was removed from the snapshot in PR 8.1 — it
+   was byte-identical to `lead_source` in v1; it still exists in
+   `tables/leads.parquet` but not in the task splits.)
 4. **Engagement and funnel — keep all.** The `Float64` columns carry
    NaN for "no event in window", which is itself a signal — encode
    missingness explicitly rather than imputing to zero blindly.

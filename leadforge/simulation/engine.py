@@ -391,10 +391,12 @@ def simulate_world(
         # (label_window_days), not the full simulation horizon.  This allows
         # the engine to produce rich event histories over horizon_days while
         # only counting conversions in the configured observation window.
+        # Use <= so a conversion on day label_window_days (e.g. day 90) is
+        # counted — "within 90 days" is inclusive per the spec.
         label = (
             state.converted
             and state.conversion_day is not None
-            and state.conversion_day < config.label_window_days
+            and state.conversion_day <= config.label_window_days
         )
 
         updated_leads.append(

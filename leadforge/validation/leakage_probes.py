@@ -115,6 +115,7 @@ CHANNEL_SPLIT_NEAR_DUPLICATE: Final[str] = "split_near_duplicate"
 CHANNEL_SPLIT_LABEL_DRIFT: Final[str] = "split_label_drift"
 CHANNEL_ID_ONLY_BASELINE: Final[str] = "id_only_baseline"
 CHANNEL_FEATURE_SUBSET_BASELINE: Final[str] = "feature_subset_baseline"
+CHANNEL_OPPORTUNITY_SNAPSHOT_CONSISTENCY: Final[str] = "opportunity_snapshot_consistency"
 
 _PUBLIC_TABLES: Final[tuple[str, ...]] = (
     "accounts",
@@ -952,6 +953,153 @@ def probe_feature_subset_baseline(
 
 
 # ---------------------------------------------------------------------------
+# §8.6 Flat-feature snapshot-consistency — opportunity-derived columns.
+# Opt-in: requires both the flat leads snapshot AND the full-horizon
+# opportunities table, so it can only run when both are available.
+# ---------------------------------------------------------------------------
+
+
+def probe_opportunity_snapshot_consistency(
+    leads_df: pd.DataFrame,
+    opportunities_df: pd.DataFrame,
+    snapshot_day: int,
+) -> list[LeakageFinding]:
+    """Verify that ``has_open_opportunity`` / ``opportunity_estimated_acv`` use correct semantics.
+
+    Recomputes what these columns *should* be using the correct
+    ``closed_at > cutoff`` semantics (an opportunity is open at snapshot time
+    iff it was not yet closed as of ``lead_created_at + snapshot_day``), then
+    asserts that the shipped column values match.
+
+    A mismatch indicates that the snapshot builder used the wrong open/closed
+    gate — e.g. checking ``close_outcome.isna()`` instead of
+    ``closed_at > cutoff``, which treats opportunities closed after the snapshot
+    window as already closed at snapshot time and artificially reduces the
+    ``has_open_opportunity`` positive rate.
+
+    Opt-in: this probe requires both the flat leads snapshot (with
+    ``has_open_opportunity``, ``opportunity_estimated_acv``, and
+    ``lead_created_at``) and the full-horizon ``opportunities`` table (with
+    ``closed_at`` and ``estimated_acv``).  Callers that only have public
+    bundles (where ``close_outcome`` / ``closed_at`` are banned) cannot run
+    this probe — pass the instructor table.
+
+    Args:
+        leads_df: Flat snapshot DataFrame.  Must contain ``lead_id``,
+            ``lead_created_at``, ``has_open_opportunity``, and
+            ``opportunity_estimated_acv``.
+        opportunities_df: Full-horizon opportunities table.  Must contain
+            ``lead_id``, ``created_at``, ``estimated_acv``, and ``closed_at``.
+        snapshot_day: Snapshot window in days.
+
+    Returns:
+        Empty list if the columns match; one :class:`LeakageFinding` per
+        mismatched column otherwise.
+    """
+    required_leads = {"lead_id", "lead_created_at", "has_open_opportunity"}
+    missing_leads = required_leads - set(leads_df.columns)
+    if missing_leads:
+        raise ValueError(f"leads_df is missing required columns: {sorted(missing_leads)}")
+
+    required_opps = {"lead_id", "created_at", "estimated_acv", "closed_at"}
+    missing_opps = required_opps - set(opportunities_df.columns)
+    if missing_opps:
+        raise ValueError(
+            f"opportunities_df is missing required columns: {sorted(missing_opps)}; "
+            "pass the full-horizon (instructor) opportunities table, not the public one."
+        )
+
+    if len(leads_df) == 0:
+        return []
+
+    # Build per-lead cutoffs.
+    leads_copy = leads_df[["lead_id", "lead_created_at", "has_open_opportunity"]].copy()
+    if "opportunity_estimated_acv" in leads_df.columns:
+        leads_copy["opportunity_estimated_acv"] = leads_df["opportunity_estimated_acv"]
+    else:
+        leads_copy["opportunity_estimated_acv"] = float("nan")
+
+    leads_copy["_created_at_ts"] = pd.to_datetime(leads_copy["lead_created_at"], errors="coerce")
+    leads_copy["_snapshot_cutoff"] = leads_copy["_created_at_ts"] + pd.Timedelta(days=snapshot_day)
+
+    # Filter opportunities to those created on/before the snapshot cutoff.
+    opps = opportunities_df[["lead_id", "created_at", "estimated_acv", "closed_at"]].copy()
+    opps["_opp_created_ts"] = pd.to_datetime(opps["created_at"], errors="coerce")
+    opps["_closed_at_ts"] = pd.to_datetime(opps["closed_at"], errors="coerce")
+
+    # Merge cutoffs onto opportunities.
+    cutoffs = leads_copy[["lead_id", "_snapshot_cutoff"]]
+    opps = opps.merge(cutoffs, on="lead_id", how="left")
+
+    # Keep only opportunities visible at snapshot time.
+    opps_at_snapshot = opps[opps["_opp_created_ts"] <= opps["_snapshot_cutoff"]]
+
+    # An opportunity is open at snapshot time iff closed_at is NaT or > cutoff.
+    opps_open = opps_at_snapshot[
+        opps_at_snapshot["_closed_at_ts"].isna()
+        | (opps_at_snapshot["_closed_at_ts"] > opps_at_snapshot["_snapshot_cutoff"])
+    ]
+
+    # Compute expected has_open_opportunity and opportunity_estimated_acv per lead.
+    # Sort by created_at before groupby so first() is deterministic when a lead
+    # has multiple open opportunities — matches the production sort in snapshots.py.
+    expected_open = (
+        opps_open.sort_values("created_at")
+        .groupby("lead_id")["estimated_acv"]
+        .first()
+        .reset_index()
+        .rename(columns={"estimated_acv": "_expected_acv"})
+    )
+    expected_open["_expected_has_open"] = True
+
+    # Merge expected values back onto leads.
+    check = leads_copy.merge(expected_open, on="lead_id", how="left")
+    check["_expected_has_open"] = check["_expected_has_open"].fillna(False)
+
+    # Compare has_open_opportunity.
+    shipped_open = check["has_open_opportunity"].astype("boolean").fillna(False).astype(bool)
+    expected_open_bool = check["_expected_has_open"].astype(bool)
+    mismatch_open = (shipped_open != expected_open_bool).sum()
+
+    # Compare opportunity_estimated_acv (both NaN → match; only one NaN → mismatch).
+    shipped_acv = pd.to_numeric(check["opportunity_estimated_acv"], errors="coerce")
+    expected_acv_series = pd.to_numeric(check["_expected_acv"], errors="coerce")
+    both_nan = shipped_acv.isna() & expected_acv_series.isna()
+    neither_nan = shipped_acv.notna() & expected_acv_series.notna()
+    acv_match = both_nan | (neither_nan & (shipped_acv == expected_acv_series))
+    mismatch_acv = int((~acv_match).sum())
+
+    findings: list[LeakageFinding] = []
+    if mismatch_open > 0:
+        n = len(check)
+        findings.append(
+            LeakageFinding(
+                channel=CHANNEL_OPPORTUNITY_SNAPSHOT_CONSISTENCY,
+                detail="has_open_opportunity",
+                message=(
+                    f"{mismatch_open}/{n} leads have incorrect has_open_opportunity; "
+                    "the snapshot builder likely used close_outcome.isna() instead of "
+                    "closed_at > lead_created_at + snapshot_day"
+                ),
+            )
+        )
+    if mismatch_acv > 0:
+        n = len(check)
+        findings.append(
+            LeakageFinding(
+                channel=CHANNEL_OPPORTUNITY_SNAPSHOT_CONSISTENCY,
+                detail="opportunity_estimated_acv",
+                message=(
+                    f"{mismatch_acv}/{n} leads have incorrect opportunity_estimated_acv; "
+                    "the shipped ACV does not match the recomputed value under correct "
+                    "closed_at > cutoff semantics"
+                ),
+            )
+        )
+    return findings
+
+
+# ---------------------------------------------------------------------------
 # Probe registry — single source of truth for "what probes exist and what
 # do they need".  The orchestrators iterate it; the meta-test asserts that
 # every module-level ``probe_*`` function is registered.
@@ -1010,6 +1158,12 @@ PROBE_REGISTRY: Final[Mapping[str, ProbeSpec]] = {
         probe_feature_subset_baseline,
         "model_realism",
         opt_in=True,
+    ),
+    "opportunity_snapshot_consistency": ProbeSpec(
+        "opportunity_snapshot_consistency",
+        probe_opportunity_snapshot_consistency,
+        "snapshot_consistency",
+        opt_in=True,  # Requires full-horizon opportunities table (not public bundle)
     ),
 }
 
@@ -1316,6 +1470,7 @@ __all__ = [
     "CHANNEL_FEATURE_SUBSET_BASELINE",
     "CHANNEL_ID_ONLY_BASELINE",
     "CHANNEL_JOIN_RECONSTRUCTION",
+    "CHANNEL_OPPORTUNITY_SNAPSHOT_CONSISTENCY",
     "CHANNEL_SNAPSHOT_WINDOW",
     "CHANNEL_SPLIT_ID_OVERLAP",
     "CHANNEL_SPLIT_LABEL_DRIFT",
@@ -1334,6 +1489,7 @@ __all__ = [
     "probe_deterministic_reconstruction",
     "probe_feature_subset_baseline",
     "probe_id_only_baseline",
+    "probe_opportunity_snapshot_consistency",
     "probe_snapshot_window",
     "probe_split_id_overlap",
     "probe_split_label_drift",

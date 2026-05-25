@@ -84,6 +84,8 @@ RENAME_MAP = {
     "activity_count": "sales_activities",
     "converted_within_90_days": "converted",
     "total_touches_all": "__leakage__total_touches_90d",
+    # touches_days_0_7 renamed back to touches_week_1 for v5 CSV format compatibility.
+    "touches_days_0_7": "touches_week_1",
 }
 
 
