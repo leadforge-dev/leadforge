@@ -13,7 +13,43 @@ deferred outright; a few are framework polish.
 - **Framework polish** — DX improvements that don't gate the dataset
 - **v2 territory** — second vertical, LTV, leaderboard
 
+_Items marked `[Phase-8 deferred]` were surfaced in the 2026-05-25 release preview review (synthesis in `docs/external_review/summaries/v1_release_review_synthesis.md`) and explicitly judged too large for the pre-publish Phase 8 fixes._
+
 ## DGP-deepening (feeds the next dataset version)
+
+### [Phase-8 deferred] Difficulty axis as genuine modelling complexity — AUC separation, not just prevalence
+**Why deferred:** Fixing this requires re-tuning `signal_strength` in `difficulty_profiles.yaml` and the `assign_mechanisms()` policy so the weaker signal knobs actually suppress rank-discrimination (i.e., lower LR AUC), rather than only recalibrating the per-tier conversion-rate band. Currently LR AUC is flat (0.879/0.886/0.886) across all tiers — the tiers are a prevalence/AP/Brier axis, not a modelling-difficulty axis.
+**v2 scope:** Tune `signal_strength` so AUC meaningfully separates across tiers (target: intro ~0.88, intermediate ~0.82, advanced ~0.75 or lower). Introduce at least one genuine non-linear interaction in the advanced tier so that GBM outperforms LR there (currently GBM−LR is negative in all three tiers). Suggested mechanisms: stronger cross-feature interactions between `employee_band` × `motif_family` latent score, a non-linear hazard that decays exponentially rather than linearly with latent fit score, and a time-varying engagement signal.
+**Files likely touched:** `leadforge/recipes/b2b_saas_procurement_v1/difficulty_profiles.yaml`, `leadforge/mechanisms/policies.py`, `leadforge/mechanisms/scores.py`, `leadforge/validation/difficulty.py` (re-calibrate acceptance bands).
+**Risk:** requires full bundle regeneration + re-validation; cross-seed bands must be re-fitted. The v1 acceptance band for `gbm_minus_lr_auc` was explicitly widened to accommodate negative values — that gate needs to be tightened once the DGP produces positive deltas.
+**Reward:** "Advanced" tier becomes a genuinely harder modelling problem; the "comparing model families" intended use delivers a live lesson instead of a flat one; students graduating from Intermediate to Advanced face real AUC degradation, not just a class-imbalance adjustment.
+**Trigger:** plan after v1 ships; design the non-linear interaction before touching any code.
+
+### [Phase-8 deferred] Account-level population stratification — `GroupKFold` split as first-class task variant
+**Why deferred:** The full fix requires partitioning account generation *before* lead sampling so that the three task splits are account-disjoint by construction, not just lead-disjoint. This changes `simulation/population.py`, the task-split writer in `render/tasks.py`, `schema/tasks.py` (`TaskManifest` gains a `split_key` field), the manifest schema, and the validation report (new `group_split_metrics` block). Requires full bundle regeneration.
+**v2 scope:** Add a `split_key: account_id` option to `SplitSpec`; when set, `write_task_splits()` stratifies by account rather than by lead. Ship the account-stratified split as a second task variant alongside the existing random split: `tasks/converted_within_90_days_group/{train,valid,test}.parquet` + `task_manifest.json`. Expose group-split metrics in `validate_release_candidate` output.
+**Files likely touched:** `leadforge/simulation/population.py`, `leadforge/render/tasks.py`, `leadforge/schema/tasks.py`, `leadforge/validation/release_quality.py`, `docs/release/v1_acceptance_gates.md`.
+**Note:** PR 8.3's `GroupKFold` notebook section (which ships with v1) demonstrates the concept by having students split post-hoc; this item makes it a first-class default.
+**Reward:** removes the "93% account overlap" known limitation from the dataset card; published headline metrics become honest group-split metrics; the "teaching B2B generalisation" intended use is fully supported.
+
+### [Phase-8 deferred] Missing B2B lead-scoring signals — v2 feature set
+**Why deferred:** Each signal requires new schema entities, simulation mechanisms, and generator logic — not a documentation or tuning change.
+**v2 scope (prioritised list from the 2026-05-25 review):**
+1. **Channel-conditional hazards** (partially overlaps with "Channel-conditional MQL→SQL rates" below): `lead_source` should drive different baseline conversion probabilities, not just label a lead's origin. Currently the channel audit shows per-channel AUC ~0.50–0.52 across all tiers.
+2. **SDR/rep capacity and territory**: `sales_rep_id`, `territory`, `rep_open_pipeline_count` — adds a supply-side signal that is canonical in real CRM (rep at capacity → longer follow-up latency → lower conversion).
+3. **SLA / follow-up latency**: `hours_to_first_contact`, `days_to_first_meeting` — the most consistently predictive signals in real CRM studies; trivial to derive from the existing `sales_activities` simulation.
+4. **Email engagement**: `email_opens`, `email_clicks`, `email_replies` — standard outbound signals; add as `touches` subtypes in the simulation.
+5. **BANT proxies**: `budget_confirmed`, `authority_level`, `need_score`, `timeline_days` — even weak/noisy proxies of these signal genuine B2B qualification.
+6. **Technographics / competitor install**: `current_erp`, `competitor_install` — static firmographic enrichment; correlates with motif family in the hidden graph.
+7. **Negative behaviours**: `unsubscribed`, `career_page_visit` — churn signals that currently have no representation.
+**Files likely touched:** `leadforge/schema/entities.py`, `leadforge/schema/features.py`, `leadforge/simulation/engine.py`, `leadforge/mechanisms/`, `leadforge/recipes/b2b_saas_procurement_v1/`.
+
+### [Phase-8 deferred] Hidden DAG as executable causal engine — per-node structural equations
+**Why deferred:** This is a major simulation rearchitecture. Currently the world graph is validated and exported as a DAG, but the simulation primarily uses `world_graph.motif_family` to select mechanism parameters; the rewired graph topology and edge weights do not drive per-node structural equations in the daily loop. Making the graph causally executable would require designing a structural-equation interpreter that maps each graph edge to a conditional probability transformation.
+**v2 scope:** Design a `StructuralEquationInterpreter` that maps `(parent_node, child_node, edge_weight)` → conditional distribution transform applied during the daily simulation step. The result: two seeds with the same motif family but different rewired topologies would produce genuinely different lead populations, rather than slightly differently-weighted versions of the same mechanisms. This would be the technical foundation for the "five motif families + stochastic rewiring" story to be causally true rather than narratively true.
+**Files likely touched:** `leadforge/simulation/engine.py`, `leadforge/mechanisms/policies.py`, `leadforge/structure/graph.py`, new `leadforge/structure/interpreter.py`.
+**Risk:** high. Changes the DGP fundamentally; requires re-validation of all tiers and rewriting the generation method documentation.
+**Reward:** the central architectural claim becomes accurate; the hidden DAG becomes a genuinely auditable causal structure rather than a documented-but-inert artifact.
 
 ### Channel-conditional MQL→SQL rates as a generative axis (recommendation #8 — full scope)
 **v1 scope (already in v1 roadmap Phase 4):** audit how strongly `source_channel` signals conversion in alpha bundles; document realistic vs unrealistic mix.
