@@ -66,6 +66,15 @@ Bands fitted to the PR 3.3 N=5 sweep on `release/{intro,intermediate,advanced}/`
 All numeric bands live in `v1_acceptance_gates_bands.yaml`; medians and
 rationale follow.
 
+> **These bands are regression fences, not realism thresholds.**
+> They are calibrated to the observed five-seed spread for this DGP and
+> recipe configuration. A band being "wide" does not mean any value within
+> it is equally realistic — it means the validator will not flag a new
+> bundle as broken unless a metric drifts *outside* that window. The medians
+> in each gate note are the meaningful targets; bands only fire on
+> substantial unintended regressions. Tightening the bands is expected work
+> when the DGP is redesigned for v2.
+
 ### Intro tier
 - **G7.1.1** Conversion rate within **[0.24, 0.61]**.  Median 0.4267.
 - **G7.1.2** LR AUC within **[0.82, 0.94]**.  Median 0.8788.

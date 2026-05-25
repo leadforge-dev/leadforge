@@ -632,3 +632,26 @@ def test_committed_kaggle_metadata_matches_fresh_regeneration(tmp_path: Path) ->
     # Per-tier metrics.json is also enumerated.
     for tier in packager.DEFAULT_TIERS:
         assert f"{tier}/metrics.json" in paths
+
+
+@pytest.mark.skipif(
+    not _COMMITTED_METADATA.exists(),
+    reason="committed dataset-metadata.json missing",
+)
+def test_committed_kaggle_metadata_is_not_private() -> None:
+    """Guard the isPrivate publish blocker from silently regressing.
+
+    Publishing with ``isPrivate: true`` hides the dataset from public
+    on Kaggle without raising an error.  The committed metadata must
+    have ``isPrivate: false``; the packager must also produce
+    ``isPrivate: false`` (covered by
+    ``test_committed_kaggle_metadata_matches_fresh_regeneration``
+    combined with this assertion on the committed file).
+    """
+    meta = json.loads(_COMMITTED_METADATA.read_text(encoding="utf-8"))
+    assert meta.get("isPrivate") is False, (
+        "dataset-metadata.json has isPrivate: true — this is a publish "
+        "blocker: the dataset will be hidden from public on Kaggle. "
+        "Fix: set isPrivate=False in build_metadata() in "
+        "scripts/package_kaggle_release.py, then re-run --dry-run."
+    )

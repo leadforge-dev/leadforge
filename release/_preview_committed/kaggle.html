@@ -246,7 +246,22 @@ computed strictly over events on days <code>[0, 30]</code>. The deliberate
 exception is <code>total_touches_all</code>, the leakage trap — flagged
 <code>leakage_risk=True</code> in <code>feature_dictionary.csv</code>. Drop it from your
 feature set unless you're demonstrating leakage detection.</p>
+<h2>Evaluation note — account and contact overlap</h2>
+<p><strong>518 of 557 test accounts (≈93 %) appear in train</strong> on the intermediate
+bundle; the other tiers are similar. Contact-level overlap is comparable
+in magnitude: most test contacts also have activity in the training set.
+The random-split headline metrics therefore ride both account-level and
+contact-level signal across the split boundary and over-estimate
+generalisation to unseen accounts and contacts. For a faithful
+out-of-sample number, retrain with <code>GroupKFold(account_id)</code> and report
+both metrics. Notebook 02 demonstrates the detection recipe;
+<a href="https://github.com/leadforge-dev/leadforge/blob/main/docs/release/break_me_guide.md"><code>break_me_guide.md</code></a> §5 gives
+the worked example.</p>
 <h2>Dataset summary</h2>
+<p><strong>Tiers are prevalence and noise axes, not modelling-complexity axes.</strong>
+LR AUC is ~0.88 in every tier by design. The tiers differ in conversion
+rate, missingness, and noise — not rank discrimination. Choose a tier
+based on the teaching exercise, not on expected AUC:</p>
 <table>
 <thead>
 <tr>
@@ -257,6 +272,12 @@ feature set unless you're demonstrating leakage detection.</p>
 </tr>
 </thead>
 <tbody>
+<tr>
+<td><strong>Tier purpose</strong></td>
+<td>High-prevalence warm-up</td>
+<td>Default benchmark</td>
+<td>Low-prevalence · calibration · noise exercise</td>
+</tr>
 <tr>
 <td>Leads</td>
 <td>5,000</td>
@@ -277,9 +298,9 @@ feature set unless you're demonstrating leakage detection.</p>
 </tr>
 <tr>
 <td>Snapshot columns</td>
-<td>32 / 34*</td>
-<td>32 / 34*</td>
-<td>32 / 34*</td>
+<td>31 / 34*</td>
+<td>31 / 34*</td>
+<td>31 / 34*</td>
 </tr>
 <tr>
 <td>Target</td>
@@ -398,6 +419,7 @@ Headline cross-seed medians (seeds 42–46):</p>
 <th>AP</th>
 <th>P@100</th>
 <th>Brier</th>
+<th><code>calibration_max_bin_error</code></th>
 </tr>
 </thead>
 <tbody>
@@ -407,6 +429,7 @@ Headline cross-seed medians (seeds 42–46):</p>
 <td>0.761</td>
 <td>0.80</td>
 <td>0.130</td>
+<td>0.25</td>
 </tr>
 <tr>
 <td>intermediate</td>
@@ -414,6 +437,7 @@ Headline cross-seed medians (seeds 42–46):</p>
 <td>0.575</td>
 <td>0.59</td>
 <td>0.110</td>
+<td>0.25</td>
 </tr>
 <tr>
 <td>advanced</td>
@@ -421,11 +445,19 @@ Headline cross-seed medians (seeds 42–46):</p>
 <td>0.351</td>
 <td>0.34</td>
 <td>0.061</td>
+<td><strong>0.52</strong></td>
 </tr>
 </tbody>
 </table>
+<p><strong>Reading this table:</strong> LR AUC is flat across tiers by design — the
+tiers are a prevalence / noise axis, not a rank-discrimination axis.
+Brier score <em>improves</em> as prevalence falls (a prevalence effect, not
+better calibration); use <code>calibration_max_bin_error</code> to assess
+calibration quality. Advanced's 0.52 max-bin error means the model's
+predicted probabilities are materially mis-scaled against actual
+conversion rates — a realistic miscalibration exercise.</p>
 <p>AP, P@100, conversion-rate, and lift orderings hold across the
-intended difficulty axis (intro &gt; intermediate &gt; advanced).</p>
+intended prevalence axis (intro &gt; intermediate &gt; advanced).</p>
 <h2>Intended uses</h2>
 <ul>
 <li>Teaching baseline lead-scoring on a flat snapshot.</li>
@@ -450,9 +482,16 @@ attributes.</li>
 </ul>
 <h2>Known limitations</h2>
 <ul>
-<li><strong>Difficulty signal on raw AUC is flat.</strong> LR AUC is ~0.88 across
-every tier. Difficulty is visible in AP, P@K, Brier, and value
-capture. Treat AUC as a sanity check, not a difficulty signal.</li>
+<li><strong>Tiers are a prevalence / noise axis, not a modelling-complexity
+axis.</strong> LR AUC is ~0.88 in every tier; the three tiers differ in
+conversion rate (43% / 22% / 8%), noise scale, and missingness —
+not in rank discrimination. Use AP, P@K, and calibration metrics
+to see the difficulty gradient; AUC alone will not show it.</li>
+<li><strong>93% account and contact overlap across train / test splits.</strong> Random
+splits are keyed on lead ID; most test accounts and contacts also
+appear in train. Headline metrics over-state generalisation to unseen
+accounts and contacts. Use <code>GroupKFold(account_id)</code> for a faithful
+estimate.</li>
 <li><strong>GBM does not consistently beat LR (gate G7.4.4).</strong> GBM−LR AUC delta
 is slightly negative in every tier (intro −0.0045, intermediate
 −0.0072, advanced −0.0133); v1's snapshot is dominated by linear
@@ -466,6 +505,14 @@ encoding is post-v1 work.</li>
 <li><strong>Cohort-shift degradation is small.</strong> v1 has no time-of-year drift
 baked in; the cohort-shift gate (G6.4) is informational and will
 bite in v2.</li>
+<li><strong>Advanced-tier noise can produce artifact zeros in count and duration
+columns.</strong> Gaussian noise is applied before MCAR missingness; the
+snapshot builder clamps results below zero to zero. What users observe
+is therefore not negative values but zeros that may be noise artifacts
+rather than true zero values — e.g. <code>days_since_last_touch = 0</code> might
+mean &quot;noised below zero, clamped&quot; rather than &quot;touched today&quot;. Treat
+suspicious zero clusters in the Advanced tier as intentional
+data-cleaning exercise material.</li>
 </ul>
 <h2>Composition</h2>
 <ul>
@@ -473,7 +520,7 @@ bite in v2.</li>
 sales_activities, opportunities (public); plus customers and
 subscriptions (instructor only). Per-row counts per bundle live in
 <code>manifest.json</code>.</li>
-<li><strong>Features.</strong> 32 public columns grouped by analytical role in
+<li><strong>Features.</strong> 31 public columns grouped by analytical role in
 <a href="https://github.com/leadforge-dev/leadforge/blob/main/docs/release/feature_dictionary.md"><code>docs/release/feature_dictionary.md</code></a>;
 the per-bundle <code>feature_dictionary.csv</code> is the authoritative
 machine-readable spec.</li>
@@ -481,15 +528,8 @@ machine-readable spec.</li>
 the simulator. Never sampled directly.</li>
 <li><strong>Splits.</strong> 70/15/15 train/valid/test, deterministic given seed;
 recorded in <code>tasks/converted_within_90_days/task_manifest.json</code>.
-<strong>Group-leakage warning:</strong> the splitter is keyed on <code>lead_id</code> only,
-not on <code>account_id</code> or <code>contact_id</code>. On the as-shipped intermediate
-bundle, <strong>518 of 557 test accounts (≈93 %) also appear in train</strong>;
-the contact-level overlap is similar in magnitude. A flat baseline
-trained on the random split rides account-level signal across the
-split boundary. For a generalisation-faithful number, retrain with
-<code>GroupKFold(account_id)</code> (or <code>contact_id</code>) and report both — see
-<a href="https://github.com/leadforge-dev/leadforge/blob/main/docs/release/break_me_guide.md"><code>break_me_guide.md</code></a> §5 for the
-detection recipe.</li>
+Splits are keyed on <code>lead_id</code>; see the <em>Evaluation note</em> above for
+the account-overlap caveat.</li>
 <li><strong>Provenance.</strong> Recipe <code>b2b_saas_procurement_v1</code>, seed 42, package
 version stamped in <code>manifest.json</code>.</li>
 </ul>

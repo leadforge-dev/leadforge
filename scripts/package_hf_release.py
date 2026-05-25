@@ -87,9 +87,12 @@ from _release_common import (  # noqa: E402,F401 — must follow sys.path insert
 HF_SIZE_BUCKET_5K: Final[str] = "1K<n<10K"
 
 #: Public-tier configs land under ``intro``/``intermediate``/``advanced``;
-#: ``intermediate`` is the recommended entry point per G12.2 (the
-#: difficulty band sits between the two extremes).
-DEFAULT_DEFAULT_CONFIG: Final[str] = "intermediate"
+#: ``intro`` is the recommended entry point — students loading the dataset
+#: with no config argument land in the highest-prevalence tier, which is
+#: the most forgiving teaching context. Pass ``default_config="intermediate"``
+#: for graded assignments; ``default_config="advanced"`` for calibration
+#: and noise-handling exercises.
+DEFAULT_DEFAULT_CONFIG: Final[str] = "intro"
 
 #: Allowed HF dataset-card ``task_categories`` token for tabular
 #: binary classification.
