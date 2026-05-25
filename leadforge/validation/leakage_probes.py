@@ -1041,8 +1041,11 @@ def probe_opportunity_snapshot_consistency(
     ]
 
     # Compute expected has_open_opportunity and opportunity_estimated_acv per lead.
+    # Sort by created_at before groupby so first() is deterministic when a lead
+    # has multiple open opportunities — matches the production sort in snapshots.py.
     expected_open = (
-        opps_open.groupby("lead_id")["estimated_acv"]
+        opps_open.sort_values("created_at")
+        .groupby("lead_id")["estimated_acv"]
         .first()
         .reset_index()
         .rename(columns={"estimated_acv": "_expected_acv"})
@@ -1159,7 +1162,7 @@ PROBE_REGISTRY: Final[Mapping[str, ProbeSpec]] = {
     "opportunity_snapshot_consistency": ProbeSpec(
         "opportunity_snapshot_consistency",
         probe_opportunity_snapshot_consistency,
-        "time_window",
+        "snapshot_consistency",
         opt_in=True,  # Requires full-horizon opportunities table (not public bundle)
     ),
 }

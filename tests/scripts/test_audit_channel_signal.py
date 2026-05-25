@@ -4,14 +4,13 @@ Exercises the per-channel rollup, in-sample / out-of-sample univariate
 AUC scorers, the JSON + markdown rendering paths, and two integrity
 properties against the committed ``release/`` bundles:
 
-1. ``lead_source`` and ``first_touch_channel`` carry identical values in
-   every tier (the feature dictionary's claim).
+1. ``first_touch_channel`` is absent from the flat snapshot (removed in PR 8.1
+   because it was byte-identical to ``lead_source`` in v1).
 2. The committed ``docs/release/channel_signal_audit.{md,json}`` are
    byte-identical to a fresh run of the audit script.
 
 Both properties fail loudly if the bundles are regenerated without
-re-running the audit, or if the simulator ever diverges the two
-channel columns.
+re-running the audit.
 """
 
 from __future__ import annotations
@@ -59,7 +58,6 @@ def _toy_split(n_per_channel: int = 20) -> pd.DataFrame:
             rows.append(
                 {
                     "lead_source": ch,
-                    "first_touch_channel": ch,
                     "converted_within_90_days": bool(i < int(rate * n_per_channel)),
                 }
             )
@@ -118,7 +116,6 @@ def test_audit_channel_oos_auc_handles_unseen_test_categories() -> None:
     test = pd.DataFrame(
         {
             "lead_source": ["A", "B", "C", "Z", "Z"],  # Z is unseen
-            "first_touch_channel": ["A", "B", "C", "Z", "Z"],
             "converted_within_90_days": [True, True, False, True, False],
         }
     )
@@ -147,7 +144,9 @@ def test_audit_tier_runs_every_channel_column() -> None:
     train = _toy_split()
     tier = audit_module.audit_tier(train, "intro", test=train)
     cols = {c.column for c in tier.columns}
-    assert cols == {"lead_source", "first_touch_channel"}
+    # ``first_touch_channel`` was removed from the flat snapshot (byte-identical
+    # to ``lead_source`` in v1); only ``lead_source`` remains as the default.
+    assert cols == {"lead_source"}
     assert tier.tier == "intro"
     assert tier.n_train == 60
     assert tier.n_test == 60
@@ -180,13 +179,16 @@ def test_render_json_round_trip() -> None:
 def test_render_markdown_collapses_identical_columns() -> None:
     """When two columns produce identical audits, the renderer groups them."""
 
-    train = _toy_split()  # lead_source == first_touch_channel by construction
-    tier = audit_module.audit_tier(train, "intro", test=train)
+    train = _toy_split()
+    # Duplicate lead_source under a second name so the audit values are identical.
+    train["lead_source_copy"] = train["lead_source"]
+    two_cols = ("lead_source", "lead_source_copy")
+    tier = audit_module.audit_tier(train, "intro", test=train, channel_columns=two_cols)
     report = audit_module.AuditReport(
         release_dir="release",
         task="converted_within_90_days",
         label_column="converted_within_90_days",
-        channel_columns=audit_module.CHANNEL_COLUMNS,
+        channel_columns=two_cols,
         tiers=(tier,),
         industry_mql_to_sql_benchmarks=audit_module.INDUSTRY_MQL_TO_SQL_BENCHMARKS,
     )
@@ -200,13 +202,14 @@ def test_render_markdown_renders_distinct_columns_separately() -> None:
     """When two columns differ, the renderer keeps them in separate sections."""
 
     train = _toy_split()
-    train["first_touch_channel"] = "A"  # force divergence from lead_source
-    tier = audit_module.audit_tier(train, "intro", test=train)
+    train["other_channel"] = "A"  # force divergence from lead_source
+    two_cols = ("lead_source", "other_channel")
+    tier = audit_module.audit_tier(train, "intro", test=train, channel_columns=two_cols)
     report = audit_module.AuditReport(
         release_dir="release",
         task="converted_within_90_days",
         label_column="converted_within_90_days",
-        channel_columns=audit_module.CHANNEL_COLUMNS,
+        channel_columns=two_cols,
         tiers=(tier,),
         industry_mql_to_sql_benchmarks=audit_module.INDUSTRY_MQL_TO_SQL_BENCHMARKS,
     )
@@ -309,15 +312,20 @@ def test_main_reports_missing_train_split(
 
 @pytest.mark.skipif(not _RELEASE_BUNDLES_PRESENT, reason="release/ bundles not present")
 @pytest.mark.parametrize("tier", _TIERS)
-def test_lead_source_equals_first_touch_channel_in_v1(tier: str) -> None:
-    """Locks the feature-dict claim that the two channel columns are
-    identical in v1.  If the simulator ever diverges them, this test
-    fails and ``docs/release/feature_dictionary.md`` must be updated."""
+def test_first_touch_channel_absent_from_flat_snapshot(tier: str) -> None:
+    """Locks the v1 decision to drop ``first_touch_channel`` from the flat
+    snapshot (it was byte-identical to ``lead_source`` in every row).
+
+    If this column reappears in a future bundle regeneration without a
+    deliberate feature-spec change, this test will catch it.
+    """
 
     for split in ("train", "test", "valid"):
         df = audit_module.load_split(_REPO_ROOT / "release", tier, split)
-        assert (df["lead_source"] == df["first_touch_channel"]).all(), (
-            f"{tier}/{split}: lead_source diverges from first_touch_channel"
+        assert "first_touch_channel" not in df.columns, (
+            f"{tier}/{split}: first_touch_channel is present in flat snapshot but "
+            "was removed from LEAD_SNAPSHOT_FEATURES in PR 8.1 — "
+            "bundles need to be regenerated."
         )
 
 

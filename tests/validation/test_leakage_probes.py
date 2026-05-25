@@ -946,8 +946,15 @@ def test_probe_registry_covers_every_module_level_probe() -> None:
 
 
 def test_probe_registry_taxonomies_are_known() -> None:
-    """Every spec carries one of the five documented taxonomies."""
-    valid = {"direct", "time_window", "relational", "split", "model_realism"}
+    """Every spec carries one of the documented taxonomies."""
+    valid = {
+        "direct",
+        "time_window",
+        "relational",
+        "split",
+        "model_realism",
+        "snapshot_consistency",
+    }
     for spec in PROBE_REGISTRY.values():
         assert spec.taxonomy in valid, f"{spec.name} has unknown taxonomy {spec.taxonomy!r}"
 
@@ -955,3 +962,119 @@ def test_probe_registry_taxonomies_are_known() -> None:
 def test_probe_registry_callables_are_callable() -> None:
     for spec in PROBE_REGISTRY.values():
         assert callable(spec.callable), f"{spec.name}.callable is not callable"
+
+
+# ---------------------------------------------------------------------------
+# probe_opportunity_snapshot_consistency — correctness tests
+# ---------------------------------------------------------------------------
+
+
+def _make_opp_consistency_fixtures(
+    *,
+    close_outcome_gate: bool,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Build (leads_df, opportunities_df) for snapshot_consistency probe tests.
+
+    Parameters
+    ----------
+    close_outcome_gate:
+        When True, simulate the *old buggy* snapshot builder that used
+        ``close_outcome.isna()`` to determine whether an opportunity was open.
+        This means opportunities closed *after* the snapshot cutoff are
+        incorrectly treated as closed at snapshot time, so ``has_open_opportunity``
+        is False for those leads — a mismatch with the correct value.
+
+        When False, simulate the *correct* builder that uses
+        ``closed_at > cutoff`` semantics.
+    """
+    # snapshot_day = 30.  Lead created 2024-01-01; cutoff = 2024-01-31.
+    snapshot_day = 30
+    lead_created = "2024-01-01T00:00:00"
+
+    # Opportunity created on day 10 (before cutoff), closed on day 45 (after cutoff).
+    # Under CORRECT semantics: closed_at (day 45) > cutoff (day 30) → open → has_open=True.
+    # Under BUGGY semantics: close_outcome is not null → treated as closed → has_open=False.
+    opp_created_at = "2024-01-11T00:00:00"
+    opp_closed_at = "2024-02-15T00:00:00"  # day 45, after cutoff
+
+    leads_df = pd.DataFrame(
+        {
+            "lead_id": ["lead_001"],
+            "lead_created_at": [lead_created],
+            "has_open_opportunity": [
+                # buggy builder says False (used close_outcome gate);
+                # correct builder says True (used closed_at > cutoff gate).
+                False if close_outcome_gate else True
+            ],
+            "opportunity_estimated_acv": [float("nan") if close_outcome_gate else 50_000.0],
+        }
+    )
+
+    opportunities_df = pd.DataFrame(
+        {
+            "lead_id": ["lead_001"],
+            "created_at": [opp_created_at],
+            "estimated_acv": [50_000.0],
+            "closed_at": [opp_closed_at],
+            "close_outcome": ["closed_won"],  # non-null — the bug trigger
+        }
+    )
+
+    return leads_df, opportunities_df, snapshot_day
+
+
+def test_probe_opportunity_snapshot_consistency_fires_on_close_outcome_gate() -> None:
+    """Probe fires when snapshot used close_outcome.isna() (the old bug)."""
+    from leadforge.validation.leakage_probes import (
+        CHANNEL_OPPORTUNITY_SNAPSHOT_CONSISTENCY,
+        probe_opportunity_snapshot_consistency,
+    )
+
+    leads_df, opps_df, snapshot_day = _make_opp_consistency_fixtures(close_outcome_gate=True)
+    findings = probe_opportunity_snapshot_consistency(leads_df, opps_df, snapshot_day)
+
+    assert len(findings) > 0, "expected probe to fire but got no findings"
+    channels = {f.channel for f in findings}
+    assert CHANNEL_OPPORTUNITY_SNAPSHOT_CONSISTENCY in channels
+    # Both has_open_opportunity and opportunity_estimated_acv should be flagged.
+    details = {f.detail for f in findings}
+    assert "has_open_opportunity" in details
+    assert "opportunity_estimated_acv" in details
+
+
+def test_probe_opportunity_snapshot_consistency_silent_on_correct_gate() -> None:
+    """Probe is silent when snapshot used correct closed_at > cutoff semantics."""
+    from leadforge.validation.leakage_probes import probe_opportunity_snapshot_consistency
+
+    leads_df, opps_df, snapshot_day = _make_opp_consistency_fixtures(close_outcome_gate=False)
+    findings = probe_opportunity_snapshot_consistency(leads_df, opps_df, snapshot_day)
+
+    assert findings == [], f"expected no findings but got: {findings}"
+
+
+def test_probe_opportunity_snapshot_consistency_raises_on_missing_columns() -> None:
+    """Probe raises ValueError when required columns are absent."""
+    from leadforge.validation.leakage_probes import probe_opportunity_snapshot_consistency
+
+    bad_leads = pd.DataFrame({"lead_id": ["lead_001"]})  # missing lead_created_at etc.
+    good_opps = pd.DataFrame(
+        {
+            "lead_id": ["lead_001"],
+            "created_at": ["2024-01-01"],
+            "estimated_acv": [1.0],
+            "closed_at": [None],
+        }
+    )
+    with pytest.raises(ValueError, match="leads_df is missing required columns"):
+        probe_opportunity_snapshot_consistency(bad_leads, good_opps, 30)
+
+    good_leads = pd.DataFrame(
+        {
+            "lead_id": ["lead_001"],
+            "lead_created_at": ["2024-01-01"],
+            "has_open_opportunity": [False],
+        }
+    )
+    bad_opps = pd.DataFrame({"lead_id": ["lead_001"]})  # missing closed_at etc.
+    with pytest.raises(ValueError, match="opportunities_df is missing required columns"):
+        probe_opportunity_snapshot_consistency(good_leads, bad_opps, 30)

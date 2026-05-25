@@ -42,6 +42,11 @@ class FeatureSpec:
             ``"lead_meta"``, ``"engagement"``, ``"sales"``, ``"target"``).
         is_target: True for the label column only.
         leakage_risk: Descriptive — this column is post-snapshot correlated.
+        non_negative: True for columns that are physically incapable of being
+            negative (counts, durations, monetary values).  Used by the
+            snapshot builder to clamp values to ``>= 0`` after noise
+            injection, preventing non-physical negatives from leaking into
+            published bundles.
         redact_in_modes: Prescriptive — exposure modes in which the
             bundle writer must strip this column from snapshot, task
             splits, and feature dictionary.
@@ -53,6 +58,7 @@ class FeatureSpec:
     category: str
     is_target: bool = False
     leakage_risk: bool = False
+    non_negative: bool = False
     redact_in_modes: frozenset[ExposureMode] = field(default_factory=frozenset)
 
 
@@ -128,9 +134,12 @@ LEAD_SNAPSHOT_FEATURES: tuple[FeatureSpec, ...] = (
         "Origination source of the lead (e.g. inbound_form, sdr_outbound).",
         "lead_meta",
     ),
-    # ``first_touch_channel`` was removed: in v1 it is byte-identical to
-    # ``lead_source`` (set to the same value in population.py), so it adds
-    # no information and is cleaner to drop than to document as redundant.
+    # Note: ``first_touch_channel`` is absent from this list.  In v1 the
+    # simulation sets it to the same value as ``lead_source`` (both derive
+    # from the channel drawn during lead creation), making it byte-identical
+    # and zero-information.  It is retained in the relational ``leads``
+    # table for completeness; it is excluded from the flat snapshot because
+    # a duplicate column would be actively misleading in a teaching dataset.
     FeatureSpec(
         "current_stage",
         "string",
@@ -166,63 +175,71 @@ LEAD_SNAPSHOT_FEATURES: tuple[FeatureSpec, ...] = (
         "Int64",
         "Total number of marketing/sales touches recorded before snapshot.",
         "engagement",
+        non_negative=True,
     ),
     FeatureSpec(
         "inbound_touch_count",
         "Int64",
         "Number of inbound touches before snapshot.",
         "engagement",
+        non_negative=True,
     ),
     FeatureSpec(
         "outbound_touch_count",
         "Int64",
         "Number of outbound touches before snapshot.",
         "engagement",
+        non_negative=True,
     ),
     FeatureSpec(
         "session_count",
         "Int64",
         "Number of web/trial sessions recorded before snapshot.",
         "engagement",
+        non_negative=True,
     ),
     FeatureSpec(
         "pricing_page_views",
         "Int64",
         "Cumulative pricing page views across all sessions before snapshot.",
         "engagement",
+        non_negative=True,
     ),
     FeatureSpec(
         "demo_page_views",
         "Int64",
         "Cumulative demo page views across all sessions before snapshot.",
         "engagement",
+        non_negative=True,
     ),
     FeatureSpec(
         "total_session_duration_seconds",
         "Int64",
         "Sum of session durations (seconds) before snapshot.",
         "engagement",
+        non_negative=True,
     ),
     # -- Momentum features --
     FeatureSpec(
         "touches_days_0_7",
         "Int64",
-        "Number of touches in days 0–7 (inclusive) after lead creation. "
-        "Renamed from touches_week_1 for precision: the window covers 8 days "
-        "(0, 1, …, 7), not 7.",
+        "Number of touches in days 0–7 (inclusive) after lead creation.",
         "engagement",
+        non_negative=True,
     ),
     FeatureSpec(
         "touches_last_7_days",
         "Int64",
         "Number of touches in the last 7 days before snapshot cutoff.",
         "engagement",
+        non_negative=True,
     ),
     FeatureSpec(
         "days_since_first_touch",
         "Float64",
         "Days between first touch and snapshot cutoff (NaN if no touches).",
         "engagement",
+        non_negative=True,
     ),
     # -- Sales activity features --
     FeatureSpec(
@@ -230,12 +247,14 @@ LEAD_SNAPSHOT_FEATURES: tuple[FeatureSpec, ...] = (
         "Int64",
         "Number of sales activities logged before snapshot.",
         "sales",
+        non_negative=True,
     ),
     FeatureSpec(
         "days_since_last_touch",
         "Float64",
         "Days elapsed between most recent touch and snapshot cutoff.",
         "sales",
+        non_negative=True,
     ),
     FeatureSpec(
         "opportunity_created",
@@ -254,6 +273,7 @@ LEAD_SNAPSHOT_FEATURES: tuple[FeatureSpec, ...] = (
         "Float64",
         "Estimated ACV of the most recent open opportunity (NaN if none).",
         "sales",
+        non_negative=True,
     ),
     FeatureSpec(
         "expected_acv",
@@ -261,6 +281,7 @@ LEAD_SNAPSHOT_FEATURES: tuple[FeatureSpec, ...] = (
         "Expected ACV: opportunity ACV if available by snapshot, else "
         "revenue band midpoint heuristic (NaN if neither available).",
         "sales",
+        non_negative=True,
     ),
     # -- Pedagogical leakage trap (deliberately retained in all modes) --
     FeatureSpec(

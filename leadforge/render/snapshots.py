@@ -231,36 +231,43 @@ def build_snapshot(
 
     act_agg = ad.groupby("lead_id").agg(activity_count=("activity_id", "count")).reset_index()
 
-    # Opportunity join: find opportunity created by snapshot cutoff.
+    # Opportunity join: find opportunities created by snapshot cutoff.
+    # All temp columns are prefixed with ``_`` to avoid polluting downstream
+    # merge keys.  We compute _cutoff and _closed_at_ts once, up-front, so
+    # both the creation-date filter and the open/closed gate share the same
+    # per-lead cutoff without a redundant map() call.
     od = (
         pd.DataFrame([o.to_dict() for o in result.opportunities])
         if result.opportunities
         else OpportunityRow.empty_dataframe()
     )
-    if len(od) > 0 and snapshot_day is not None:
-        od["_created"] = pd.to_datetime(od["created_at"])
-        od["_cutoff"] = od["lead_id"].map(cutoff_map)
+    od = od.copy()
+    od["_created"] = pd.to_datetime(od["created_at"])
+    od["_closed_at_ts"] = pd.to_datetime(od["closed_at"], errors="coerce")
+    od["_cutoff"] = od["lead_id"].map(cutoff_map)
+
+    if snapshot_day is not None:
         od = od[od["_created"] <= od["_cutoff"]]
 
     # Track ANY opportunity created (regardless of close outcome) for opportunity_created flag.
     any_opps = od[["lead_id"]].drop_duplicates()
     any_opps["opportunity_created"] = True
 
-    # Compute per-lead snapshot cutoffs for the opportunity open/closed check.
-    # An opportunity is "open" at snapshot date if it has not yet been closed
-    # (closed_at is NaT) OR if it was closed after the per-lead snapshot cutoff.
-    # Using close_outcome.isna() alone is wrong: an opportunity closed after the
-    # snapshot window has a non-null close_outcome set by the post-simulation pass,
-    # so it would be incorrectly treated as already closed at snapshot time.
-    if len(od) > 0:
-        od = od.copy()
-        od["_closed_at_ts"] = pd.to_datetime(od["closed_at"], errors="coerce")
-        od["_snapshot_cutoff"] = od["lead_id"].map(cutoff_map)
-        open_mask = od["_closed_at_ts"].isna() | (od["_closed_at_ts"] > od["_snapshot_cutoff"])
-        open_opps_raw = od[open_mask][["lead_id", "estimated_acv"]]
-    else:
-        open_opps_raw = od[["lead_id", "estimated_acv"]]
-    open_opps = open_opps_raw.groupby("lead_id").first().reset_index()
+    # An opportunity is "open" at snapshot date iff it was not yet closed as of
+    # the per-lead cutoff.  Using close_outcome.isna() alone is wrong: an
+    # opportunity closed *after* the snapshot window has a non-null close_outcome
+    # (set by the post-simulation pass), so it would be incorrectly treated as
+    # already-closed at snapshot time and suppress has_open_opportunity.
+    open_mask = od["_closed_at_ts"].isna() | (od["_closed_at_ts"] > od["_cutoff"])
+    open_opps_raw = od[open_mask][["lead_id", "created_at", "estimated_acv"]]
+    # Sort by created_at so groupby.first() is deterministic when a lead has
+    # multiple open opportunities (earliest-created wins).
+    open_opps = (
+        open_opps_raw.sort_values("created_at")
+        .groupby("lead_id")[["estimated_acv"]]
+        .first()
+        .reset_index()
+    )
     open_opps = open_opps.rename(columns={"estimated_acv": "opportunity_estimated_acv"})
     open_opps["has_open_opportunity"] = True
 
@@ -367,29 +374,13 @@ _NUMERIC_DISTORTION_COLS: list[str] = [
 
 # Post-noise physical-range clamps.  Applied after Gaussian noise to prevent
 # non-physical values (e.g. negative durations, negative counts).
-# Mapping: column name (or substring match prefix) → (lower_bound, upper_bound | None)
+# Derived from FeatureSpec.non_negative so the lists stay in sync automatically
+# when features are added or renamed — no manual maintenance required.
 _NONNEG_FLOAT_COLS: frozenset[str] = frozenset(
-    {
-        "days_since_last_touch",
-        "days_since_first_touch",
-        "opportunity_estimated_acv",
-        "expected_acv",
-        "total_session_duration_seconds",
-    }
+    f.name for f in LEAD_SNAPSHOT_FEATURES if f.dtype in ("Float64", "float64") and f.non_negative
 )
 _NONNEG_INT_COLS: frozenset[str] = frozenset(
-    {
-        "touch_count",
-        "inbound_touch_count",
-        "outbound_touch_count",
-        "session_count",
-        "pricing_page_views",
-        "demo_page_views",
-        "touches_week_1",
-        "touches_days_0_7",
-        "touches_last_7_days",
-        "activity_count",
-    }
+    f.name for f in LEAD_SNAPSHOT_FEATURES if f.dtype in ("Int64", "int64") and f.non_negative
 )
 
 
@@ -426,11 +417,11 @@ def _apply_difficulty_distortions(
             df[col] = values
 
     # 1b. Post-noise clamp to physical ranges.
-    # Float non-negative columns: clamp to >= 0.
+    # Non-negative float columns: clip to >= 0.
     for col in _NONNEG_FLOAT_COLS:
         if col in df.columns and df[col].notna().any():
             df[col] = df[col].clip(lower=0)
-    # Int non-negative columns: clamp to >= 0, then restore int dtype.
+    # Non-negative int columns: clip to >= 0.  clip() preserves Int64 dtype.
     for col in _NONNEG_INT_COLS:
         if col in df.columns and df[col].notna().any():
             df[col] = df[col].clip(lower=0)

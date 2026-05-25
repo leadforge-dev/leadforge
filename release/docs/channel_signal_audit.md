@@ -18,7 +18,7 @@ Audit produced by `scripts/audit_channel_signal.py`; see `channel_signal_audit.j
 
 `n_train = 3500` (90-day conversion rate 41.46%); `n_test = 750` (rate 42.67%).
 
-### Columns: `lead_source`, `first_touch_channel` (audit values identical)
+### Column: `lead_source`
 
 Per-channel rate spread (max − min): **0.0433**  ·  In-sample univariate AUC: **0.5200**  ·  Out-of-sample univariate AUC: **0.5014**
 
@@ -32,7 +32,7 @@ Per-channel rate spread (max − min): **0.0433**  ·  In-sample univariate AUC:
 
 `n_train = 3500` (90-day conversion rate 20.14%); `n_test = 750` (rate 22.27%).
 
-### Columns: `lead_source`, `first_touch_channel` (audit values identical)
+### Column: `lead_source`
 
 Per-channel rate spread (max − min): **0.0365**  ·  In-sample univariate AUC: **0.5212**  ·  Out-of-sample univariate AUC: **0.5139**
 
@@ -46,7 +46,7 @@ Per-channel rate spread (max − min): **0.0365**  ·  In-sample univariate AUC:
 
 `n_train = 3500` (90-day conversion rate 7.91%); `n_test = 750` (rate 7.87%).
 
-### Columns: `lead_source`, `first_touch_channel` (audit values identical)
+### Column: `lead_source`
 
 Per-channel rate spread (max − min): **0.0056**  ·  In-sample univariate AUC: **0.5083**  ·  Out-of-sample univariate AUC: **0.5226**
 
@@ -62,5 +62,5 @@ The numbers above answer one question: *how strongly does channel alone signal 9
 
 Two empirical observations a reader can make from the numbers above:
 
-1. **The out-of-sample univariate AUC is the comparable number** for any external baseline. It uses train-derived rates scored against held-out test labels — the same shape as the `source_only` HistGBM baseline reported in `release/validation/validation_report.json`, which is built on the same task splits with `lead_source` + `first_touch_channel` as the only features. The in-sample number is biased upward by construction — small at v1's N but visible — and is reported here for transparency rather than comparison.
+1. **The out-of-sample univariate AUC is the comparable number** for any external baseline. It uses train-derived rates scored against held-out test labels — the same shape as the `source_only` HistGBM baseline reported in `release/validation/validation_report.json`, which is built on the same task splits with `lead_source` as the only feature. The in-sample number is biased upward by construction — small at v1's N but visible — and is reported here for transparency rather than comparison.
 2. **The numerical conclusion is bundle-specific.** When the per-channel rate spread is small and the OOS univariate AUC is close to chance, channel alone is a weak feature for the bundle this audit was run against. v1's bundles currently produce that outcome (see the per-tier sections above) — consistent with the design: the simulator drives conversion through motif-family hazards keyed off latent traits, not channel-conditional probabilities. Channel-conditional encoding is tracked as post-v1 work in `docs/release/post_v1_roadmap.md`.
