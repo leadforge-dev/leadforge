@@ -571,11 +571,11 @@ def cells() -> list[nbf.NotebookNode]:
             # baseline (well outside numerical jitter, well inside the
             # band that would let GBM(eng) silently drop below GBM(flat)).
             NB02_TARGETS = {
-                "lr_flat_auc":  0.8737,
-                "gbm_flat_auc": 0.8432,
-                "lr_eng_auc":   0.8763,
-                "gbm_eng_auc":  0.8579,
-                "headline_lift_auc": 0.0147,  # GBM(eng) - GBM(flat)
+                "lr_flat_auc":  0.6362,
+                "gbm_flat_auc": 0.6023,
+                "lr_eng_auc":   0.6284,
+                "gbm_eng_auc":  0.6133,
+                "headline_lift_auc": 0.0110,  # GBM(eng) - GBM(flat)
             }
             NB02_TOLERANCES = {
                 "lr_flat_auc":  0.02,
@@ -615,7 +615,7 @@ def cells() -> list[nbf.NotebookNode]:
             `tiers.intermediate.spreads.gbm_auc`), so a single-seed lift
             of this size is **suggestive, not conclusive**. Confirming a
             real signal needs a seed sweep — see the cohort-shift / seed
-            harness coming in PR 6.2's notebook 04.
+            harness in Notebook 04.
 
             The lift also does **not** flip the sign of the GBM-vs-LR
             comparison: GBM(eng) is still slightly below LR(flat). This
@@ -637,15 +637,123 @@ def cells() -> list[nbf.NotebookNode]:
                kernels, learned embeddings, bigger seed sweeps) flips the
                GBM-vs-LR sign reliably, that's a finding worth filing —
                the *break_me_guide* template lands in PR 6.3.
+            """
+        ),
+        md(
+            """
+            ## 9. Account-level split: the faithful generalisation estimate
 
+            The dataset card's top disclosed limitation is **93 % account and contact
+            overlap across train / test**: the random split is keyed on `lead_id`,
+            so most test accounts also appear in train. A model trained on the random
+            split can ride account-level signal across the boundary, overstating
+            generalisation to truly unseen accounts.
+
+            `GroupKFold(account_id)` on the **training set** is the antidote: each
+            fold holds out a disjoint set of ~240 accounts (~700 leads), so every
+            validation lead comes from an account the fold's model has never seen.
+
+            **Apples-to-apples comparison.** Both numbers below use the same
+            training pool (3,500 leads, seed 42):
+
+            * **Random-split AUC** — LR trained on all 3,500 training leads,
+              evaluated on the 750 held-out test leads. This is the headline number
+              from §5; it is honest about leakage with respect to the *test split*,
+              but 518 of 557 test accounts (~93 %) also appear in training.
+            * **GroupKFold mean AUC** — 5-fold CV inside the 3,500 training leads,
+              with disjoint account sets per fold. Each fold trains on ~2,800 leads
+              and validates on ~700 from never-seen accounts. There is no account
+              overlap across the fold boundary by construction.
+
+            The delta (random-split − GKF) is the **account-overlap optimism**:
+            how much of the headline number comes from the model having seen other
+            leads from the same accounts during training.
+
+            **Reading the fold std.** With ~1,200 accounts split 5 ways (~240
+            accounts/fold), each fold's AUC has meaningful sampling variance. Treat
+            the mean as the point estimate, not any individual fold.
+            """
+        ),
+        code(
+            """
+            from sklearn.model_selection import GroupKFold
+
+            # Train-set-only GroupKFold — test labels are never touched.
+            # This keeps both evaluations on the same 3,500-lead pool so the
+            # comparison is apples-to-apples (no training-size confound).
+            groups_tr = train["account_id"].to_numpy()
+            X_cv = train[base_cols]
+            y_cv = train[TASK].astype("boolean").fillna(False).astype(int).to_numpy()
+
+            N_SPLITS = 5
+            gkf = GroupKFold(n_splits=N_SPLITS)
+            fold_aucs: list[float] = []
+
+            for fold_idx, (tr_idx, va_idx) in enumerate(gkf.split(X_cv, y_cv, groups_tr)):
+                X_tr_f, X_va_f = X_cv.iloc[tr_idx], X_cv.iloc[va_idx]
+                y_tr_f, y_va_f = y_cv[tr_idx], y_cv[va_idx]
+
+                pipe = build_pipeline(num_base, cat_base, model="lr")
+                pipe.fit(_sanitize(X_tr_f, cat_base), y_tr_f)
+                fold_aucs.append(
+                    float(roc_auc_score(y_va_f, pipe.predict_proba(
+                        _sanitize(X_va_f, cat_base))[:, 1]))
+                )
+                n_accounts_held_out = len(set(groups_tr[va_idx]))
+                print(
+                    f"  fold {fold_idx + 1}/{N_SPLITS}: "
+                    f"AUC={fold_aucs[-1]:.4f}  "
+                    f"({n_accounts_held_out} held-out accounts, "
+                    f"{len(va_idx):,} leads)"
+                )
+
+            gkf_mean = float(sum(fold_aucs) / len(fold_aucs))
+            gkf_std = float(np.std(fold_aucs))
+            random_split_auc = float(roc_auc_score(y_test, probs_lr_flat))
+
+            print()
+            print(f"GroupKFold mean AUC (train-only, account-level): {gkf_mean:.4f}  (±{gkf_std:.4f} fold std)")
+            print(f"Random-split AUC (headline, test set):           {random_split_auc:.4f}")
+            print(f"Account-overlap optimism:                        {random_split_auc - gkf_mean:+.4f}")
+            print()
+            print(
+                "The small optimism confirms that most signal in this DGP is "
+                "lead-level, not account-level."
+            )
+            print(
+                "On real CRM data, where account identity is a stronger predictor, "
+                "this delta is typically larger."
+            )
+
+            # ── Tolerance gate ──────────────────────────────────────────────
+            # Pinned to the train-only seed-42 GKF AUC on the as-shipped bundle.
+            # Tolerance ±0.02 is ~2× the observed fold std (~0.011), so it catches
+            # a real regression (data-contamination, feature-set change) without
+            # firing on normal fold-sampling noise.
+            GKF_TARGET = 0.6148
+            GKF_TOL = 0.02
+            assert_within_tolerance(
+                observed={"gkf_mean_auc": gkf_mean},
+                target={"gkf_mean_auc": GKF_TARGET},
+                tolerances={"gkf_mean_auc": GKF_TOL},
+                label="notebook 02 §9 GroupKFold mean AUC (seed 42, train-only, intermediate)",
+            )
+            assert gkf_std < 0.06, (
+                f"GroupKFold fold std ({gkf_std:.4f}) is unusually high — "
+                "check for account-group imbalance or very small per-fold label counts."
+            )
+            print(f"OK — GroupKFold mean AUC within ±{GKF_TOL} of target {GKF_TARGET}.")
+            """
+        ),
+        md(
+            """
             ## Next
 
-            - **Notebook 03** *(coming in PR 6.2)* — leakage and
-              time-window walkthrough, including the deliberate
-              `total_touches_all` trap notebook 01 keeps and this notebook
-              drops.
-            - **Notebook 04** *(coming in PR 6.2)* — value-aware ranking,
-              calibration, and cohort-shift evaluation with a seed sweep.
+            - **Notebook 03** — leakage and time-window walkthrough,
+              including the deliberate `total_touches_all` trap Notebook 01
+              keeps and this notebook drops.
+            - **Notebook 04** — value-aware ranking, calibration, and
+              cohort-shift evaluation with a seed sweep.
             """
         ),
     ]

@@ -179,8 +179,10 @@ jobs:
       - run: pip install -e ".[dev,scripts,notebooks]"
       - name: Register python3 kernelspec for nbclient
         run: python -m ipykernel install --user --name python3
-      - name: Build the intermediate public bundle (only tier the notebooks need)
-        run: python scripts/build_public_release.py release --tier intermediate
+      - name: Build intermediate and advanced public bundles (needed by nb04 §4)
+        run: |
+          python scripts/build_public_release.py release --tier intermediate
+          python scripts/build_public_release.py release --tier advanced
       - name: Execute release notebooks end-to-end + builder byte-stability
         run: |
           pytest tests/release/notebooks/test_execute_notebooks.py \

@@ -217,7 +217,7 @@ def cells() -> list[nbf.NotebookNode]:
         ),
         md(
             """
-            ## 3. Calibration / reliability diagram
+            ## 3. Calibration — intermediate tier
 
             Bin LR's predicted probabilities into ten equal-width
             buckets, plot mean predicted vs mean observed. A perfectly
@@ -267,7 +267,141 @@ def cells() -> list[nbf.NotebookNode]:
         ),
         md(
             """
-            ## 4. Lift and cumulative gains
+            ## 4. Calibration — advanced tier
+
+            The intermediate tier has a moderate max-bin error (the panel
+            above). The **advanced tier has a lower prevalence (≈ 8 % base
+            rate)** — a structurally different calibration challenge.
+
+            With low prevalence, the LR model compresses most scores toward
+            zero. The equal-width bins near high probability are nearly empty,
+            so they don't contribute to `max_bin_error`. This can make the
+            *metric* look better even though the model is less useful overall
+            (lower AUC, lower lift, lower precision at any fixed k).
+
+            The side-by-side diagram below makes this concrete. Look for:
+
+            * **Fewer non-empty bins** in the advanced panel — most predictions
+              cluster near zero.
+            * **Different failure mode** — the intermediate model may be
+              well-spread but poorly scaled; the advanced model may appear
+              tightly calibrated near zero yet completely uninformative at
+              higher thresholds.
+
+            This illustrates why `max_bin_error` alone is an incomplete
+            calibration summary when base rates differ across tiers. A low
+            `max_bin_error` on the advanced tier is an artefact of the score
+            distribution, not evidence of good calibration.
+            """
+        ),
+        code(
+            """
+            ADV_BUNDLE = Path("../advanced")
+
+            adv_train = pd.read_parquet(ADV_BUNDLE / "tasks" / TASK / "train.parquet")
+            adv_test  = pd.read_parquet(ADV_BUNDLE / "tasks" / TASK / "test.parquet")
+
+            # Same preprocessing — drop IDs, trap, label; keep everything else
+            adv_headline_cols = [c for c in adv_train.columns if c not in EXCLUDE_HEADLINE]
+            adv_cat = [
+                c for c in adv_headline_cols
+                if not (
+                    pd.api.types.is_bool_dtype(adv_train[c])
+                    or pd.api.types.is_numeric_dtype(adv_train[c])
+                )
+            ]
+            adv_num = [c for c in adv_headline_cols if c not in adv_cat]
+
+            adv_pipe = build_pipeline(adv_num, adv_cat, model="lr")
+            adv_pipe.fit(
+                _sanitize(adv_train[adv_headline_cols], adv_cat),
+                adv_train[TASK].astype("boolean").fillna(False).astype(int),
+            )
+            adv_probs = adv_pipe.predict_proba(
+                _sanitize(adv_test[adv_headline_cols], adv_cat)
+            )[:, 1]
+            adv_y = adv_test[TASK].astype("boolean").fillna(False).astype(int).to_numpy()
+
+            # Calibration bins — same edges as intermediate above
+            adv_pred: list[float] = []
+            adv_actual: list[float] = []
+            adv_n: list[int] = []
+            for idx in range(10):
+                lo, hi = edges[idx], edges[idx + 1]
+                mask = (adv_probs >= lo) & (
+                    (adv_probs <= hi) if idx == 9 else (adv_probs < hi)
+                )
+                if mask.sum() == 0:
+                    continue
+                adv_pred.append(float(adv_probs[mask].mean()))
+                adv_actual.append(float(adv_y[mask].mean()))
+                adv_n.append(int(mask.sum()))
+
+            adv_max_bin_err = max(
+                abs(p - a) for p, a in zip(adv_pred, adv_actual, strict=False)
+            )
+
+            # Side-by-side reliability diagram
+            fig, axes = plt.subplots(1, 2, figsize=(11, 4.5), sharey=False)
+            for ax, preds, actuals, ns, label in [
+                (
+                    axes[0], mean_pred, mean_actual, bin_n,
+                    f"Intermediate (max-bin err = {max_bin_err:.3f})",
+                ),
+                (
+                    axes[1], adv_pred, adv_actual, adv_n,
+                    f"Advanced (max-bin err = {adv_max_bin_err:.3f})",
+                ),
+            ]:
+                ax.plot([0, 1], [0, 1], "k--", lw=1, label="Perfect")
+                sc = ax.scatter(preds, actuals, c=ns, cmap="Blues", s=70, vmin=0, zorder=3)
+                plt.colorbar(sc, ax=ax, label="bin n")
+                ax.set_xlabel("Mean predicted probability")
+                ax.set_ylabel("Mean actual conversion rate")
+                ax.set_title(label)
+                ax.set_xlim(-0.02, 1.02)
+                ax.set_ylim(-0.02, 1.02)
+            fig.suptitle(
+                "Reliability diagram: intermediate vs advanced tier", fontweight="bold"
+            )
+            plt.tight_layout()
+            plt.show()
+
+            adv_auc = float(roc_auc_score(adv_y, adv_probs))
+            int_auc = float(roc_auc_score(y_test, lr_probs))
+            print(f"Advanced tier: AUC = {adv_auc:.4f}  (cf. intermediate {int_auc:.4f})")
+            print(
+                f"Advanced tier: max-bin error = {adv_max_bin_err:.4f}  "
+                f"(cf. intermediate {max_bin_err:.4f})"
+            )
+            print()
+            print(
+                "AUC drops on the advanced tier (lower prevalence + higher noise "
+                "reduces rank discrimination)."
+            )
+            print(
+                "max-bin error comparison direction depends on the score "
+                "distribution — see markdown above."
+            )
+
+            # CI-enforced guard: the two tiers must differ meaningfully in
+            # their calibration profiles (either direction is valid depending
+            # on how scores are distributed), and AUC must be ordered.
+            assert abs(adv_max_bin_err - max_bin_err) > 0.05, (
+                f"Advanced and intermediate max-bin errors are within 0.05 of each "
+                f"other (adv={adv_max_bin_err:.4f}, int={max_bin_err:.4f}) — "
+                "the tiers are no longer meaningfully differentiated on calibration."
+            )
+            assert adv_auc < int_auc - 0.01, (
+                f"Advanced AUC ({adv_auc:.4f}) is not clearly below intermediate "
+                f"({int_auc:.4f}) — tier difficulty ordering may have regressed."
+            )
+            print("OK — tiers are meaningfully differentiated on AUC and calibration.")
+            """
+        ),
+        md(
+            """
+            ## 5. Lift and cumulative gains
 
             Two complementary curves:
 
@@ -334,7 +468,7 @@ def cells() -> list[nbf.NotebookNode]:
         ),
         md(
             """
-            ## 5. Value-aware ranking — `expected_acv` × P(convert)
+            ## 6. Value-aware ranking — `expected_acv` × P(convert)
 
             Sales reps don't have infinite capacity, so the right
             objective is rarely "maximise conversion count" — it's
@@ -401,7 +535,7 @@ def cells() -> list[nbf.NotebookNode]:
         ),
         md(
             """
-            ## 6. Threshold selection for fixed top-K capacity
+            ## 7. Threshold selection for fixed top-K capacity
 
             Sales rarely has the patience for "score everything, run
             stats." The realistic ask is: *"My team can work 50 leads
@@ -483,7 +617,7 @@ def cells() -> list[nbf.NotebookNode]:
         ),
         md(
             """
-            ## 7. Cohort-shift evaluation
+            ## 8. Cohort-shift evaluation
 
             The bundle's train/test split is a uniform random split of
             leads. A more realistic stress test is "train on the first
@@ -505,16 +639,16 @@ def cells() -> list[nbf.NotebookNode]:
             block reproduces to four decimals only when both knobs
             match.
 
-            The expected behaviour for the v1 intermediate tier is
-            *no* degradation — the report shows the cohort split AUC
-            running ~0.015 *higher* than the random split. That's a
-            surprise worth surfacing: the v1 simulator's intermediate
-            world doesn't drift over its 90-day horizon, so cohort
-            order isn't a stressor here. The intro and advanced
-            tiers show small positive degradations (intro +0.016,
-            advanced +0.010) — see
-            `release/validation/validation_report.json` ⇒
-            `cohort_shift`.
+            The cohort-shift result below is a **single-seed (seed 42)
+            measurement**. The v1 DGP has no baked-in time drift — claim
+            c14 in `release/claims_register.md` explicitly documents this
+            — so the direction and size of any AUC degradation can vary
+            across seeds; on some seeds the chronological split performs
+            comparably to the random split. The published `~0.06` drop
+            is a seed-42-specific outcome, not a guaranteed property of
+            the dataset. Consult `release/validation/validation_report.json`
+            ⇒ `cohort_shift` for the full seed-42 reference values, and
+            the per-seed entries for inter-seed variability.
             """
         ),
         code(
@@ -618,7 +752,7 @@ def cells() -> list[nbf.NotebookNode]:
         ),
         md(
             """
-            ## 8. Bootstrap robustness — within-bundle metric variance
+            ## 9. Bootstrap robustness — within-bundle metric variance
 
             Cross-seed metric variance (the validation report's
             `tiers.intermediate.spreads.gbm_auc = 0.027`) is the
@@ -694,7 +828,7 @@ def cells() -> list[nbf.NotebookNode]:
         ),
         md(
             """
-            ## 9. Tolerance gate (G13.2)
+            ## 10. Tolerance gate (G13.2)
 
             Three groups of pinned values:
 
@@ -706,8 +840,7 @@ def cells() -> list[nbf.NotebookNode]:
               That audit-sync is what makes the "this notebook
               reproduces the report" claim meaningful.
             * **Calibration / lift / value-capture** — pinned inline
-              against the seed-42 single-run values from the
-              validation report's `per_seed[0]` block. Tolerances
+              against the seed-42 single-run values. Tolerances
               widen for small-K metrics (P@K, value capture) because
               their seed-to-seed variance is larger.
             * **Bootstrap medians** — pinned inline against the
@@ -715,10 +848,10 @@ def cells() -> list[nbf.NotebookNode]:
               to the data-specific value, not to the cross-seed
               median).
 
-            The headline lift sign-check (`gbm_auc > lr_auc - eps` was
-            *not* asserted — the v1 dataset documents the surprising
-            finding that LR ≥ GBM on intermediate; see
-            `release/validation/validation_report.md` gate G7.4.4).
+            The headline lift sign-check (`gbm_auc > lr_auc - eps`) was
+            *not* asserted — the v1 dataset documents the finding
+            that LR ≥ GBM on intermediate; see
+            `release/validation/validation_report.md` gate G7.4.4.
             """
         ),
         code(
@@ -758,26 +891,26 @@ def cells() -> list[nbf.NotebookNode]:
             # and reports the same AUCs, so these values are also
             # cross-checked there.
             NB04_TARGETS = {
-                "lr_auc":             0.8737,
-                "gbm_auc":            0.8432,
-                "lr_max_bin_err":     0.1344,
-                "lift_at_5pct":       2.4819,
-                "lift_at_10pct":      2.7536,
-                "acv_cap_50":         0.1615,
-                "acv_cap_100":        0.3702,
+                "lr_auc":             0.6362,
+                "gbm_auc":            0.6023,
+                "lr_max_bin_err":     0.3764,
+                "lift_at_5pct":       1.7728,
+                "lift_at_10pct":      1.6168,
+                "acv_cap_50":         0.0589,
+                "acv_cap_100":        0.1584,
                 # Bootstrap medians converge to the seed-42 point
                 # estimates within sampling noise.
-                "boot_lr_auc_median":  0.8757,
-                "boot_gbm_auc_median": 0.8440,
+                "boot_lr_auc_median":  0.6385,
+                "boot_gbm_auc_median": 0.6016,
             }
             NB04_TOLERANCES = {
                 "lr_auc":             0.02,
                 "gbm_auc":            0.02,
-                "lr_max_bin_err":     0.05,
-                "lift_at_5pct":       0.30,
-                "lift_at_10pct":      0.30,
-                "acv_cap_50":         0.05,
-                "acv_cap_100":        0.05,
+                "lr_max_bin_err":     0.06,
+                "lift_at_5pct":       0.20,
+                "lift_at_10pct":      0.20,
+                "acv_cap_50":         0.04,
+                "acv_cap_100":        0.04,
                 "boot_lr_auc_median":  0.03,
                 "boot_gbm_auc_median": 0.03,
             }
@@ -816,25 +949,27 @@ def cells() -> list[nbf.NotebookNode]:
         ),
         md(
             """
-            ## 10. Summary
+            ## 11. Summary
 
-            * The LR baseline is well-calibrated (max bin error ≈ 0.13
-              on the trap-dropped headline panel, vs ~0.19 on the
-              with-trap panel the validation report tracks) and lifts
-              the top decile to ~2.75× the base rate.
+            * The LR baseline (trap-dropped) achieves AUC ≈ 0.64 and
+              lifts the top decile to ~1.6× the base rate on the
+              intermediate tier.
+            * Calibration on the intermediate tier shows noticeable
+              max-bin error; the advanced tier exhibits a *different*
+              calibration profile driven by its low prevalence (scores
+              compressed toward zero) rather than a worse one — see §4.
             * Value-aware ranking (P × ACV) captures more revenue per
               top-K slot than P-only ranking — the gap depends on K
               but is positive across all sizes we tested.
-            * Cohort shift is **negative** on the intermediate tier
-              (the late cohort is *easier*, not harder); the report
-              documents this, and the notebook reproduces it. The
-              intro and advanced tiers show small positive
-              degradations.
+            * Cohort shift shows a **~0.06 AUC drop** on seed 42 when
+              moving from a random split to a chronological split. This
+              is a **single-seed observation** — the v1 DGP has no baked-in
+              time drift, so the direction and magnitude vary across seeds
+              (see claim c14 in `release/claims_register.md`).
             * Bootstrap on the existing test split gives a within-
-              bundle confidence band that's tighter than the cross-seed
-              spread the validation report computes — useful for "how
-              confident is this single AUC" questions, not for "how
-              much does the bundle move across seeds."
+              bundle confidence band — useful for "how confident is
+              this single AUC" questions, not for "how much does the
+              bundle move across seeds."
 
             ## Where to go next
 

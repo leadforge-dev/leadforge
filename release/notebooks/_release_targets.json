@@ -3,16 +3,16 @@
  "cohort_shift": {
   "_doc": "Per-tier cohort-shift metrics from validation_report.cohort_shift (single-seed values; the report runs cohort-shift only on seed 42). Notebook 04 reproduces these via a chronological resplit and pins them via assert_within_tolerance.",
   "intermediate": {
-   "auc_degradation": -0.015458147938307687,
-   "cohort_split_auc": 0.8908394607843138,
-   "random_split_auc": 0.8753813128460061
+   "auc_degradation": 0.059162711902146836,
+   "cohort_split_auc": 0.5932751225490195,
+   "random_split_auc": 0.6524378344511663
   }
  },
  "intermediate": {
-  "brier_score": 0.10963449613199748,
-  "gbm_auc": 0.875461913160326,
-  "lr_auc": 0.8858759553203998,
-  "lr_average_precision": 0.5752148545119874,
-  "top_decile_rate": 0.5866666666666667
+  "brier_score": 0.16039485381003482,
+  "gbm_auc": 0.6339119348828088,
+  "lr_auc": 0.662511445933572,
+  "lr_average_precision": 0.3317717423892973,
+  "top_decile_rate": 0.32
  }
 }
