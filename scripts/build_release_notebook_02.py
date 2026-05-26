@@ -686,7 +686,7 @@ def cells() -> list[nbf.NotebookNode]:
 
             # Reuse the flat-baseline column set from §5 (base_cols, no trap, no IDs)
             X_all = all_data[base_cols]
-            y_all = all_data[TASK].astype(int).to_numpy()
+            y_all = all_data[TASK].astype("boolean").fillna(False).astype(int).to_numpy()
 
             # 5-fold account-grouped CV with LR (fast; GBM adds ~4× wall time for
             # a small AUC difference on this DGP)
