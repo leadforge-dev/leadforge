@@ -50,35 +50,35 @@ claims:
     verifier: leadforge validate
 
   - id: c05
-    text: "Conversion rate (cross-seed median, seeds 42-46): intro 42.67%, intermediate 21.60%, advanced 8.40%."
+    text: "Conversion rate (cross-seed median, seeds 42-46): intro 42.67%, intermediate 22.27%, advanced 7.87%."
     category: calibration
     backing_artifact: release/metrics.json
     backing_path: $.tiers.<tier>.medians.conversion_rate_test
     verifier: scripts/validate_release_candidate.py
 
   - id: c06
-    text: "Cross-seed median LR AUC: intro 0.879, intermediate 0.886, advanced 0.886."
+    text: "Cross-seed median LR AUC: intro 0.671, intermediate 0.670, advanced 0.563."
     category: calibration
     backing_artifact: release/metrics.json
     backing_path: $.tiers.<tier>.medians.lr_auc
     verifier: scripts/validate_release_candidate.py
 
   - id: c07
-    text: "Cross-seed median LR Average Precision: intro 0.761, intermediate 0.575, advanced 0.351."
+    text: "Cross-seed median LR Average Precision: intro 0.568, intermediate 0.358, advanced 0.093."
     category: calibration
     backing_artifact: release/metrics.json
     backing_path: $.tiers.<tier>.medians.lr_average_precision
     verifier: scripts/validate_release_candidate.py
 
   - id: c08
-    text: "Cross-seed median P@100: intro 0.80, intermediate 0.59, advanced 0.34."
+    text: "Cross-seed median P@100: intro 0.62, intermediate 0.41, advanced 0.07."
     category: calibration
     backing_artifact: release/metrics.json
     backing_path: $.tiers.<tier>.medians.precision_at_100
     verifier: scripts/validate_release_candidate.py
 
   - id: c09
-    text: "Cross-seed median Brier score: intro 0.130, intermediate 0.110, advanced 0.061."
+    text: "Cross-seed median Brier score: intro 0.222, intermediate 0.163, advanced 0.073."
     category: calibration
     backing_artifact: release/metrics.json
     backing_path: $.tiers.<tier>.medians.brier_score
@@ -99,7 +99,7 @@ claims:
     verifier: leadforge inspect
 
   - id: c12
-    text: "GBM-LR AUC delta is slightly negative in every tier (-0.0045 / -0.0072 / -0.0133); v1's snapshot is dominated by linear features."
+    text: "GBM-LR AUC delta is negative in every tier (-0.022 / -0.018 / -0.030); v1's snapshot is dominated by linear features."
     category: limitations
     backing_artifact: release/metrics.json
     backing_path: $.tiers.<tier>.medians.gbm_minus_lr_auc

@@ -63,8 +63,8 @@ def cells() -> list[nbf.NotebookNode]:
             > This notebook reproduces the metrics published in
             > `release/validation/validation_report.json` and therefore **keeps
             > `total_touches_all`** in the feature set (see §4 for the full
-            > explanation).  If your goal is to build a clean production-ready
-            > model, **start at Notebook 02**, which drops the trap and adds
+            > explanation).  After completing this notebook, continue to
+            > **Notebook 02** for a clean pipeline that drops the trap and adds
             > relational feature engineering on the snapshot-safe tables.
             """
         ),

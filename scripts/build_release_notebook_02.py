@@ -571,11 +571,11 @@ def cells() -> list[nbf.NotebookNode]:
             # baseline (well outside numerical jitter, well inside the
             # band that would let GBM(eng) silently drop below GBM(flat)).
             NB02_TARGETS = {
-                "lr_flat_auc":  0.8737,
-                "gbm_flat_auc": 0.8432,
-                "lr_eng_auc":   0.8763,
-                "gbm_eng_auc":  0.8579,
-                "headline_lift_auc": 0.0147,  # GBM(eng) - GBM(flat)
+                "lr_flat_auc":  0.6362,
+                "gbm_flat_auc": 0.6023,
+                "lr_eng_auc":   0.6284,
+                "gbm_eng_auc":  0.6133,
+                "headline_lift_auc": 0.0110,  # GBM(eng) - GBM(flat)
             }
             NB02_TOLERANCES = {
                 "lr_flat_auc":  0.02,
@@ -645,18 +645,19 @@ def cells() -> list[nbf.NotebookNode]:
               keeps and this notebook drops.
             - **Notebook 04** — value-aware ranking, calibration, and
               cohort-shift evaluation with a seed sweep.
-            - **§9 below** — `GroupKFold(account_id)` evaluation: the
-              faithful generalisation estimate for this bundle.
+
+            The following section quantifies the optimism in the headline
+            number using `GroupKFold(account_id)`.
             """
         ),
         md(
             """
             ## 9. Account-level split: the faithful generalisation estimate
 
-            The dataset card's top disclosed limitation is **93 % account overlap
-            across train / test**: the random split is keyed on `lead_id`, so most
-            test accounts also appear in train. A model trained on the random split
-            can ride account-level signal across the boundary, overstating
+            The dataset card's top disclosed limitation is **93 % account and contact
+            overlap across train / test**: the random split is keyed on `lead_id`,
+            so most test accounts also appear in train. A model trained on the random
+            split can ride account-level signal across the boundary, overstating
             generalisation to truly unseen accounts.
 
             The antidote is `GroupKFold(account_id)`: each fold holds out a disjoint
@@ -668,6 +669,11 @@ def cells() -> list[nbf.NotebookNode]:
             features), the AUC drop is small — typically 0.01–0.05 on this DGP.
             The exercise matters anyway: it quantifies the optimism in the headline
             number and is required for any published benchmark claim.
+
+            **Reading the fold std.** With ~1,240 accounts split 5 ways (~248
+            accounts/fold), each fold's AUC has meaningful sampling variance. The
+            printed fold std quantifies this; treat the mean as the point estimate,
+            not any individual fold.
             """
         ),
         code(
@@ -707,10 +713,11 @@ def cells() -> list[nbf.NotebookNode]:
                 )
 
             gkf_mean = float(sum(fold_aucs) / len(fold_aucs))
+            gkf_std = float(np.std(fold_aucs))
             random_split_auc = float(roc_auc_score(y_test, probs_lr_flat))
 
             print()
-            print(f"GroupKFold mean AUC (account-level CV): {gkf_mean:.4f}")
+            print(f"GroupKFold mean AUC (account-level CV): {gkf_mean:.4f}  (±{gkf_std:.4f} fold std)")
             print(f"Random-split AUC (headline):            {random_split_auc:.4f}")
             print(f"Optimism in headline number:            {random_split_auc - gkf_mean:+.4f}")
             print()
@@ -719,10 +726,34 @@ def cells() -> list[nbf.NotebookNode]:
                 "unseen accounts."
             )
             print(
+                "The fold std quantifies uncertainty from the small account pool "
+                "(~1,240 accounts, ~248/fold);\\n"
+                "treat the mean as the point estimate, not any individual fold."
+            )
+            print(
                 "The optimism is typically small on this DGP (lead-level signal "
                 "dominates); it may\\nbe larger on real CRM data where account "
                 "identity is a stronger predictor."
             )
+
+            # ── Tolerance gate ──────────────────────────────────────────────
+            # Pinned to the seed-42 grouped-CV AUC on the as-shipped bundle.
+            # Tolerance ±0.04 is generous (cross-fold spread is ~0.02 std)
+            # but still catches a collapse to chance or a data-contamination
+            # bug (either would move the mean by more than 0.04).
+            GKF_TARGET = 0.6259
+            GKF_TOL = 0.04
+            assert_within_tolerance(
+                observed={"gkf_mean_auc": gkf_mean},
+                target={"gkf_mean_auc": GKF_TARGET},
+                tolerances={"gkf_mean_auc": GKF_TOL},
+                label="notebook 02 §9 GroupKFold mean AUC (seed 42, intermediate)",
+            )
+            assert gkf_std < 0.12, (
+                f"GroupKFold fold std ({gkf_std:.4f}) is unusually high — "
+                "check for split instability or very small per-fold label counts."
+            )
+            print(f"OK — GroupKFold mean AUC within ±{GKF_TOL} of target {GKF_TARGET}.")
             """
         ),
     ]

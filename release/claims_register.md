@@ -13,11 +13,11 @@ twin of this document with the same data plus a schema block.
 
 | ID | Claim | Backing artifact | Path | Verifier |
 |---|---|---|---|---|
-| `c05` | Conversion rate (cross-seed median, seeds 42-46): intro 42.67%, intermediate 21.60%, advanced 8.40%. | `release/metrics.json` | `$.tiers.<tier>.medians.conversion_rate_test` | `scripts/validate_release_candidate.py` |
-| `c06` | Cross-seed median LR AUC: intro 0.879, intermediate 0.886, advanced 0.886. | `release/metrics.json` | `$.tiers.<tier>.medians.lr_auc` | `scripts/validate_release_candidate.py` |
-| `c07` | Cross-seed median LR Average Precision: intro 0.761, intermediate 0.575, advanced 0.351. | `release/metrics.json` | `$.tiers.<tier>.medians.lr_average_precision` | `scripts/validate_release_candidate.py` |
-| `c08` | Cross-seed median P@100: intro 0.80, intermediate 0.59, advanced 0.34. | `release/metrics.json` | `$.tiers.<tier>.medians.precision_at_100` | `scripts/validate_release_candidate.py` |
-| `c09` | Cross-seed median Brier score: intro 0.130, intermediate 0.110, advanced 0.061. | `release/metrics.json` | `$.tiers.<tier>.medians.brier_score` | `scripts/validate_release_candidate.py` |
+| `c05` | Conversion rate (cross-seed median, seeds 42-46): intro 42.67%, intermediate 22.27%, advanced 7.87%. | `release/metrics.json` | `$.tiers.<tier>.medians.conversion_rate_test` | `scripts/validate_release_candidate.py` |
+| `c06` | Cross-seed median LR AUC: intro 0.671, intermediate 0.670, advanced 0.563. | `release/metrics.json` | `$.tiers.<tier>.medians.lr_auc` | `scripts/validate_release_candidate.py` |
+| `c07` | Cross-seed median LR Average Precision: intro 0.568, intermediate 0.358, advanced 0.093. | `release/metrics.json` | `$.tiers.<tier>.medians.lr_average_precision` | `scripts/validate_release_candidate.py` |
+| `c08` | Cross-seed median P@100: intro 0.62, intermediate 0.41, advanced 0.07. | `release/metrics.json` | `$.tiers.<tier>.medians.precision_at_100` | `scripts/validate_release_candidate.py` |
+| `c09` | Cross-seed median Brier score: intro 0.222, intermediate 0.163, advanced 0.073. | `release/metrics.json` | `$.tiers.<tier>.medians.brier_score` | `scripts/validate_release_candidate.py` |
 
 ## composition
 
@@ -45,7 +45,7 @@ twin of this document with the same data plus a schema block.
 
 | ID | Claim | Backing artifact | Path | Verifier |
 |---|---|---|---|---|
-| `c12` | GBM-LR AUC delta is slightly negative in every tier (-0.0045 / -0.0072 / -0.0133); v1's snapshot is dominated by linear features. | `release/metrics.json` | `$.tiers.<tier>.medians.gbm_minus_lr_auc` | `scripts/validate_release_candidate.py` |
+| `c12` | GBM-LR AUC delta is negative in every tier (-0.022 / -0.018 / -0.030); v1's snapshot is dominated by linear features. | `release/metrics.json` | `$.tiers.<tier>.medians.gbm_minus_lr_auc` | `scripts/validate_release_candidate.py` |
 | `c13` | lead_source is weakly informative — out-of-sample univariate AUC ~0.50-0.52 across tiers, per-channel rate spread <=0.05. | `release/docs/channel_signal_audit.md` | `n/a (prose)` | `scripts/audit_channel_signal.py` |
 | `c14` | Cohort-shift AUC degradation is small (v1 has no time-of-year drift baked in). | `release/metrics.json` | `$.cohort_shift.<tier>.auc_degradation` | `scripts/validate_release_candidate.py` |
 
