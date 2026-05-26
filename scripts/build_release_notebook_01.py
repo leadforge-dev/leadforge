@@ -114,11 +114,12 @@ def cells() -> list[nbf.NotebookNode]:
             from the validation report without an audit-sync test failure
             in CI.
 
-            **Per-metric tolerances** are tighter than a flat 5 % band: the
-            cross-seed standard deviation in the report is well under 0.02
-            on AUC and Brier, and a flat ±0.05 would let a regression slip
-            through. Average-precision and the small-`k` `top_decile_rate`
-            stay at ±0.05 because their seed-to-seed variance is larger.
+            **Per-metric tolerances** reflect observed cross-seed variance
+            (seeds 42–46) in the validation report. AUC and Brier are stable
+            (spread < 0.06 / 0.02) so they use ±0.02. Average-precision uses
+            ±0.05. `top_decile_rate` is a small-count discrete metric with
+            high seed-to-seed variance (spread ≈ 0.13 on the intermediate
+            tier) and uses ±0.10.
             """
         ),
         code(
@@ -137,11 +138,11 @@ def cells() -> list[nbf.NotebookNode]:
                 "lr_top_decile_rate": targets["top_decile_rate"],
             }
             TOLERANCES = {
-                "lr_auc": 0.02,                  # G13.2 — tighter than a flat 5%
+                "lr_auc": 0.02,                  # G13.2 — cross-seed spread < 0.06
                 "gbm_auc": 0.02,
-                "lr_average_precision": 0.05,    # higher seed variance
-                "lr_brier": 0.02,
-                "lr_top_decile_rate": 0.05,      # small-k variance
+                "lr_average_precision": 0.05,    # cross-seed spread ~0.12
+                "lr_brier": 0.02,                # cross-seed spread < 0.02
+                "lr_top_decile_rate": 0.10,      # discrete small-count metric; spread ~0.13
             }
             for k, v in VALIDATION_REPORT_TARGETS.items():
                 print(f"  target  {k:<24s} {v:.4f}  (tol ±{TOLERANCES[k]:.2f})")

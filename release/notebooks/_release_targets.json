@@ -9,10 +9,10 @@
   }
  },
  "intermediate": {
-  "brier_score": 0.1628828101163977,
-  "gbm_auc": 0.6524378344511663,
-  "lr_auc": 0.6703813642012715,
-  "lr_average_precision": 0.35844944558298564,
-  "top_decile_rate": 0.38666666666666666
+  "brier_score": 0.16039485381003482,
+  "gbm_auc": 0.6339119348828088,
+  "lr_auc": 0.662511445933572,
+  "lr_average_precision": 0.3317717423892973,
+  "top_decile_rate": 0.32
  }
 }

@@ -239,3 +239,10 @@ release/huggingface-instructor/*
 # under release/_preview_committed/ is the audit-artefact-sync gate
 # and is checked into git separately.
 release/_preview/
+
+# ShmuggingFace mock-review site (PR 7.2 tooling) — Node.js install +
+# generated static site + Cloudflare Pages cache.  None of these are
+# repo artifacts; they are rebuilt on demand.
+node_modules/
+.wrangler/
+release/_shmuggingface/

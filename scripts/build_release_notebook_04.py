@@ -298,116 +298,105 @@ def cells() -> list[nbf.NotebookNode]:
             """
             ADV_BUNDLE = Path("../advanced")
 
-            if not (ADV_BUNDLE / "manifest.json").exists():
-                print(
-                    "⚠️  Advanced bundle not found at ../advanced/ — skipping §4.\\n"
-                    "Run:  leadforge generate --difficulty advanced --seed 42 "
-                    "--mode student_public --n-leads 5000 --out ../advanced\\n"
-                    "then re-run this cell."
-                )
-            else:
-                adv_train = pd.read_parquet(ADV_BUNDLE / "tasks" / TASK / "train.parquet")
-                adv_test  = pd.read_parquet(ADV_BUNDLE / "tasks" / TASK / "test.parquet")
+            adv_train = pd.read_parquet(ADV_BUNDLE / "tasks" / TASK / "train.parquet")
+            adv_test  = pd.read_parquet(ADV_BUNDLE / "tasks" / TASK / "test.parquet")
 
-                # Same preprocessing — drop IDs, trap, label; keep everything else
-                adv_headline_cols = [c for c in adv_train.columns if c not in EXCLUDE_HEADLINE]
-                adv_cat = [
-                    c for c in adv_headline_cols
-                    if not (
-                        pd.api.types.is_bool_dtype(adv_train[c])
-                        or pd.api.types.is_numeric_dtype(adv_train[c])
-                    )
-                ]
-                adv_num = [c for c in adv_headline_cols if c not in adv_cat]
+            # Same preprocessing — drop IDs, trap, label; keep everything else
+            adv_headline_cols = [c for c in adv_train.columns if c not in EXCLUDE_HEADLINE]
+            adv_cat = [
+                c for c in adv_headline_cols
+                if not (
+                    pd.api.types.is_bool_dtype(adv_train[c])
+                    or pd.api.types.is_numeric_dtype(adv_train[c])
+                )
+            ]
+            adv_num = [c for c in adv_headline_cols if c not in adv_cat]
 
-                adv_pipe = build_pipeline(adv_num, adv_cat, model="lr")
-                adv_pipe.fit(
-                    _sanitize(adv_train[adv_headline_cols], adv_cat),
-                    adv_train[TASK].astype("boolean").fillna(False).astype(int),
-                )
-                adv_probs = adv_pipe.predict_proba(
-                    _sanitize(adv_test[adv_headline_cols], adv_cat)
-                )[:, 1]
-                adv_y = adv_test[TASK].astype("boolean").fillna(False).astype(int).to_numpy()
+            adv_pipe = build_pipeline(adv_num, adv_cat, model="lr")
+            adv_pipe.fit(
+                _sanitize(adv_train[adv_headline_cols], adv_cat),
+                adv_train[TASK].astype("boolean").fillna(False).astype(int),
+            )
+            adv_probs = adv_pipe.predict_proba(
+                _sanitize(adv_test[adv_headline_cols], adv_cat)
+            )[:, 1]
+            adv_y = adv_test[TASK].astype("boolean").fillna(False).astype(int).to_numpy()
 
-                # Calibration bins — same edges as intermediate above
-                adv_pred: list[float] = []
-                adv_actual: list[float] = []
-                adv_n: list[int] = []
-                for idx in range(10):
-                    lo, hi = edges[idx], edges[idx + 1]
-                    mask = (adv_probs >= lo) & (
-                        (adv_probs <= hi) if idx == 9 else (adv_probs < hi)
-                    )
-                    if mask.sum() == 0:
-                        continue
-                    adv_pred.append(float(adv_probs[mask].mean()))
-                    adv_actual.append(float(adv_y[mask].mean()))
-                    adv_n.append(int(mask.sum()))
+            # Calibration bins — same edges as intermediate above
+            adv_pred: list[float] = []
+            adv_actual: list[float] = []
+            adv_n: list[int] = []
+            for idx in range(10):
+                lo, hi = edges[idx], edges[idx + 1]
+                mask = (adv_probs >= lo) & (
+                    (adv_probs <= hi) if idx == 9 else (adv_probs < hi)
+                )
+                if mask.sum() == 0:
+                    continue
+                adv_pred.append(float(adv_probs[mask].mean()))
+                adv_actual.append(float(adv_y[mask].mean()))
+                adv_n.append(int(mask.sum()))
 
-                adv_max_bin_err = max(
-                    abs(p - a) for p, a in zip(adv_pred, adv_actual, strict=False)
-                )
+            adv_max_bin_err = max(
+                abs(p - a) for p, a in zip(adv_pred, adv_actual, strict=False)
+            )
 
-                # Side-by-side reliability diagram
-                fig, axes = plt.subplots(1, 2, figsize=(11, 4.5), sharey=False)
-                for ax, preds, actuals, ns, label in [
-                    (
-                        axes[0], mean_pred, mean_actual, bin_n,
-                        f"Intermediate (max-bin err = {max_bin_err:.3f})",
-                    ),
-                    (
-                        axes[1], adv_pred, adv_actual, adv_n,
-                        f"Advanced (max-bin err = {adv_max_bin_err:.3f})",
-                    ),
-                ]:
-                    ax.plot([0, 1], [0, 1], "k--", lw=1, label="Perfect")
-                    sc = ax.scatter(preds, actuals, c=ns, cmap="Blues", s=70, vmin=0, zorder=3)
-                    plt.colorbar(sc, ax=ax, label="bin n")
-                    ax.set_xlabel("Mean predicted probability")
-                    ax.set_ylabel("Mean actual conversion rate")
-                    ax.set_title(label)
-                    ax.set_xlim(-0.02, 1.02)
-                    ax.set_ylim(-0.02, 1.02)
-                fig.suptitle(
-                    "Reliability diagram: intermediate vs advanced tier", fontweight="bold"
-                )
-                plt.tight_layout()
-                plt.show()
+            # Side-by-side reliability diagram
+            fig, axes = plt.subplots(1, 2, figsize=(11, 4.5), sharey=False)
+            for ax, preds, actuals, ns, label in [
+                (
+                    axes[0], mean_pred, mean_actual, bin_n,
+                    f"Intermediate (max-bin err = {max_bin_err:.3f})",
+                ),
+                (
+                    axes[1], adv_pred, adv_actual, adv_n,
+                    f"Advanced (max-bin err = {adv_max_bin_err:.3f})",
+                ),
+            ]:
+                ax.plot([0, 1], [0, 1], "k--", lw=1, label="Perfect")
+                sc = ax.scatter(preds, actuals, c=ns, cmap="Blues", s=70, vmin=0, zorder=3)
+                plt.colorbar(sc, ax=ax, label="bin n")
+                ax.set_xlabel("Mean predicted probability")
+                ax.set_ylabel("Mean actual conversion rate")
+                ax.set_title(label)
+                ax.set_xlim(-0.02, 1.02)
+                ax.set_ylim(-0.02, 1.02)
+            fig.suptitle(
+                "Reliability diagram: intermediate vs advanced tier", fontweight="bold"
+            )
+            plt.tight_layout()
+            plt.show()
 
-                adv_auc = float(roc_auc_score(adv_y, adv_probs))
-                int_auc = float(roc_auc_score(y_test, lr_probs))
-                print(
-                    f"Advanced tier: AUC = {adv_auc:.4f}  "
-                    f"(cf. intermediate {int_auc:.4f})"
-                )
-                print(
-                    f"Advanced tier: max-bin error = {adv_max_bin_err:.4f}  "
-                    f"(cf. intermediate {max_bin_err:.4f})"
-                )
-                print()
-                print(
-                    "AUC drops on the advanced tier (lower prevalence + higher noise "
-                    "reduces rank discrimination)."
-                )
-                print(
-                    "max-bin error comparison direction depends on the score "
-                    "distribution — see markdown above."
-                )
+            adv_auc = float(roc_auc_score(adv_y, adv_probs))
+            int_auc = float(roc_auc_score(y_test, lr_probs))
+            print(f"Advanced tier: AUC = {adv_auc:.4f}  (cf. intermediate {int_auc:.4f})")
+            print(
+                f"Advanced tier: max-bin error = {adv_max_bin_err:.4f}  "
+                f"(cf. intermediate {max_bin_err:.4f})"
+            )
+            print()
+            print(
+                "AUC drops on the advanced tier (lower prevalence + higher noise "
+                "reduces rank discrimination)."
+            )
+            print(
+                "max-bin error comparison direction depends on the score "
+                "distribution — see markdown above."
+            )
 
-                # Self-verifying guard: the two tiers must differ meaningfully in
-                # their calibration profiles (either direction is valid depending
-                # on how scores are distributed), and their AUCs must differ.
-                assert abs(adv_max_bin_err - max_bin_err) > 0.05, (
-                    f"Advanced and intermediate max-bin errors are within 0.05 of each "
-                    f"other (adv={adv_max_bin_err:.4f}, int={max_bin_err:.4f}) — "
-                    "the tiers are no longer meaningfully differentiated on calibration."
-                )
-                assert adv_auc < int_auc - 0.01, (
-                    f"Advanced AUC ({adv_auc:.4f}) is not clearly below intermediate "
-                    f"({int_auc:.4f}) — tier difficulty ordering may have regressed."
-                )
-                print("OK — tiers are meaningfully differentiated on AUC and calibration.")
+            # CI-enforced guard: the two tiers must differ meaningfully in
+            # their calibration profiles (either direction is valid depending
+            # on how scores are distributed), and AUC must be ordered.
+            assert abs(adv_max_bin_err - max_bin_err) > 0.05, (
+                f"Advanced and intermediate max-bin errors are within 0.05 of each "
+                f"other (adv={adv_max_bin_err:.4f}, int={max_bin_err:.4f}) — "
+                "the tiers are no longer meaningfully differentiated on calibration."
+            )
+            assert adv_auc < int_auc - 0.01, (
+                f"Advanced AUC ({adv_auc:.4f}) is not clearly below intermediate "
+                f"({int_auc:.4f}) — tier difficulty ordering may have regressed."
+            )
+            print("OK — tiers are meaningfully differentiated on AUC and calibration.")
             """
         ),
         md(
@@ -650,16 +639,16 @@ def cells() -> list[nbf.NotebookNode]:
             block reproduces to four decimals only when both knobs
             match.
 
-            The expected behaviour for the v1 intermediate tier is a
-            small positive degradation (~0.06 AUC drop) when moving
-            from a random split to a chronological split. This
-            reflects the realistic production scenario: leads arriving
-            later in the 90-day window are harder to predict because
-            any time-varying signal in the simulator disfavours the
-            late cohort. See
-            `release/validation/validation_report.json` ⇒
-            `cohort_shift` for the single-seed (seed=42) reference
-            values.
+            The cohort-shift result below is a **single-seed (seed 42)
+            measurement**. The v1 DGP has no baked-in time drift — claim
+            c14 in `release/claims_register.md` explicitly documents this
+            — so the direction and size of any AUC degradation can vary
+            across seeds; on some seeds the chronological split performs
+            comparably to the random split. The published `~0.06` drop
+            is a seed-42-specific outcome, not a guaranteed property of
+            the dataset. Consult `release/validation/validation_report.json`
+            ⇒ `cohort_shift` for the full seed-42 reference values, and
+            the per-seed entries for inter-seed variability.
             """
         ),
         code(
@@ -972,10 +961,11 @@ def cells() -> list[nbf.NotebookNode]:
             * Value-aware ranking (P × ACV) captures more revenue per
               top-K slot than P-only ranking — the gap depends on K
               but is positive across all sizes we tested.
-            * Cohort shift is **positive** on the intermediate tier
-              (~0.06 AUC drop from random to chronological split),
-              consistent with a realistic production scenario where
-              later leads are harder to predict.
+            * Cohort shift shows a **~0.06 AUC drop** on seed 42 when
+              moving from a random split to a chronological split. This
+              is a **single-seed observation** — the v1 DGP has no baked-in
+              time drift, so the direction and magnitude vary across seeds
+              (see claim c14 in `release/claims_register.md`).
             * Bootstrap on the existing test split gives a within-
               bundle confidence band — useful for "how confident is
               this single AUC" questions, not for "how much does the
