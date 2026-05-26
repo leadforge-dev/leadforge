@@ -84,6 +84,8 @@ jobs:
         run: python scripts/build_claims_register.py --check
       - name: every claim in claims_register_source.yaml resolves & values match
         run: python scripts/verify_claims_register.py
+      - name: Kaggle and Hugging Face metadata agree with release preview contract
+        run: python scripts/lint_platform_metadata.py
 
   validate-dataset:
     name: Validate lead scoring dataset
