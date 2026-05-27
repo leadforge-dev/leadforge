@@ -55,7 +55,7 @@ from typing import Any, TypedDict
 try:
     from markdown_it import MarkdownIt
 except ImportError:
-    sys.exit("markdown-it-py is required: pip install -e '.[publish]'")
+    sys.exit("markdown-it-py is required: pip install -e '.[dev]'")
 
 import pandas as pd
 
