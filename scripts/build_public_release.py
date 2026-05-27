@@ -72,6 +72,14 @@ def write_flat_csv(bundle_dir: Path) -> Path:
     leakage-risk columns from student_public task splits before they hit
     disk.  The flat CSV is built only for student_public bundles (see
     ``main()``) and inherits that redaction transitively.
+
+    Also prepends a ``split`` row to ``feature_dictionary.csv`` so the
+    column spec covers every column in ``lead_scoring.csv``.  The
+    ``split`` column is added here (not in the core bundle writer)
+    because it only exists in the flat convenience CSV — the Parquet
+    task splits do not carry it.  ``feature_dictionary.csv`` is not
+    hashed in ``manifest.json``, so this edit does not invalidate the
+    bundle integrity hashes.
     """
     task_dir = bundle_dir / "tasks" / "converted_within_90_days"
     frames = []
@@ -84,6 +92,31 @@ def write_flat_csv(bundle_dir: Path) -> Path:
     merged = pd.concat(frames, ignore_index=True)
     csv_path = bundle_dir / "lead_scoring.csv"
     merged.to_csv(csv_path, index=False)
+
+    # Prepend split row to feature_dictionary.csv.
+    fd_path = bundle_dir / "feature_dictionary.csv"
+    if fd_path.exists():
+        fd = pd.read_csv(fd_path)
+        if "split" not in fd["name"].values:
+            split_row = pd.DataFrame(
+                [
+                    {
+                        "name": "split",
+                        "dtype": "string",
+                        "description": (
+                            "Partition label: 'train', 'valid', or 'test'. "
+                            "Present in lead_scoring.csv only; the Parquet task "
+                            "splits are already partitioned by filename."
+                        ),
+                        "category": "split_metadata",
+                        "is_target": False,
+                        "leakage_risk": False,
+                    }
+                ]
+            )
+            fd = pd.concat([split_row, fd], ignore_index=True)
+            fd.to_csv(fd_path, index=False)
+
     return csv_path
 
 
