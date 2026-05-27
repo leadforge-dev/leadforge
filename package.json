@@ -7,7 +7,7 @@
     "@shmuggingface/core": "https://github.com/ShmuggingFace/ShmuggingFaceCore/archive/refs/tags/v1.0.2.tar.gz"
   },
   "devDependencies": {
-    "wrangler": "latest"
+    "wrangler": "4.95.0"
   },
   "engines": {
     "node": ">=20"

@@ -72,14 +72,6 @@ def write_flat_csv(bundle_dir: Path) -> Path:
     leakage-risk columns from student_public task splits before they hit
     disk.  The flat CSV is built only for student_public bundles (see
     ``main()``) and inherits that redaction transitively.
-
-    Also prepends a ``split`` row to ``feature_dictionary.csv`` so the
-    column spec covers every column in ``lead_scoring.csv``.  The
-    ``split`` column is added here (not in the core bundle writer)
-    because it only exists in the flat convenience CSV — the Parquet
-    task splits do not carry it.  ``feature_dictionary.csv`` is not
-    hashed in ``manifest.json``, so this edit does not invalidate the
-    bundle integrity hashes.
     """
     task_dir = bundle_dir / "tasks" / "converted_within_90_days"
     frames = []
@@ -92,32 +84,48 @@ def write_flat_csv(bundle_dir: Path) -> Path:
     merged = pd.concat(frames, ignore_index=True)
     csv_path = bundle_dir / "lead_scoring.csv"
     merged.to_csv(csv_path, index=False)
-
-    # Prepend split row to feature_dictionary.csv.
-    fd_path = bundle_dir / "feature_dictionary.csv"
-    if fd_path.exists():
-        fd = pd.read_csv(fd_path)
-        if "split" not in fd["name"].values:
-            split_row = pd.DataFrame(
-                [
-                    {
-                        "name": "split",
-                        "dtype": "string",
-                        "description": (
-                            "Partition label: 'train', 'valid', or 'test'. "
-                            "Present in lead_scoring.csv only; the Parquet task "
-                            "splits are already partitioned by filename."
-                        ),
-                        "category": "split_metadata",
-                        "is_target": False,
-                        "leakage_risk": False,
-                    }
-                ]
-            )
-            fd = pd.concat([split_row, fd], ignore_index=True)
-            fd.to_csv(fd_path, index=False)
-
     return csv_path
+
+
+def _prepend_split_to_feature_dict(bundle_dir: Path) -> None:
+    """Prepend a ``split`` row to ``feature_dictionary.csv``.
+
+    The ``split`` column exists only in ``lead_scoring.csv`` (the flat
+    convenience CSV) — the Parquet task splits are already partitioned by
+    filename.  Documenting it in ``feature_dictionary.csv`` keeps the
+    column spec complete for consumers who read the feature dictionary
+    before loading the CSV.
+
+    ``feature_dictionary.csv`` is not hashed in ``manifest.json``, so
+    this edit does not invalidate the bundle integrity hashes.
+
+    This is a separate function from :func:`write_flat_csv` because it
+    mutates a different file; mixing the two responsibilities in one
+    function would make ``write_flat_csv`` surprising to callers.
+    """
+    fd_path = bundle_dir / "feature_dictionary.csv"
+    if not fd_path.exists():
+        return
+    fd = pd.read_csv(fd_path)
+    if "split" not in fd["name"].values:
+        split_row = pd.DataFrame(
+            [
+                {
+                    "name": "split",
+                    "dtype": "string",
+                    "description": (
+                        "Partition label: 'train', 'valid', or 'test'. "
+                        "Present in lead_scoring.csv only; the Parquet task "
+                        "splits are already partitioned by filename."
+                    ),
+                    "category": "split_metadata",
+                    "is_target": False,
+                    "leakage_risk": False,
+                }
+            ]
+        )
+        fd = pd.concat([split_row, fd], ignore_index=True)
+        fd.to_csv(fd_path, index=False)
 
 
 def print_summary(bundle_dir: Path, name: str) -> None:
@@ -189,10 +197,11 @@ def main() -> None:
             generation_timestamp=args.generation_timestamp,
         )
 
-        # Flat CSV for student_public bundles
+        # Flat CSV + feature-dictionary split row for student_public bundles
         if exposure_mode == "student_public":
             csv_path = write_flat_csv(bundle_dir)
             print(f"  Flat CSV: {csv_path}", file=sys.stderr)
+            _prepend_split_to_feature_dict(bundle_dir)
 
         # Validate
         print(f"  Validating {dir_name}...", file=sys.stderr)

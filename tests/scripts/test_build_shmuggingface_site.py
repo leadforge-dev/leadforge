@@ -24,6 +24,7 @@ Covers the three failure modes the self-review identified:
 
 from __future__ import annotations
 
+import copy
 import importlib.util
 import sys
 from pathlib import Path
@@ -65,10 +66,9 @@ def test_no_tier_medal_constant() -> None:
     )
 
 
+@pytest.mark.skipif(not _RELEASE_BUNDLES_PRESENT, reason="release bundles not present")
 def test_make_dataset_config_no_kaggle_usability(tmp_path: Path) -> None:
     """The generated config dict must not include kaggleUsability or kaggleMedals."""
-    if not _RELEASE_BUNDLES_PRESENT:
-        pytest.skip("release/intermediate bundle not present")
     tier_data = smf.load_tier(_RELEASE_DIR, "intermediate")
     config = smf.make_dataset_config(tier_data, tmp_path)
     assert "kaggleUsability" not in config, "make_dataset_config still emits kaggleUsability"
@@ -120,11 +120,9 @@ def test_render_tier_html_uses_dataset_card(tmp_path: Path) -> None:
     assert "global README" not in html
 
 
+@pytest.mark.skipif(not _RELEASE_BUNDLES_PRESENT, reason="release bundles not present")
 def test_make_dataset_config_uses_per_tier_card(tmp_path: Path) -> None:
     """make_dataset_config embeds the tier card, not the global README."""
-    if not _RELEASE_BUNDLES_PRESENT:
-        pytest.skip("release/intermediate bundle not present")
-
     tier_data = smf.load_tier(_RELEASE_DIR, "intermediate")
     # The description HTML must contain content from dataset_card.md.
     # The per-tier card ships a tier-specific header — check for that.
@@ -145,16 +143,7 @@ def test_make_dataset_config_uses_per_tier_card(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_load_tier_split_column_first(tmp_path: Path) -> None:
-    """load_tier must prepend 'split' to the column list from feature_dictionary.csv."""
-    if not _RELEASE_BUNDLES_PRESENT:
-        pytest.skip("release/intermediate bundle not present")
-    tier_data = smf.load_tier(_RELEASE_DIR, "intermediate")
-    assert tier_data["columns"][0] == "split", (
-        f"Expected first column to be 'split', got {tier_data['columns'][0]!r}"
-    )
-
-
+@pytest.mark.skipif(not _RELEASE_BUNDLES_PRESENT, reason="release bundles not present")
 def test_load_tier_split_column_appears_exactly_once(tmp_path: Path) -> None:
     """'split' must appear exactly once at index 0, regardless of whether it's
     in feature_dictionary.csv.
@@ -164,8 +153,6 @@ def test_load_tier_split_column_appears_exactly_once(tmp_path: Path) -> None:
     feature_dictionary.csv; bundles built after will.  Either way, the
     resulting column listing must have 'split' exactly once, first.
     """
-    if not _RELEASE_BUNDLES_PRESENT:
-        pytest.skip("release/intermediate bundle not present")
     tier_data = smf.load_tier(_RELEASE_DIR, "intermediate")
     cols = tier_data["columns"]
     assert cols[0] == "split", f"Expected 'split' at index 0 of columns, got {cols[0]!r}"
@@ -221,13 +208,9 @@ def test_make_dataset_config_structure(tier: str, tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skipif(not _RELEASE_BUNDLES_PRESENT, reason="release bundles not present")
 def test_load_tier_raises_on_missing_n_leads(tmp_path: Path) -> None:
     """load_tier / make_dataset_config must raise if n_leads is absent from manifest."""
-    if not _RELEASE_BUNDLES_PRESENT:
-        pytest.skip("release/intermediate bundle not present")
-
-    import copy
-
     tier_data = smf.load_tier(_RELEASE_DIR, "intermediate")
     # Simulate a bundle where n_leads was renamed / dropped
     bad_manifest = copy.deepcopy(tier_data["manifest"])
@@ -235,6 +218,23 @@ def test_load_tier_raises_on_missing_n_leads(tmp_path: Path) -> None:
     tier_data_bad = {**tier_data, "manifest": bad_manifest}
 
     with pytest.raises(KeyError, match="n_leads"):
+        smf.make_dataset_config(tier_data_bad, tmp_path)
+
+
+@pytest.mark.skipif(not _RELEASE_BUNDLES_PRESENT, reason="release bundles not present")
+def test_make_dataset_config_raises_on_missing_conversion_rate(tmp_path: Path) -> None:
+    """make_dataset_config must raise if conversion_rate_test is absent from metrics.
+
+    Regression guard for C1: the subtitle uses these metric values and must
+    never silently default to 0.0 — that would show fabricated stats on the
+    preview page without any warning.
+    """
+    tier_data = smf.load_tier(_RELEASE_DIR, "intermediate")
+    bad_metrics = copy.deepcopy(tier_data["metrics"])
+    bad_metrics.get("medians", {}).pop("conversion_rate_test", None)
+    tier_data_bad = {**tier_data, "metrics": bad_metrics}
+
+    with pytest.raises(KeyError, match="conversion_rate_test"):
         smf.make_dataset_config(tier_data_bad, tmp_path)
 
 
@@ -330,3 +330,18 @@ def test_rewrite_links_absolute_unchanged() -> None:
     text = f"[click]({url})"
     result = smf._rewrite_links(text, "https://github.com/org/repo/blob/main/release/intro")
     assert url in result
+
+
+def test_rewrite_links_image_src_unchanged() -> None:
+    """Inline Markdown images ``![alt](image.png)`` must NOT have their src rewritten.
+
+    Regression guard for M3: the bare-relative link regex previously matched
+    ``](image.png)`` inside image syntax, rewriting the image src to a GitHub
+    blob URL and breaking images in the rendered preview.
+    """
+    text = "See diagram: ![architecture](arch.png) for details."
+    result = smf._rewrite_links(text, "https://github.com/org/repo/blob/main/release/intro")
+    assert "](arch.png)" in result, (
+        "_rewrite_links rewrote the image src — "
+        "the negative lookbehind for '!' is missing or broken"
+    )

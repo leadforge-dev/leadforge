@@ -21,7 +21,11 @@ Options
 --smf-core PATH
     Path to a local ShmuggingFaceCore checkout.  Overrides the default,
     which is the npm-installed package at ``node_modules/@shmuggingface/core``
-    (pinned to v1.0.1 via ``package.json``).  Run ``npm install`` first.
+    (pinned to v1.0.2 via ``package.json``).  Run ``npm install`` first.
+--config-only
+    Write the ``shmuggingface.config.mjs`` file and stop — do not invoke
+    the Node build.  Useful for inspecting generated config without a
+    full Node environment.
 --deploy
     Deploy the built site to Cloudflare Pages after building.
 --production
@@ -46,6 +50,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any, TypedDict
 
 try:
     from markdown_it import MarkdownIt
@@ -90,10 +95,22 @@ DISCUSSIONS = [
 # release tree root on GitHub.  Plain ``[LICENSE](LICENSE)`` and other
 # bare-name links need an explicit GitHub blob URL.
 _PARENT_LINK_RE = re.compile(r"\]\(\.\./([^)]+)\)")
+# Rewrites ``validation/validation_report.md`` links that appear in the
+# global ``release/README.md``.  This is a no-op for per-tier
+# ``dataset_card.md`` files (which don't contain that path), but kept so
+# ``_rewrite_links`` remains safe to call on the global README too.
 _VALIDATION_LINK_RE = re.compile(r"\]\(validation/validation_report\.md\)")
-# Bare relative links: match ``](word.ext)`` or ``](word)`` NOT starting
-# with http/https/# (those are already absolute or anchors).
-_BARE_RELATIVE_LINK_RE = re.compile(r"\]\((?!https?://|#)([^/][^)]*)\)")
+# Bare relative links: match the full ``[text](word.ext)`` or
+# ``![alt](image.png)`` construct so we can distinguish images from links.
+# Group 1 captures the optional leading ``!``; group 2 the link text/alt;
+# group 3 the path.  In ``_rewrite_links`` we skip the rewrite when
+# group 1 is ``!`` so inline image sources are never mangled.
+# Note: _PARENT_LINK_RE uses the module-level GITHUB_BLOB_BASE constant
+# (repo root); _BARE_RELATIVE_LINK_RE uses the caller-supplied
+# ``github_base`` parameter (tier-specific subdirectory).  The asymmetry
+# is intentional: ``../`` links always resolve from the repo root, while
+# bare names are relative to the document's own directory.
+_BARE_RELATIVE_LINK_RE = re.compile(r"(!?)\[([^\]]*)\]\((?!https?://|#)([^/][^)]*)\)")
 
 
 def _rewrite_links(text: str, github_base: str) -> str:
@@ -109,7 +126,14 @@ def _rewrite_links(text: str, github_base: str) -> str:
     text = _VALIDATION_LINK_RE.sub(
         f"]({GITHUB_BLOB_BASE}/release/validation/validation_report.md)", text
     )
-    text = _BARE_RELATIVE_LINK_RE.sub(rf"]({github_base}/\1)", text)
+    text = _BARE_RELATIVE_LINK_RE.sub(
+        lambda m: (
+            m.group(0)  # image syntax (![alt](src)) — preserve unchanged
+            if m.group(1) == "!"
+            else f"[{m.group(2)}]({github_base}/{m.group(3)})"
+        ),
+        text,
+    )
     return text
 
 
@@ -144,7 +168,7 @@ def render_tier_html(tier_dir: Path) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _require(d: dict, key: str, context: str) -> object:
+def _require(d: dict, key: str, context: str) -> Any:
     """Return ``d[key]``, raising ``KeyError`` with context on miss.
 
     Silent ``dict.get()`` defaults produce plausible-but-false preview
@@ -160,7 +184,26 @@ def _require(d: dict, key: str, context: str) -> object:
     return d[key]
 
 
-def load_tier(release_dir: Path, tier: str) -> dict:
+def _file_size_kb(path: Path) -> str:
+    """Return a human-readable file size string, e.g. ``'42 KB'``."""
+    return f"{max(1, path.stat().st_size // 1024)} KB"
+
+
+class TierData(TypedDict):
+    """Typed container returned by :func:`load_tier`."""
+
+    tier: str
+    tier_dir: Path
+    task_dir: Path
+    manifest: dict[str, Any]
+    ctx_manifest: str
+    metrics: dict[str, Any]
+    columns: list[str]
+    sample_rows: list[dict[str, str]]
+    n_rows: int
+
+
+def load_tier(release_dir: Path, tier: str) -> TierData:
     """Load manifest, metrics, feature dictionary, and sample rows for one tier."""
     tier_dir = release_dir / tier
 
@@ -210,7 +253,7 @@ def _rel(path: Path, from_dir: Path) -> str:
     return os.path.relpath(path, from_dir).replace(os.sep, "/")
 
 
-def make_dataset_config(tier_data: dict, config_dir: Path) -> dict:
+def make_dataset_config(tier_data: TierData, config_dir: Path) -> dict:
     """Build a ShmuggingFace dataset config dict for one tier.
 
     Each tier page shows its own ``dataset_card.md`` as the description
@@ -224,12 +267,12 @@ def make_dataset_config(tier_data: dict, config_dir: Path) -> dict:
     ctx_manifest = tier_data["ctx_manifest"]
     metrics = tier_data["metrics"]
     label = TIER_LABEL[tier]
-    medians = metrics.get("medians", {})
-
-    cr = medians.get("conversion_rate_test", 0.0)
-    lr_auc = medians.get("lr_auc", 0.0)
-    # These fields are required — raise immediately on schema drift rather
-    # than silently defaulting to plausible-but-false values.
+    ctx_metrics = f"{tier}/metrics.json"
+    # _require raises on schema drift rather than silently defaulting to
+    # plausible-but-false values — including for metrics, not just manifest.
+    medians = _require(metrics, "medians", ctx_metrics)
+    cr = float(_require(medians, "conversion_rate_test", ctx_metrics))
+    lr_auc = float(_require(medians, "lr_auc", ctx_metrics))
     n_leads = int(_require(manifest, "n_leads", ctx_manifest))
     snapshot_day = int(_require(manifest, "snapshot_day", ctx_manifest))
 
@@ -244,13 +287,10 @@ def make_dataset_config(tier_data: dict, config_dir: Path) -> dict:
     valid_rows = int(_require(task_info, "valid_rows", f"{ctx_manifest}[tasks][{TASK}]"))
     test_rows = int(_require(task_info, "test_rows", f"{ctx_manifest}[tasks][{TASK}]"))
 
-    def kb(path: Path) -> str:
-        return f"{max(1, path.stat().st_size // 1024)} KB"
-
     files = [
         {
             "path": "lead_scoring.csv",
-            "size": kb(tier_dir / "lead_scoring.csv"),
+            "size": _file_size_kb(tier_dir / "lead_scoring.csv"),
             "kind": "CSV",
             "sourcePath": _rel(tier_dir / "lead_scoring.csv", config_dir),
             "about": (
@@ -263,7 +303,7 @@ def make_dataset_config(tier_data: dict, config_dir: Path) -> dict:
         },
         {
             "path": "feature_dictionary.csv",
-            "size": kb(tier_dir / "feature_dictionary.csv"),
+            "size": _file_size_kb(tier_dir / "feature_dictionary.csv"),
             "kind": "CSV",
             "sourcePath": _rel(tier_dir / "feature_dictionary.csv", config_dir),
             "about": (
@@ -273,7 +313,7 @@ def make_dataset_config(tier_data: dict, config_dir: Path) -> dict:
         },
         {
             "path": "tasks/converted_within_90_days/train.parquet",
-            "size": kb(task_dir / "train.parquet"),
+            "size": _file_size_kb(task_dir / "train.parquet"),
             "kind": "Parquet",
             "sourcePath": _rel(task_dir / "train.parquet", config_dir),
             "about": (
@@ -284,21 +324,21 @@ def make_dataset_config(tier_data: dict, config_dir: Path) -> dict:
         },
         {
             "path": "tasks/converted_within_90_days/valid.parquet",
-            "size": kb(task_dir / "valid.parquet"),
+            "size": _file_size_kb(task_dir / "valid.parquet"),
             "kind": "Parquet",
             "sourcePath": _rel(task_dir / "valid.parquet", config_dir),
             "about": f"Validation split — {valid_rows:,} leads.",
         },
         {
             "path": "tasks/converted_within_90_days/test.parquet",
-            "size": kb(task_dir / "test.parquet"),
+            "size": _file_size_kb(task_dir / "test.parquet"),
             "kind": "Parquet",
             "sourcePath": _rel(task_dir / "test.parquet", config_dir),
             "about": (f"Test split — {test_rows:,} leads, held out for final evaluation only."),
         },
         {
             "path": "dataset_card.md",
-            "size": kb(tier_dir / "dataset_card.md"),
+            "size": _file_size_kb(tier_dir / "dataset_card.md"),
             "kind": "Dataset card",
             "sourcePath": _rel(tier_dir / "dataset_card.md", config_dir),
             "about": "Auto-generated tier-specific dataset card.",
@@ -341,6 +381,10 @@ def make_dataset_config(tier_data: dict, config_dir: Path) -> dict:
         "rows": tier_data["sample_rows"],
         "files": files,
         "discussions": DISCUSSIONS,
+        # ShmuggingFaceCore v1.0.2 accepts these as strings and renders
+        # them verbatim in the stats bar.  They are intentionally zero for
+        # the pre-publication review; the real platform will populate them
+        # after publish.
         "downloads": "0",
         "likes": "0",
     }
@@ -371,7 +415,7 @@ def ensure_smf_core(smf_core: Path | None) -> Path:
     1. ``--smf-core PATH`` override (for local dev / CI with a custom checkout).
     2. npm-installed package at ``node_modules/@shmuggingface/core`` — the
        canonical path when ``npm install`` has been run from the repo root
-       (pinned to v1.0.1 via ``package.json`` / ``package-lock.json``).
+       (pinned to v1.0.2 via ``package.json`` / ``package-lock.json``).
 
     Exits with an informative error if neither source is available.
     """
@@ -391,7 +435,7 @@ def ensure_smf_core(smf_core: Path | None) -> Path:
     sys.exit(
         "ShmuggingFaceCore not found.\n"
         f"  Expected npm installation at: {SMF_CORE_NPM}\n"
-        "  Run `npm install` from the repo root to install the pinned v1.0.1 release,\n"
+        "  Run `npm install` from the repo root to install the pinned v1.0.2 release,\n"
         "  or pass --smf-core PATH to a local checkout."
     )
 
@@ -553,6 +597,14 @@ def main() -> None:
         metavar="NAME",
         help=f"Cloudflare Pages project name (default: {DEFAULT_PROJECT})",
     )
+    parser.add_argument(
+        "--config-only",
+        action="store_true",
+        help=(
+            "Write shmuggingface.config.mjs and stop — skip the Node build and deploy. "
+            "Useful for verifying generated config without a full Node environment."
+        ),
+    )
     args = parser.parse_args()
 
     release_dir = args.release_dir.resolve()
@@ -587,6 +639,10 @@ def main() -> None:
         ),
     }
     write_config(site_config, datasets, config_path)
+
+    if args.config_only:
+        print(f"--config-only: stopping after config write.  Config at: {config_path}")
+        return
 
     # --- Ensure ShmuggingFaceCore --------------------------------------------
     smf_core = ensure_smf_core(args.smf_core)
