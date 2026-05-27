@@ -25,6 +25,13 @@ from leadforge.validation.leakage_probes import (
     SNAPSHOT_FILTERED_TABLES,
 )
 
+# Feature-dictionary rows that are intentionally present only in the student
+# bundle and are exempt from the subset check in check_exposure_monotonicity.
+# ``split`` documents the partition-label column that exists only in the flat
+# ``lead_scoring.csv`` convenience export (student_public only); the
+# instructor bundle's feature dictionary covers the raw Parquet columns.
+STUDENT_ONLY_DICT_ROWS: frozenset[str] = frozenset({"split"})
+
 
 def check_determinism(bundle_a: Path, bundle_b: Path) -> list[str]:
     """Compare two bundles that should be identical (same seed/config).
@@ -169,12 +176,13 @@ def check_exposure_monotonicity(student_bundle: Path, instructor_bundle: Path) -
 
     # feature_dictionary.csv: student rows must be a subset of instructor rows
     # (by ``name``).  For names present in both, the metadata must agree.
+    #
     s_dict = student_bundle / "feature_dictionary.csv"
     i_dict = instructor_bundle / "feature_dictionary.csv"
     if s_dict.exists() and i_dict.exists():
         s_df = pd.read_csv(s_dict).set_index("name")
         i_df = pd.read_csv(i_dict).set_index("name")
-        extra_in_student = set(s_df.index) - set(i_df.index)
+        extra_in_student = set(s_df.index) - set(i_df.index) - STUDENT_ONLY_DICT_ROWS
         if extra_in_student:
             errors.append(
                 "feature_dictionary.csv: student has rows missing from instructor: "

@@ -1,0 +1,15 @@
+{
+  "name": "leadforge-shmuggingface-tooling",
+  "private": true,
+  "description": "Node tooling for the LeadForge ShmuggingFace review site (not published to npm).",
+  "type": "module",
+  "dependencies": {
+    "@shmuggingface/core": "https://github.com/ShmuggingFace/ShmuggingFaceCore/archive/refs/tags/v1.0.2.tar.gz"
+  },
+  "devDependencies": {
+    "wrangler": "4.95.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
