@@ -1,6 +1,8 @@
 ---
 pretty_name: 'LeadForge: Synthetic B2B Lead Scoring (v1) — Instructor companion'
 license: mit
+authors:
+  - shaypal5
 language:
   - en
 task_categories:

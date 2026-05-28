@@ -348,6 +348,10 @@ def render_dataset_card(
         "Every file in this bundle is SHA-256 hashed in `manifest.json`. Run "
         "`leadforge validate my_bundle` to verify integrity.",
         "",
+        "**Author:** [Shay Palachy Affek](https://huggingface.co/shaypal5) "
+        "· [Kaggle](https://www.kaggle.com/derelictpanda) "
+        "· [GitHub](https://github.com/shaypalachy)",
+        "",
         "---",
         "",
     ]
