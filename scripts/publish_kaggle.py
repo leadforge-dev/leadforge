@@ -25,13 +25,18 @@ Three-stage runbook
    ``--public``, creating a private dataset.  Review the live Kaggle
    page; when satisfied, proceed to step 3.
 
-3. **Flip to public**::
+3. **Flip to public** (manual step — no CLI flag for this)::
 
-       python scripts/publish_kaggle.py --go-public
+   There is no ``--go-public`` flag.  After reviewing the private dataset,
+   flip visibility via the Kaggle web UI (Settings → Visibility → Public)
+   or via the Kaggle API::
 
-   Calls ``kaggle datasets metadata --unshare`` … actually this is done
-   via the Kaggle web UI or API; this script prints the direct URL and
-   the API call to make the switch.
+       kaggle datasets metadata {DATASET_ID}   # download current metadata.json
+       # edit: set  isPrivate: false
+       kaggle datasets update {DATASET_ID}     # push the change
+
+   This script prints the exact commands with the real dataset ID after a
+   successful private upload (step 2).
 
 For a **new version** of an already-public dataset (future releases)::
 
@@ -288,8 +293,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"\nKaggle CLI exited with code {rc}.", file=sys.stderr)
         return rc
 
-    visibility = "public" if (args.public or args.update) else "private"
-    print(f"\nUpload succeeded ({visibility}).", file=sys.stderr)
+    if args.update:
+        visibility_msg = "new version pushed"
+    elif args.public:
+        visibility_msg = "public"
+    else:
+        visibility_msg = "private"
+    print(f"\nUpload succeeded ({visibility_msg}).", file=sys.stderr)
     print(f"Dataset URL: {KAGGLE_DATASET_URL}", file=sys.stderr)
     if not args.public and not args.update:
         print(

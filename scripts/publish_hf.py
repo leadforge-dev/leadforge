@@ -278,9 +278,9 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--private",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         default=True,
-        help="Upload as private (default; review before going public)",
+        help="Upload as private (default). Pass --no-private to upload public directly.",
     )
     parser.add_argument(
         "--go-public",
