@@ -60,11 +60,11 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
 
-_CREDENTIALS_FILE: Final[Path] = Path.home() / ".config" / "leadforge" / "credentials"
+_CREDENTIALS_FILE: Final[Path] = Path.home() / ".config" / "huggingface" / "credentials"
 
 
 def _read_token_from_credentials_file() -> str | None:
-    """Read HF_TOKEN from ``~/.config/leadforge/credentials`` if present.
+    """Read HF_TOKEN from ``~/.config/huggingface/credentials`` if present.
 
     The file uses ``KEY=VALUE`` lines; blank lines and lines starting with
     ``#`` are ignored.  Returns the first value for ``HF_TOKEN`` found, or
