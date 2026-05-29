@@ -57,17 +57,14 @@ tag.
 ## Why lead scoring matters in 2024–2026
 
 Mid-market SaaS vendors entered 2024–2026 with growth slowing and
-customer-acquisition costs rising[^macro], so predicting *which* leads
-convert within a fixed window has moved from a marketing nicety to a
-survival skill. This dataset teaches that skill on a relational
-substrate, with the realistic confusions (snapshot-window discipline,
-leakage traps, channel signal weaker than vendor blogs imply) that
-students will hit when they finally get hands on real CRM data.
-
-[^macro]: Macroeconomic framing summarised in
-[`docs/external_review/summaries/gemini_v2_summary.md`](https://github.com/leadforge-dev/leadforge/blob/main/docs/external_review/summaries/gemini_v2_summary.md)
-(median public-SaaS growth 30%→25% from 2023 to 2025; New CAC Ratio
-rose materially in 2024).
+customer-acquisition costs rising (median public-SaaS growth 30%→25%
+from 2023 to 2025; New CAC Ratio rose materially in 2024), so
+predicting *which* leads convert within a fixed window has moved from
+a marketing nicety to a survival skill. This dataset teaches that
+skill on a relational substrate, with the realistic confusions
+(snapshot-window discipline, leakage traps, channel signal weaker than
+vendor blogs imply) that students will hit when they finally get hands
+on real CRM data.
 
 ## What's inside
 
