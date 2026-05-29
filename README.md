@@ -2,6 +2,8 @@
 
 **Opinionated framework for generating synthetic CRM and GTM datasets from simulated commercial worlds.**
 
+Created by [Shay Palachy Affek](https://www.shaypalachy.com/).
+
 `leadforge` generates narrative-grounded synthetic revenue datasets — starting with lead scoring — designed for teaching, portfolio projects, and research. Rather than sampling rows from a distribution, it simulates a commercial world: a specific company, selling a specific product, to a specific kind of buyer, and renders realistic CRM-style outputs from that world.
 
 ---
@@ -156,3 +158,9 @@ pre-commit run --all-files    # full pre-commit suite
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+---
+
+## Credits
+
+Created by [Shay Palachy Affek](https://www.shaypalachy.com/) · [HuggingFace](https://huggingface.co/shaypal5) · [Kaggle](https://www.kaggle.com/derelictpanda) · [GitHub](https://github.com/shaypalachy)
