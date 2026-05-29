@@ -54,10 +54,64 @@ Options
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
+
+_CREDENTIALS_FILE: Final[Path] = Path.home() / ".config" / "leadforge" / "credentials"
+
+
+def _read_token_from_credentials_file() -> str | None:
+    """Read HF_TOKEN from ``~/.config/leadforge/credentials`` if present.
+
+    The file uses ``KEY=VALUE`` lines; blank lines and lines starting with
+    ``#`` are ignored.  Returns the first value for ``HF_TOKEN`` found, or
+    ``None`` if the file doesn't exist or the key isn't set.
+    """
+    if not _CREDENTIALS_FILE.exists():
+        return None
+    try:
+        for raw_line in _CREDENTIALS_FILE.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" in line:
+                key, _, value = line.partition("=")
+                if key.strip() == "HF_TOKEN":
+                    token = value.strip()
+                    if token and not token.startswith("REPLACE_WITH"):
+                        return token
+    except OSError:
+        pass
+    return None
+
+
+def _resolve_token(cli_token: str | None) -> str | None:
+    """Return the best available HF token.
+
+    Priority order (highest first):
+    1. ``--token`` CLI argument
+    2. ``HF_TOKEN`` / ``HUGGING_FACE_HUB_TOKEN`` env var
+    3. ``~/.config/leadforge/credentials`` file
+    4. ``None`` — falls through to ``huggingface_hub``'s own credential cache
+    """
+    if cli_token:
+        return cli_token
+    for env_key in ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN"):
+        value = os.environ.get(env_key)
+        if value:
+            return value
+    file_token = _read_token_from_credentials_file()
+    if file_token:
+        print(
+            f"  token: read from {_CREDENTIALS_FILE}",
+            file=sys.stderr,
+        )
+        return file_token
+    return None
+
 
 # Make ``scripts/`` importable regardless of invocation style.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -306,10 +360,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
     release_dir: Path = args.release_dir.resolve()
     variant: str = args.variant
+    token: str | None = _resolve_token(args.token)
 
     # --- Go-public shortcut -------------------------------------------------
     if args.go_public:
-        _go_public(variant, token=args.token)
+        _go_public(variant, token=token)
         return 0
 
     # --- Pre-flight ---------------------------------------------------------
@@ -342,7 +397,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         _upload(
             upload_dir,
             variant,
-            token=args.token,
+            token=token,
             private=args.private,
             commit_message=args.commit_message,
         )
