@@ -128,7 +128,7 @@ from package_hf_release import (  # noqa: E402
 # Repo identity
 # ---------------------------------------------------------------------------
 
-HF_ORG: Final[str] = "leadforge"
+HF_ORG: Final[str] = "shaypal5"
 REPO_IDS: Final[dict[str, str]] = {
     "public": f"{HF_ORG}/leadforge-lead-scoring-v1",
     "instructor": f"{HF_ORG}/leadforge-lead-scoring-v1-instructor",
