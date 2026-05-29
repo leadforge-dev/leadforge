@@ -49,7 +49,12 @@ _INSTRUCTOR_PRESENT = _INSTRUCTOR_README.exists()
 # ``test_preview_kaggle_page.py`` for rationale.
 _LINK_OK_PREFIXES = (
     "https://github.com/leadforge-dev/leadforge",
+    "https://github.com/shaypalachy",
     "https://huggingface.co/datasets/leadforge",
+    "https://huggingface.co/datasets/shaypal5",
+    "https://huggingface.co/shaypal5",
+    "https://www.kaggle.com/derelictpanda",
+    "https://www.shaypalachy.com/",
     "https://example.com",
     "LICENSE",
     "#",
