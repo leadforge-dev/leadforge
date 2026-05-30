@@ -119,7 +119,7 @@ SLUG_PATTERN: Final[re.Pattern[str]] = re.compile(r"^[a-z0-9][a-z0-9-]*[a-z0-9]$
 # Release-specific defaults (G1.2 dataset slug + G11 metadata content)
 # ---------------------------------------------------------------------------
 
-DEFAULT_USER_SLUG: Final[str] = "leadforge"
+DEFAULT_USER_SLUG: Final[str] = "derelictpanda"
 DEFAULT_DATASET_SLUG: Final[str] = "leadforge-lead-scoring-v1"
 
 DEFAULT_TITLE: Final[str] = "LeadForge: Synthetic B2B Lead Scoring (v1)"
