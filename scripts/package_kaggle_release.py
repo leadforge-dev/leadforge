@@ -126,13 +126,8 @@ DEFAULT_TITLE: Final[str] = "LeadForge: Synthetic B2B Lead Scoring (v1)"
 DEFAULT_SUBTITLE: Final[str] = "Three-tier synthetic CRM funnel for leakage-aware lead scoring"
 
 DEFAULT_KEYWORDS: Final[tuple[str, ...]] = (
-    "b2b",
     "classification",
-    "crm",
     "education",
-    "lead-scoring",
-    "saas",
-    "synthetic-data",
     "tabular",
 )
 

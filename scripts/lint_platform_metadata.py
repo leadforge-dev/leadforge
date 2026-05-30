@@ -56,9 +56,7 @@ HF_SPLIT_TO_FILE_SPLIT: Final[dict[str, str]] = {
     "validation": "valid",
     "test": "test",
 }
-REQUIRED_COMMON_TAGS: Final[frozenset[str]] = frozenset(
-    {"b2b", "crm", "lead-scoring", "synthetic-data", "tabular"}
-)
+REQUIRED_COMMON_TAGS: Final[frozenset[str]] = frozenset({"tabular"})
 EXPECTED_KAGGLE_KEYWORDS: Final[frozenset[str]] = frozenset(DEFAULT_KAGGLE_KEYWORDS)
 EXPECTED_HF_TAGS: Final[frozenset[str]] = frozenset(DEFAULT_HF_TAGS)
 REQUIRED_HF_TASK: Final[str] = "tabular-classification"
