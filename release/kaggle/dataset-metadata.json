@@ -6,13 +6,8 @@
   "image": "dataset-cover-image.png",
   "isPrivate": false,
   "keywords": [
-    "b2b",
     "classification",
-    "crm",
     "education",
-    "lead-scoring",
-    "saas",
-    "synthetic-data",
     "tabular"
   ],
   "licenses": [

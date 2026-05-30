@@ -100,13 +100,8 @@ def _minimal_artifacts() -> tuple[dict[str, object], dict[str, object]]:
         "isPrivate": False,
         "licenses": [{"name": "MIT"}],
         "keywords": [
-            "b2b",
             "classification",
-            "crm",
             "education",
-            "lead-scoring",
-            "saas",
-            "synthetic-data",
             "tabular",
         ],
         "expectedUpdateFrequency": "never",
