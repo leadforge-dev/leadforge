@@ -1,10 +1,25 @@
 # leadforge
 
+[![CI](https://github.com/leadforge-dev/leadforge/actions/workflows/ci.yml/badge.svg)](https://github.com/leadforge-dev/leadforge/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-0f766e)](https://leadforge-dev.github.io/leadforge/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
+
 **Opinionated framework for generating synthetic CRM and GTM datasets from simulated commercial worlds.**
 
-Created by [Shay Palachy Affek](https://www.shaypalachy.com/).
+Created by [Shay Palachy Affek](http://www.shaypalachy.com/).
 
 `leadforge` generates narrative-grounded synthetic revenue datasets — starting with lead scoring — designed for teaching, portfolio projects, and research. Rather than sampling rows from a distribution, it simulates a commercial world: a specific company, selling a specific product, to a specific kind of buyer, and renders realistic CRM-style outputs from that world.
+
+**Docs:** [leadforge-dev.github.io/leadforge](https://leadforge-dev.github.io/leadforge/) · **Dataset:** [HuggingFace](https://huggingface.co/datasets/leadforge/leadforge-lead-scoring-v1) · [Kaggle](https://www.kaggle.com/datasets/derelictpanda/leadforge-lead-scoring-v1)
+
+---
+
+## What Makes LeadForge Different
+
+- **World-first generation:** datasets are rendered from simulated companies, products, buyers, activities, opportunities, and outcomes.
+- **Relational CRM shape:** output includes normalized tables plus task-ready train/validation/test splits for lead scoring.
+- **Pedagogical realism:** snapshot discipline, redaction modes, leakage traps, calibration issues, and difficulty tiers are deliberate teaching material.
 
 ---
 
@@ -76,6 +91,22 @@ bundle.save("./out/demo_bundle")
 
 ---
 
+## Generated Data Preview
+
+A generated bundle looks like CRM and GTM data, not a generic tabular benchmark. This compact slice comes from the intermediate lead-scoring bundle:
+
+| split | industry | region | employee_band | lead_source | touch_count | session_count | opportunity_created | expected_acv | converted_within_90_days |
+| --- | --- | --- | --- | --- | ---: | ---: | --- | ---: | --- |
+| train | logistics | UK | 200-499 | inbound_marketing | 0 | 0 | False | 66,699 | False |
+| train | logistics | UK | 500-999 | inbound_marketing | 5 | 2 | False | 58,372 | False |
+| train | logistics | US | 200-499 | partner_referral | 9 | 3 | True | 15,462 | False |
+| train | healthcare_non_clinical | US | 200-499 | inbound_marketing | 5 | 1 | True | 30,490 | False |
+| train | manufacturing | US | 1000-1999 | sdr_outbound | missing | 1 | True | 42,999 | False |
+
+The full bundle also includes accounts, contacts, leads, touches, sessions, sales activities, opportunities, feature dictionaries, manifests, and model-ready Parquet task splits.
+
+---
+
 ## Exposure Modes
 
 Control what truth is visible in the output bundle:
@@ -134,10 +165,11 @@ bundle_root/
 
 ## Documentation
 
-- [Design document](docs/leadforge_design_doc.md)
-- [Architecture spec](docs/leadforge_architecture_spec.md)
-- [Implementation plan](docs/leadforge_implementation_plan.md)
-- [v4 dataset design](docs/v4/design.md)
+- [Documentation site](https://leadforge-dev.github.io/leadforge/)
+- [Quickstart](https://leadforge-dev.github.io/leadforge/docs/getting-started/quickstart)
+- [Output bundle reference](https://leadforge-dev.github.io/leadforge/docs/reference/output-bundle)
+- [Generation method](https://leadforge-dev.github.io/leadforge/docs/dataset/generation-method)
+- [Break-me guide](https://leadforge-dev.github.io/leadforge/docs/dataset/break-me)
 - [Changelog](CHANGELOG.md)
 
 ---
@@ -163,4 +195,4 @@ MIT. See [LICENSE](LICENSE).
 
 ## Credits
 
-Created by [Shay Palachy Affek](https://www.shaypalachy.com/) · [HuggingFace](https://huggingface.co/shaypal5) · [Kaggle](https://www.kaggle.com/derelictpanda) · [GitHub](https://github.com/shaypalachy)
+Created by [Shay Palachy Affek ](http://www.shaypalachy.com/) [[GitHub](https://github.com/shaypal5)]
