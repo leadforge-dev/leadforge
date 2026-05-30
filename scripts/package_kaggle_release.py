@@ -292,6 +292,7 @@ class Resource:
     path: str
     description: str
     schema: ResourceSchema | None = None
+    name: str = ""  # if empty, _resource_to_dict derives a slug from path
 
 
 @dataclass(frozen=True)
@@ -597,6 +598,13 @@ def build_tier_resources(
 
     column_descriptions = load_relational_column_descriptions(release_dir)
 
+    # Build a (table_name, col_name) → description map for task-split Parquet files.
+    # Task splits carry the same snapshot-level columns as the flat CSV, so we
+    # re-key the feature dictionary under a synthetic table name "snapshot".
+    snapshot_col_descs: dict[tuple[str, str], str] = {
+        ("snapshot", col): fd.description for col, fd in feature_dict.items()
+    }
+
     resources: list[Resource] = []
 
     resources.append(
@@ -626,7 +634,13 @@ def build_tier_resources(
             Resource(
                 path=f"{tier}/tasks/{task}/{split}.parquet",
                 description=(f"{tier.capitalize()} tier {split} split for `{task}` ({rows_str})."),
-                schema=ResourceSchema(fields=fields_from_parquet(split_path)),
+                schema=ResourceSchema(
+                    fields=fields_from_parquet(
+                        split_path,
+                        column_descriptions=snapshot_col_descs,
+                        table_name="snapshot",
+                    )
+                ),
             )
         )
 
@@ -852,7 +866,13 @@ def _resource_to_dict(resource: Resource) -> dict[str, Any]:
     per-column documentation).
     """
 
+    name = resource.name or re.sub(
+        r"[^a-z0-9]+",
+        "_",
+        Path(resource.path).with_suffix("").as_posix().lower(),
+    ).strip("_")
     payload: dict[str, Any] = {
+        "name": name,
         "path": resource.path,
         "description": resource.description,
     }
