@@ -51,7 +51,12 @@ _RELEASE_PRESENT = _COMMITTED_METADATA.exists()
 # stopped firing.  The whitelist is intentionally narrow.
 _LINK_OK_PREFIXES = (
     "https://github.com/leadforge-dev/leadforge",
+    "https://github.com/shaypalachy",
     "https://huggingface.co/datasets/leadforge",
+    "https://huggingface.co/datasets/shaypal5",
+    "https://huggingface.co/shaypal5",
+    "https://www.kaggle.com/derelictpanda",
+    "https://www.shaypalachy.com/",
     "https://example.com",  # used by unit tests only
     "LICENSE",  # sibling-relative, resolves under the upload tree
     "#",  # in-document anchor (footnotes, etc.)

@@ -23,6 +23,7 @@
   "resources": [
     {
       "description": "Intro tier flat CSV (all splits concatenated, label retained, snapshot_day=30). The `split` column distinguishes train/valid/test rows.",
+      "name": "intro_lead_scoring",
       "path": "intro/lead_scoring.csv",
       "schema": {
         "fields": [
@@ -191,134 +192,167 @@
     },
     {
       "description": "Intro tier feature dictionary (canonical column spec).",
+      "name": "intro_feature_dictionary",
       "path": "intro/feature_dictionary.csv"
     },
     {
       "description": "Intro tier train split for `converted_within_90_days` (3,500 rows).",
+      "name": "intro_tasks_converted_within_90_days_train",
       "path": "intro/tasks/converted_within_90_days/train.parquet",
       "schema": {
         "fields": [
           {
+            "description": "Opaque account identifier.",
             "name": "account_id",
             "type": "string"
           },
           {
+            "description": "Industry vertical of the buying organization.",
             "name": "industry",
             "type": "string"
           },
           {
+            "description": "Geographic region of the account's headquarters.",
             "name": "region",
             "type": "string"
           },
           {
+            "description": "Banded employee headcount of the account.",
             "name": "employee_band",
             "type": "string"
           },
           {
+            "description": "Banded estimated annual revenue of the account.",
             "name": "estimated_revenue_band",
             "type": "string"
           },
           {
+            "description": "Banded internal process maturity score (latent).",
             "name": "process_maturity_band",
             "type": "string"
           },
           {
+            "description": "Opaque contact identifier.",
             "name": "contact_id",
             "type": "string"
           },
           {
+            "description": "Functional area of the primary contact (e.g. finance, ops).",
             "name": "role_function",
             "type": "string"
           },
           {
+            "description": "Seniority band of the primary contact.",
             "name": "seniority",
             "type": "string"
           },
           {
+            "description": "Buyer role classification (economic_buyer, champion, etc.).",
             "name": "buyer_role",
             "type": "string"
           },
           {
+            "description": "Opaque lead identifier.",
             "name": "lead_id",
             "type": "string"
           },
           {
+            "description": "ISO-8601 timestamp when the lead was created.",
             "name": "lead_created_at",
             "type": "string"
           },
           {
+            "description": "Origination source of the lead (e.g. inbound_form, sdr_outbound).",
             "name": "lead_source",
             "type": "string"
           },
           {
+            "description": "Total number of marketing/sales touches recorded before snapshot.",
             "name": "touch_count",
             "type": "number"
           },
           {
+            "description": "Number of inbound touches before snapshot.",
             "name": "inbound_touch_count",
             "type": "number"
           },
           {
+            "description": "Number of outbound touches before snapshot.",
             "name": "outbound_touch_count",
             "type": "number"
           },
           {
+            "description": "Number of web/trial sessions recorded before snapshot.",
             "name": "session_count",
             "type": "number"
           },
           {
+            "description": "Cumulative pricing page views across all sessions before snapshot.",
             "name": "pricing_page_views",
             "type": "number"
           },
           {
+            "description": "Cumulative demo page views across all sessions before snapshot.",
             "name": "demo_page_views",
             "type": "number"
           },
           {
+            "description": "Sum of session durations (seconds) before snapshot.",
             "name": "total_session_duration_seconds",
             "type": "number"
           },
           {
+            "description": "Number of touches in days 0–7 (inclusive) after lead creation. Renamed from touches_week_1 for precision: the window covers 8 days (0, 1, …, 7), not 7.",
             "name": "touches_days_0_7",
             "type": "number"
           },
           {
+            "description": "Number of touches in the last 7 days before snapshot cutoff.",
             "name": "touches_last_7_days",
             "type": "number"
           },
           {
+            "description": "Days between first touch and snapshot cutoff (NaN if no touches).",
             "name": "days_since_first_touch",
             "type": "number"
           },
           {
+            "description": "Number of sales activities logged before snapshot.",
             "name": "activity_count",
             "type": "number"
           },
           {
+            "description": "Days elapsed between most recent touch and snapshot cutoff.",
             "name": "days_since_last_touch",
             "type": "number"
           },
           {
+            "description": "Whether any opportunity was created by snapshot date (open or closed).",
             "name": "opportunity_created",
             "type": "boolean"
           },
           {
+            "description": "Whether an open opportunity existed at snapshot date.",
             "name": "has_open_opportunity",
             "type": "boolean"
           },
           {
+            "description": "Estimated ACV of the most recent open opportunity (NaN if none).",
             "name": "opportunity_estimated_acv",
             "type": "number"
           },
           {
+            "description": "Expected ACV: opportunity ACV if available by snapshot, else revenue band midpoint heuristic (NaN if neither available).",
             "name": "expected_acv",
             "type": "number"
           },
           {
+            "description": "Total touches over full 90-day window. LEAKAGE TRAP: uses post-snapshot data. Included for pedagogical purposes only.",
             "name": "total_touches_all",
             "type": "integer"
           },
           {
+            "description": "Label: True if a closed_won event occurred within 90 days of the snapshot anchor date. Derived from simulated events.",
             "name": "converted_within_90_days",
             "type": "boolean"
           }
@@ -327,130 +361,162 @@
     },
     {
       "description": "Intro tier valid split for `converted_within_90_days` (750 rows).",
+      "name": "intro_tasks_converted_within_90_days_valid",
       "path": "intro/tasks/converted_within_90_days/valid.parquet",
       "schema": {
         "fields": [
           {
+            "description": "Opaque account identifier.",
             "name": "account_id",
             "type": "string"
           },
           {
+            "description": "Industry vertical of the buying organization.",
             "name": "industry",
             "type": "string"
           },
           {
+            "description": "Geographic region of the account's headquarters.",
             "name": "region",
             "type": "string"
           },
           {
+            "description": "Banded employee headcount of the account.",
             "name": "employee_band",
             "type": "string"
           },
           {
+            "description": "Banded estimated annual revenue of the account.",
             "name": "estimated_revenue_band",
             "type": "string"
           },
           {
+            "description": "Banded internal process maturity score (latent).",
             "name": "process_maturity_band",
             "type": "string"
           },
           {
+            "description": "Opaque contact identifier.",
             "name": "contact_id",
             "type": "string"
           },
           {
+            "description": "Functional area of the primary contact (e.g. finance, ops).",
             "name": "role_function",
             "type": "string"
           },
           {
+            "description": "Seniority band of the primary contact.",
             "name": "seniority",
             "type": "string"
           },
           {
+            "description": "Buyer role classification (economic_buyer, champion, etc.).",
             "name": "buyer_role",
             "type": "string"
           },
           {
+            "description": "Opaque lead identifier.",
             "name": "lead_id",
             "type": "string"
           },
           {
+            "description": "ISO-8601 timestamp when the lead was created.",
             "name": "lead_created_at",
             "type": "string"
           },
           {
+            "description": "Origination source of the lead (e.g. inbound_form, sdr_outbound).",
             "name": "lead_source",
             "type": "string"
           },
           {
+            "description": "Total number of marketing/sales touches recorded before snapshot.",
             "name": "touch_count",
             "type": "number"
           },
           {
+            "description": "Number of inbound touches before snapshot.",
             "name": "inbound_touch_count",
             "type": "number"
           },
           {
+            "description": "Number of outbound touches before snapshot.",
             "name": "outbound_touch_count",
             "type": "number"
           },
           {
+            "description": "Number of web/trial sessions recorded before snapshot.",
             "name": "session_count",
             "type": "number"
           },
           {
+            "description": "Cumulative pricing page views across all sessions before snapshot.",
             "name": "pricing_page_views",
             "type": "number"
           },
           {
+            "description": "Cumulative demo page views across all sessions before snapshot.",
             "name": "demo_page_views",
             "type": "number"
           },
           {
+            "description": "Sum of session durations (seconds) before snapshot.",
             "name": "total_session_duration_seconds",
             "type": "number"
           },
           {
+            "description": "Number of touches in days 0–7 (inclusive) after lead creation. Renamed from touches_week_1 for precision: the window covers 8 days (0, 1, …, 7), not 7.",
             "name": "touches_days_0_7",
             "type": "number"
           },
           {
+            "description": "Number of touches in the last 7 days before snapshot cutoff.",
             "name": "touches_last_7_days",
             "type": "number"
           },
           {
+            "description": "Days between first touch and snapshot cutoff (NaN if no touches).",
             "name": "days_since_first_touch",
             "type": "number"
           },
           {
+            "description": "Number of sales activities logged before snapshot.",
             "name": "activity_count",
             "type": "number"
           },
           {
+            "description": "Days elapsed between most recent touch and snapshot cutoff.",
             "name": "days_since_last_touch",
             "type": "number"
           },
           {
+            "description": "Whether any opportunity was created by snapshot date (open or closed).",
             "name": "opportunity_created",
             "type": "boolean"
           },
           {
+            "description": "Whether an open opportunity existed at snapshot date.",
             "name": "has_open_opportunity",
             "type": "boolean"
           },
           {
+            "description": "Estimated ACV of the most recent open opportunity (NaN if none).",
             "name": "opportunity_estimated_acv",
             "type": "number"
           },
           {
+            "description": "Expected ACV: opportunity ACV if available by snapshot, else revenue band midpoint heuristic (NaN if neither available).",
             "name": "expected_acv",
             "type": "number"
           },
           {
+            "description": "Total touches over full 90-day window. LEAKAGE TRAP: uses post-snapshot data. Included for pedagogical purposes only.",
             "name": "total_touches_all",
             "type": "integer"
           },
           {
+            "description": "Label: True if a closed_won event occurred within 90 days of the snapshot anchor date. Derived from simulated events.",
             "name": "converted_within_90_days",
             "type": "boolean"
           }
@@ -459,130 +525,162 @@
     },
     {
       "description": "Intro tier test split for `converted_within_90_days` (750 rows).",
+      "name": "intro_tasks_converted_within_90_days_test",
       "path": "intro/tasks/converted_within_90_days/test.parquet",
       "schema": {
         "fields": [
           {
+            "description": "Opaque account identifier.",
             "name": "account_id",
             "type": "string"
           },
           {
+            "description": "Industry vertical of the buying organization.",
             "name": "industry",
             "type": "string"
           },
           {
+            "description": "Geographic region of the account's headquarters.",
             "name": "region",
             "type": "string"
           },
           {
+            "description": "Banded employee headcount of the account.",
             "name": "employee_band",
             "type": "string"
           },
           {
+            "description": "Banded estimated annual revenue of the account.",
             "name": "estimated_revenue_band",
             "type": "string"
           },
           {
+            "description": "Banded internal process maturity score (latent).",
             "name": "process_maturity_band",
             "type": "string"
           },
           {
+            "description": "Opaque contact identifier.",
             "name": "contact_id",
             "type": "string"
           },
           {
+            "description": "Functional area of the primary contact (e.g. finance, ops).",
             "name": "role_function",
             "type": "string"
           },
           {
+            "description": "Seniority band of the primary contact.",
             "name": "seniority",
             "type": "string"
           },
           {
+            "description": "Buyer role classification (economic_buyer, champion, etc.).",
             "name": "buyer_role",
             "type": "string"
           },
           {
+            "description": "Opaque lead identifier.",
             "name": "lead_id",
             "type": "string"
           },
           {
+            "description": "ISO-8601 timestamp when the lead was created.",
             "name": "lead_created_at",
             "type": "string"
           },
           {
+            "description": "Origination source of the lead (e.g. inbound_form, sdr_outbound).",
             "name": "lead_source",
             "type": "string"
           },
           {
+            "description": "Total number of marketing/sales touches recorded before snapshot.",
             "name": "touch_count",
             "type": "number"
           },
           {
+            "description": "Number of inbound touches before snapshot.",
             "name": "inbound_touch_count",
             "type": "number"
           },
           {
+            "description": "Number of outbound touches before snapshot.",
             "name": "outbound_touch_count",
             "type": "number"
           },
           {
+            "description": "Number of web/trial sessions recorded before snapshot.",
             "name": "session_count",
             "type": "number"
           },
           {
+            "description": "Cumulative pricing page views across all sessions before snapshot.",
             "name": "pricing_page_views",
             "type": "number"
           },
           {
+            "description": "Cumulative demo page views across all sessions before snapshot.",
             "name": "demo_page_views",
             "type": "number"
           },
           {
+            "description": "Sum of session durations (seconds) before snapshot.",
             "name": "total_session_duration_seconds",
             "type": "number"
           },
           {
+            "description": "Number of touches in days 0–7 (inclusive) after lead creation. Renamed from touches_week_1 for precision: the window covers 8 days (0, 1, …, 7), not 7.",
             "name": "touches_days_0_7",
             "type": "number"
           },
           {
+            "description": "Number of touches in the last 7 days before snapshot cutoff.",
             "name": "touches_last_7_days",
             "type": "number"
           },
           {
+            "description": "Days between first touch and snapshot cutoff (NaN if no touches).",
             "name": "days_since_first_touch",
             "type": "number"
           },
           {
+            "description": "Number of sales activities logged before snapshot.",
             "name": "activity_count",
             "type": "number"
           },
           {
+            "description": "Days elapsed between most recent touch and snapshot cutoff.",
             "name": "days_since_last_touch",
             "type": "number"
           },
           {
+            "description": "Whether any opportunity was created by snapshot date (open or closed).",
             "name": "opportunity_created",
             "type": "boolean"
           },
           {
+            "description": "Whether an open opportunity existed at snapshot date.",
             "name": "has_open_opportunity",
             "type": "boolean"
           },
           {
+            "description": "Estimated ACV of the most recent open opportunity (NaN if none).",
             "name": "opportunity_estimated_acv",
             "type": "number"
           },
           {
+            "description": "Expected ACV: opportunity ACV if available by snapshot, else revenue band midpoint heuristic (NaN if neither available).",
             "name": "expected_acv",
             "type": "number"
           },
           {
+            "description": "Total touches over full 90-day window. LEAKAGE TRAP: uses post-snapshot data. Included for pedagogical purposes only.",
             "name": "total_touches_all",
             "type": "integer"
           },
           {
+            "description": "Label: True if a closed_won event occurred within 90 days of the snapshot anchor date. Derived from simulated events.",
             "name": "converted_within_90_days",
             "type": "boolean"
           }
@@ -591,6 +689,7 @@
     },
     {
       "description": "Intro tier `accounts` relational table (1,500 rows) — snapshot-safe.",
+      "name": "intro_tables_accounts",
       "path": "intro/tables/accounts.parquet",
       "schema": {
         "fields": [
@@ -639,6 +738,7 @@
     },
     {
       "description": "Intro tier `contacts` relational table (4,200 rows) — snapshot-safe.",
+      "name": "intro_tables_contacts",
       "path": "intro/tables/contacts.parquet",
       "schema": {
         "fields": [
@@ -687,6 +787,7 @@
     },
     {
       "description": "Intro tier `leads` relational table (5,000 rows) — snapshot-safe.",
+      "name": "intro_tables_leads",
       "path": "intro/tables/leads.parquet",
       "schema": {
         "fields": [
@@ -730,6 +831,7 @@
     },
     {
       "description": "Intro tier `touches` relational table (38,561 rows) — snapshot-safe.",
+      "name": "intro_tables_touches",
       "path": "intro/tables/touches.parquet",
       "schema": {
         "fields": [
@@ -773,6 +875,7 @@
     },
     {
       "description": "Intro tier `sessions` relational table (10,171 rows) — snapshot-safe.",
+      "name": "intro_tables_sessions",
       "path": "intro/tables/sessions.parquet",
       "schema": {
         "fields": [
@@ -821,6 +924,7 @@
     },
     {
       "description": "Intro tier `sales_activities` relational table (21,358 rows) — snapshot-safe.",
+      "name": "intro_tables_sales_activities",
       "path": "intro/tables/sales_activities.parquet",
       "schema": {
         "fields": [
@@ -859,6 +963,7 @@
     },
     {
       "description": "Intro tier `opportunities` relational table (4,426 rows) — snapshot-safe.",
+      "name": "intro_tables_opportunities",
       "path": "intro/tables/opportunities.parquet",
       "schema": {
         "fields": [
@@ -892,18 +997,22 @@
     },
     {
       "description": "Intro tier auto-rendered dataset card.",
+      "name": "intro_dataset_card",
       "path": "intro/dataset_card.md"
     },
     {
       "description": "Intro tier headline metrics (cross-seed medians + spreads, difficulty knobs, JSON-path back-reference to validation_report.json).",
+      "name": "intro_metrics",
       "path": "intro/metrics.json"
     },
     {
       "description": "Intro tier provenance manifest (recipe, seed, package version, file hashes, snapshot_day, redaction contract).",
+      "name": "intro_manifest",
       "path": "intro/manifest.json"
     },
     {
       "description": "Intermediate tier flat CSV (all splits concatenated, label retained, snapshot_day=30). The `split` column distinguishes train/valid/test rows.",
+      "name": "intermediate_lead_scoring",
       "path": "intermediate/lead_scoring.csv",
       "schema": {
         "fields": [
@@ -1072,134 +1181,167 @@
     },
     {
       "description": "Intermediate tier feature dictionary (canonical column spec).",
+      "name": "intermediate_feature_dictionary",
       "path": "intermediate/feature_dictionary.csv"
     },
     {
       "description": "Intermediate tier train split for `converted_within_90_days` (3,500 rows).",
+      "name": "intermediate_tasks_converted_within_90_days_train",
       "path": "intermediate/tasks/converted_within_90_days/train.parquet",
       "schema": {
         "fields": [
           {
+            "description": "Opaque account identifier.",
             "name": "account_id",
             "type": "string"
           },
           {
+            "description": "Industry vertical of the buying organization.",
             "name": "industry",
             "type": "string"
           },
           {
+            "description": "Geographic region of the account's headquarters.",
             "name": "region",
             "type": "string"
           },
           {
+            "description": "Banded employee headcount of the account.",
             "name": "employee_band",
             "type": "string"
           },
           {
+            "description": "Banded estimated annual revenue of the account.",
             "name": "estimated_revenue_band",
             "type": "string"
           },
           {
+            "description": "Banded internal process maturity score (latent).",
             "name": "process_maturity_band",
             "type": "string"
           },
           {
+            "description": "Opaque contact identifier.",
             "name": "contact_id",
             "type": "string"
           },
           {
+            "description": "Functional area of the primary contact (e.g. finance, ops).",
             "name": "role_function",
             "type": "string"
           },
           {
+            "description": "Seniority band of the primary contact.",
             "name": "seniority",
             "type": "string"
           },
           {
+            "description": "Buyer role classification (economic_buyer, champion, etc.).",
             "name": "buyer_role",
             "type": "string"
           },
           {
+            "description": "Opaque lead identifier.",
             "name": "lead_id",
             "type": "string"
           },
           {
+            "description": "ISO-8601 timestamp when the lead was created.",
             "name": "lead_created_at",
             "type": "string"
           },
           {
+            "description": "Origination source of the lead (e.g. inbound_form, sdr_outbound).",
             "name": "lead_source",
             "type": "string"
           },
           {
+            "description": "Total number of marketing/sales touches recorded before snapshot.",
             "name": "touch_count",
             "type": "number"
           },
           {
+            "description": "Number of inbound touches before snapshot.",
             "name": "inbound_touch_count",
             "type": "number"
           },
           {
+            "description": "Number of outbound touches before snapshot.",
             "name": "outbound_touch_count",
             "type": "number"
           },
           {
+            "description": "Number of web/trial sessions recorded before snapshot.",
             "name": "session_count",
             "type": "number"
           },
           {
+            "description": "Cumulative pricing page views across all sessions before snapshot.",
             "name": "pricing_page_views",
             "type": "number"
           },
           {
+            "description": "Cumulative demo page views across all sessions before snapshot.",
             "name": "demo_page_views",
             "type": "number"
           },
           {
+            "description": "Sum of session durations (seconds) before snapshot.",
             "name": "total_session_duration_seconds",
             "type": "number"
           },
           {
+            "description": "Number of touches in days 0–7 (inclusive) after lead creation. Renamed from touches_week_1 for precision: the window covers 8 days (0, 1, …, 7), not 7.",
             "name": "touches_days_0_7",
             "type": "number"
           },
           {
+            "description": "Number of touches in the last 7 days before snapshot cutoff.",
             "name": "touches_last_7_days",
             "type": "number"
           },
           {
+            "description": "Days between first touch and snapshot cutoff (NaN if no touches).",
             "name": "days_since_first_touch",
             "type": "number"
           },
           {
+            "description": "Number of sales activities logged before snapshot.",
             "name": "activity_count",
             "type": "number"
           },
           {
+            "description": "Days elapsed between most recent touch and snapshot cutoff.",
             "name": "days_since_last_touch",
             "type": "number"
           },
           {
+            "description": "Whether any opportunity was created by snapshot date (open or closed).",
             "name": "opportunity_created",
             "type": "boolean"
           },
           {
+            "description": "Whether an open opportunity existed at snapshot date.",
             "name": "has_open_opportunity",
             "type": "boolean"
           },
           {
+            "description": "Estimated ACV of the most recent open opportunity (NaN if none).",
             "name": "opportunity_estimated_acv",
             "type": "number"
           },
           {
+            "description": "Expected ACV: opportunity ACV if available by snapshot, else revenue band midpoint heuristic (NaN if neither available).",
             "name": "expected_acv",
             "type": "number"
           },
           {
+            "description": "Total touches over full 90-day window. LEAKAGE TRAP: uses post-snapshot data. Included for pedagogical purposes only.",
             "name": "total_touches_all",
             "type": "integer"
           },
           {
+            "description": "Label: True if a closed_won event occurred within 90 days of the snapshot anchor date. Derived from simulated events.",
             "name": "converted_within_90_days",
             "type": "boolean"
           }
@@ -1208,130 +1350,162 @@
     },
     {
       "description": "Intermediate tier valid split for `converted_within_90_days` (750 rows).",
+      "name": "intermediate_tasks_converted_within_90_days_valid",
       "path": "intermediate/tasks/converted_within_90_days/valid.parquet",
       "schema": {
         "fields": [
           {
+            "description": "Opaque account identifier.",
             "name": "account_id",
             "type": "string"
           },
           {
+            "description": "Industry vertical of the buying organization.",
             "name": "industry",
             "type": "string"
           },
           {
+            "description": "Geographic region of the account's headquarters.",
             "name": "region",
             "type": "string"
           },
           {
+            "description": "Banded employee headcount of the account.",
             "name": "employee_band",
             "type": "string"
           },
           {
+            "description": "Banded estimated annual revenue of the account.",
             "name": "estimated_revenue_band",
             "type": "string"
           },
           {
+            "description": "Banded internal process maturity score (latent).",
             "name": "process_maturity_band",
             "type": "string"
           },
           {
+            "description": "Opaque contact identifier.",
             "name": "contact_id",
             "type": "string"
           },
           {
+            "description": "Functional area of the primary contact (e.g. finance, ops).",
             "name": "role_function",
             "type": "string"
           },
           {
+            "description": "Seniority band of the primary contact.",
             "name": "seniority",
             "type": "string"
           },
           {
+            "description": "Buyer role classification (economic_buyer, champion, etc.).",
             "name": "buyer_role",
             "type": "string"
           },
           {
+            "description": "Opaque lead identifier.",
             "name": "lead_id",
             "type": "string"
           },
           {
+            "description": "ISO-8601 timestamp when the lead was created.",
             "name": "lead_created_at",
             "type": "string"
           },
           {
+            "description": "Origination source of the lead (e.g. inbound_form, sdr_outbound).",
             "name": "lead_source",
             "type": "string"
           },
           {
+            "description": "Total number of marketing/sales touches recorded before snapshot.",
             "name": "touch_count",
             "type": "number"
           },
           {
+            "description": "Number of inbound touches before snapshot.",
             "name": "inbound_touch_count",
             "type": "number"
           },
           {
+            "description": "Number of outbound touches before snapshot.",
             "name": "outbound_touch_count",
             "type": "number"
           },
           {
+            "description": "Number of web/trial sessions recorded before snapshot.",
             "name": "session_count",
             "type": "number"
           },
           {
+            "description": "Cumulative pricing page views across all sessions before snapshot.",
             "name": "pricing_page_views",
             "type": "number"
           },
           {
+            "description": "Cumulative demo page views across all sessions before snapshot.",
             "name": "demo_page_views",
             "type": "number"
           },
           {
+            "description": "Sum of session durations (seconds) before snapshot.",
             "name": "total_session_duration_seconds",
             "type": "number"
           },
           {
+            "description": "Number of touches in days 0–7 (inclusive) after lead creation. Renamed from touches_week_1 for precision: the window covers 8 days (0, 1, …, 7), not 7.",
             "name": "touches_days_0_7",
             "type": "number"
           },
           {
+            "description": "Number of touches in the last 7 days before snapshot cutoff.",
             "name": "touches_last_7_days",
             "type": "number"
           },
           {
+            "description": "Days between first touch and snapshot cutoff (NaN if no touches).",
             "name": "days_since_first_touch",
             "type": "number"
           },
           {
+            "description": "Number of sales activities logged before snapshot.",
             "name": "activity_count",
             "type": "number"
           },
           {
+            "description": "Days elapsed between most recent touch and snapshot cutoff.",
             "name": "days_since_last_touch",
             "type": "number"
           },
           {
+            "description": "Whether any opportunity was created by snapshot date (open or closed).",
             "name": "opportunity_created",
             "type": "boolean"
           },
           {
+            "description": "Whether an open opportunity existed at snapshot date.",
             "name": "has_open_opportunity",
             "type": "boolean"
           },
           {
+            "description": "Estimated ACV of the most recent open opportunity (NaN if none).",
             "name": "opportunity_estimated_acv",
             "type": "number"
           },
           {
+            "description": "Expected ACV: opportunity ACV if available by snapshot, else revenue band midpoint heuristic (NaN if neither available).",
             "name": "expected_acv",
             "type": "number"
           },
           {
+            "description": "Total touches over full 90-day window. LEAKAGE TRAP: uses post-snapshot data. Included for pedagogical purposes only.",
             "name": "total_touches_all",
             "type": "integer"
           },
           {
+            "description": "Label: True if a closed_won event occurred within 90 days of the snapshot anchor date. Derived from simulated events.",
             "name": "converted_within_90_days",
             "type": "boolean"
           }
@@ -1340,130 +1514,162 @@
     },
     {
       "description": "Intermediate tier test split for `converted_within_90_days` (750 rows).",
+      "name": "intermediate_tasks_converted_within_90_days_test",
       "path": "intermediate/tasks/converted_within_90_days/test.parquet",
       "schema": {
         "fields": [
           {
+            "description": "Opaque account identifier.",
             "name": "account_id",
             "type": "string"
           },
           {
+            "description": "Industry vertical of the buying organization.",
             "name": "industry",
             "type": "string"
           },
           {
+            "description": "Geographic region of the account's headquarters.",
             "name": "region",
             "type": "string"
           },
           {
+            "description": "Banded employee headcount of the account.",
             "name": "employee_band",
             "type": "string"
           },
           {
+            "description": "Banded estimated annual revenue of the account.",
             "name": "estimated_revenue_band",
             "type": "string"
           },
           {
+            "description": "Banded internal process maturity score (latent).",
             "name": "process_maturity_band",
             "type": "string"
           },
           {
+            "description": "Opaque contact identifier.",
             "name": "contact_id",
             "type": "string"
           },
           {
+            "description": "Functional area of the primary contact (e.g. finance, ops).",
             "name": "role_function",
             "type": "string"
           },
           {
+            "description": "Seniority band of the primary contact.",
             "name": "seniority",
             "type": "string"
           },
           {
+            "description": "Buyer role classification (economic_buyer, champion, etc.).",
             "name": "buyer_role",
             "type": "string"
           },
           {
+            "description": "Opaque lead identifier.",
             "name": "lead_id",
             "type": "string"
           },
           {
+            "description": "ISO-8601 timestamp when the lead was created.",
             "name": "lead_created_at",
             "type": "string"
           },
           {
+            "description": "Origination source of the lead (e.g. inbound_form, sdr_outbound).",
             "name": "lead_source",
             "type": "string"
           },
           {
+            "description": "Total number of marketing/sales touches recorded before snapshot.",
             "name": "touch_count",
             "type": "number"
           },
           {
+            "description": "Number of inbound touches before snapshot.",
             "name": "inbound_touch_count",
             "type": "number"
           },
           {
+            "description": "Number of outbound touches before snapshot.",
             "name": "outbound_touch_count",
             "type": "number"
           },
           {
+            "description": "Number of web/trial sessions recorded before snapshot.",
             "name": "session_count",
             "type": "number"
           },
           {
+            "description": "Cumulative pricing page views across all sessions before snapshot.",
             "name": "pricing_page_views",
             "type": "number"
           },
           {
+            "description": "Cumulative demo page views across all sessions before snapshot.",
             "name": "demo_page_views",
             "type": "number"
           },
           {
+            "description": "Sum of session durations (seconds) before snapshot.",
             "name": "total_session_duration_seconds",
             "type": "number"
           },
           {
+            "description": "Number of touches in days 0–7 (inclusive) after lead creation. Renamed from touches_week_1 for precision: the window covers 8 days (0, 1, …, 7), not 7.",
             "name": "touches_days_0_7",
             "type": "number"
           },
           {
+            "description": "Number of touches in the last 7 days before snapshot cutoff.",
             "name": "touches_last_7_days",
             "type": "number"
           },
           {
+            "description": "Days between first touch and snapshot cutoff (NaN if no touches).",
             "name": "days_since_first_touch",
             "type": "number"
           },
           {
+            "description": "Number of sales activities logged before snapshot.",
             "name": "activity_count",
             "type": "number"
           },
           {
+            "description": "Days elapsed between most recent touch and snapshot cutoff.",
             "name": "days_since_last_touch",
             "type": "number"
           },
           {
+            "description": "Whether any opportunity was created by snapshot date (open or closed).",
             "name": "opportunity_created",
             "type": "boolean"
           },
           {
+            "description": "Whether an open opportunity existed at snapshot date.",
             "name": "has_open_opportunity",
             "type": "boolean"
           },
           {
+            "description": "Estimated ACV of the most recent open opportunity (NaN if none).",
             "name": "opportunity_estimated_acv",
             "type": "number"
           },
           {
+            "description": "Expected ACV: opportunity ACV if available by snapshot, else revenue band midpoint heuristic (NaN if neither available).",
             "name": "expected_acv",
             "type": "number"
           },
           {
+            "description": "Total touches over full 90-day window. LEAKAGE TRAP: uses post-snapshot data. Included for pedagogical purposes only.",
             "name": "total_touches_all",
             "type": "integer"
           },
           {
+            "description": "Label: True if a closed_won event occurred within 90 days of the snapshot anchor date. Derived from simulated events.",
             "name": "converted_within_90_days",
             "type": "boolean"
           }
@@ -1472,6 +1678,7 @@
     },
     {
       "description": "Intermediate tier `accounts` relational table (1,500 rows) — snapshot-safe.",
+      "name": "intermediate_tables_accounts",
       "path": "intermediate/tables/accounts.parquet",
       "schema": {
         "fields": [
@@ -1520,6 +1727,7 @@
     },
     {
       "description": "Intermediate tier `contacts` relational table (4,200 rows) — snapshot-safe.",
+      "name": "intermediate_tables_contacts",
       "path": "intermediate/tables/contacts.parquet",
       "schema": {
         "fields": [
@@ -1568,6 +1776,7 @@
     },
     {
       "description": "Intermediate tier `leads` relational table (5,000 rows) — snapshot-safe.",
+      "name": "intermediate_tables_leads",
       "path": "intermediate/tables/leads.parquet",
       "schema": {
         "fields": [
@@ -1611,6 +1820,7 @@
     },
     {
       "description": "Intermediate tier `touches` relational table (38,724 rows) — snapshot-safe.",
+      "name": "intermediate_tables_touches",
       "path": "intermediate/tables/touches.parquet",
       "schema": {
         "fields": [
@@ -1654,6 +1864,7 @@
     },
     {
       "description": "Intermediate tier `sessions` relational table (10,012 rows) — snapshot-safe.",
+      "name": "intermediate_tables_sessions",
       "path": "intermediate/tables/sessions.parquet",
       "schema": {
         "fields": [
@@ -1702,6 +1913,7 @@
     },
     {
       "description": "Intermediate tier `sales_activities` relational table (20,679 rows) — snapshot-safe.",
+      "name": "intermediate_tables_sales_activities",
       "path": "intermediate/tables/sales_activities.parquet",
       "schema": {
         "fields": [
@@ -1740,6 +1952,7 @@
     },
     {
       "description": "Intermediate tier `opportunities` relational table (4,255 rows) — snapshot-safe.",
+      "name": "intermediate_tables_opportunities",
       "path": "intermediate/tables/opportunities.parquet",
       "schema": {
         "fields": [
@@ -1773,18 +1986,22 @@
     },
     {
       "description": "Intermediate tier auto-rendered dataset card.",
+      "name": "intermediate_dataset_card",
       "path": "intermediate/dataset_card.md"
     },
     {
       "description": "Intermediate tier headline metrics (cross-seed medians + spreads, difficulty knobs, JSON-path back-reference to validation_report.json).",
+      "name": "intermediate_metrics",
       "path": "intermediate/metrics.json"
     },
     {
       "description": "Intermediate tier provenance manifest (recipe, seed, package version, file hashes, snapshot_day, redaction contract).",
+      "name": "intermediate_manifest",
       "path": "intermediate/manifest.json"
     },
     {
       "description": "Advanced tier flat CSV (all splits concatenated, label retained, snapshot_day=30). The `split` column distinguishes train/valid/test rows.",
+      "name": "advanced_lead_scoring",
       "path": "advanced/lead_scoring.csv",
       "schema": {
         "fields": [
@@ -1953,134 +2170,167 @@
     },
     {
       "description": "Advanced tier feature dictionary (canonical column spec).",
+      "name": "advanced_feature_dictionary",
       "path": "advanced/feature_dictionary.csv"
     },
     {
       "description": "Advanced tier train split for `converted_within_90_days` (3,500 rows).",
+      "name": "advanced_tasks_converted_within_90_days_train",
       "path": "advanced/tasks/converted_within_90_days/train.parquet",
       "schema": {
         "fields": [
           {
+            "description": "Opaque account identifier.",
             "name": "account_id",
             "type": "string"
           },
           {
+            "description": "Industry vertical of the buying organization.",
             "name": "industry",
             "type": "string"
           },
           {
+            "description": "Geographic region of the account's headquarters.",
             "name": "region",
             "type": "string"
           },
           {
+            "description": "Banded employee headcount of the account.",
             "name": "employee_band",
             "type": "string"
           },
           {
+            "description": "Banded estimated annual revenue of the account.",
             "name": "estimated_revenue_band",
             "type": "string"
           },
           {
+            "description": "Banded internal process maturity score (latent).",
             "name": "process_maturity_band",
             "type": "string"
           },
           {
+            "description": "Opaque contact identifier.",
             "name": "contact_id",
             "type": "string"
           },
           {
+            "description": "Functional area of the primary contact (e.g. finance, ops).",
             "name": "role_function",
             "type": "string"
           },
           {
+            "description": "Seniority band of the primary contact.",
             "name": "seniority",
             "type": "string"
           },
           {
+            "description": "Buyer role classification (economic_buyer, champion, etc.).",
             "name": "buyer_role",
             "type": "string"
           },
           {
+            "description": "Opaque lead identifier.",
             "name": "lead_id",
             "type": "string"
           },
           {
+            "description": "ISO-8601 timestamp when the lead was created.",
             "name": "lead_created_at",
             "type": "string"
           },
           {
+            "description": "Origination source of the lead (e.g. inbound_form, sdr_outbound).",
             "name": "lead_source",
             "type": "string"
           },
           {
+            "description": "Total number of marketing/sales touches recorded before snapshot.",
             "name": "touch_count",
             "type": "number"
           },
           {
+            "description": "Number of inbound touches before snapshot.",
             "name": "inbound_touch_count",
             "type": "number"
           },
           {
+            "description": "Number of outbound touches before snapshot.",
             "name": "outbound_touch_count",
             "type": "number"
           },
           {
+            "description": "Number of web/trial sessions recorded before snapshot.",
             "name": "session_count",
             "type": "number"
           },
           {
+            "description": "Cumulative pricing page views across all sessions before snapshot.",
             "name": "pricing_page_views",
             "type": "number"
           },
           {
+            "description": "Cumulative demo page views across all sessions before snapshot.",
             "name": "demo_page_views",
             "type": "number"
           },
           {
+            "description": "Sum of session durations (seconds) before snapshot.",
             "name": "total_session_duration_seconds",
             "type": "number"
           },
           {
+            "description": "Number of touches in days 0–7 (inclusive) after lead creation. Renamed from touches_week_1 for precision: the window covers 8 days (0, 1, …, 7), not 7.",
             "name": "touches_days_0_7",
             "type": "number"
           },
           {
+            "description": "Number of touches in the last 7 days before snapshot cutoff.",
             "name": "touches_last_7_days",
             "type": "number"
           },
           {
+            "description": "Days between first touch and snapshot cutoff (NaN if no touches).",
             "name": "days_since_first_touch",
             "type": "number"
           },
           {
+            "description": "Number of sales activities logged before snapshot.",
             "name": "activity_count",
             "type": "number"
           },
           {
+            "description": "Days elapsed between most recent touch and snapshot cutoff.",
             "name": "days_since_last_touch",
             "type": "number"
           },
           {
+            "description": "Whether any opportunity was created by snapshot date (open or closed).",
             "name": "opportunity_created",
             "type": "boolean"
           },
           {
+            "description": "Whether an open opportunity existed at snapshot date.",
             "name": "has_open_opportunity",
             "type": "boolean"
           },
           {
+            "description": "Estimated ACV of the most recent open opportunity (NaN if none).",
             "name": "opportunity_estimated_acv",
             "type": "number"
           },
           {
+            "description": "Expected ACV: opportunity ACV if available by snapshot, else revenue band midpoint heuristic (NaN if neither available).",
             "name": "expected_acv",
             "type": "number"
           },
           {
+            "description": "Total touches over full 90-day window. LEAKAGE TRAP: uses post-snapshot data. Included for pedagogical purposes only.",
             "name": "total_touches_all",
             "type": "integer"
           },
           {
+            "description": "Label: True if a closed_won event occurred within 90 days of the snapshot anchor date. Derived from simulated events.",
             "name": "converted_within_90_days",
             "type": "boolean"
           }
@@ -2089,130 +2339,162 @@
     },
     {
       "description": "Advanced tier valid split for `converted_within_90_days` (750 rows).",
+      "name": "advanced_tasks_converted_within_90_days_valid",
       "path": "advanced/tasks/converted_within_90_days/valid.parquet",
       "schema": {
         "fields": [
           {
+            "description": "Opaque account identifier.",
             "name": "account_id",
             "type": "string"
           },
           {
+            "description": "Industry vertical of the buying organization.",
             "name": "industry",
             "type": "string"
           },
           {
+            "description": "Geographic region of the account's headquarters.",
             "name": "region",
             "type": "string"
           },
           {
+            "description": "Banded employee headcount of the account.",
             "name": "employee_band",
             "type": "string"
           },
           {
+            "description": "Banded estimated annual revenue of the account.",
             "name": "estimated_revenue_band",
             "type": "string"
           },
           {
+            "description": "Banded internal process maturity score (latent).",
             "name": "process_maturity_band",
             "type": "string"
           },
           {
+            "description": "Opaque contact identifier.",
             "name": "contact_id",
             "type": "string"
           },
           {
+            "description": "Functional area of the primary contact (e.g. finance, ops).",
             "name": "role_function",
             "type": "string"
           },
           {
+            "description": "Seniority band of the primary contact.",
             "name": "seniority",
             "type": "string"
           },
           {
+            "description": "Buyer role classification (economic_buyer, champion, etc.).",
             "name": "buyer_role",
             "type": "string"
           },
           {
+            "description": "Opaque lead identifier.",
             "name": "lead_id",
             "type": "string"
           },
           {
+            "description": "ISO-8601 timestamp when the lead was created.",
             "name": "lead_created_at",
             "type": "string"
           },
           {
+            "description": "Origination source of the lead (e.g. inbound_form, sdr_outbound).",
             "name": "lead_source",
             "type": "string"
           },
           {
+            "description": "Total number of marketing/sales touches recorded before snapshot.",
             "name": "touch_count",
             "type": "number"
           },
           {
+            "description": "Number of inbound touches before snapshot.",
             "name": "inbound_touch_count",
             "type": "number"
           },
           {
+            "description": "Number of outbound touches before snapshot.",
             "name": "outbound_touch_count",
             "type": "number"
           },
           {
+            "description": "Number of web/trial sessions recorded before snapshot.",
             "name": "session_count",
             "type": "number"
           },
           {
+            "description": "Cumulative pricing page views across all sessions before snapshot.",
             "name": "pricing_page_views",
             "type": "number"
           },
           {
+            "description": "Cumulative demo page views across all sessions before snapshot.",
             "name": "demo_page_views",
             "type": "number"
           },
           {
+            "description": "Sum of session durations (seconds) before snapshot.",
             "name": "total_session_duration_seconds",
             "type": "number"
           },
           {
+            "description": "Number of touches in days 0–7 (inclusive) after lead creation. Renamed from touches_week_1 for precision: the window covers 8 days (0, 1, …, 7), not 7.",
             "name": "touches_days_0_7",
             "type": "number"
           },
           {
+            "description": "Number of touches in the last 7 days before snapshot cutoff.",
             "name": "touches_last_7_days",
             "type": "number"
           },
           {
+            "description": "Days between first touch and snapshot cutoff (NaN if no touches).",
             "name": "days_since_first_touch",
             "type": "number"
           },
           {
+            "description": "Number of sales activities logged before snapshot.",
             "name": "activity_count",
             "type": "number"
           },
           {
+            "description": "Days elapsed between most recent touch and snapshot cutoff.",
             "name": "days_since_last_touch",
             "type": "number"
           },
           {
+            "description": "Whether any opportunity was created by snapshot date (open or closed).",
             "name": "opportunity_created",
             "type": "boolean"
           },
           {
+            "description": "Whether an open opportunity existed at snapshot date.",
             "name": "has_open_opportunity",
             "type": "boolean"
           },
           {
+            "description": "Estimated ACV of the most recent open opportunity (NaN if none).",
             "name": "opportunity_estimated_acv",
             "type": "number"
           },
           {
+            "description": "Expected ACV: opportunity ACV if available by snapshot, else revenue band midpoint heuristic (NaN if neither available).",
             "name": "expected_acv",
             "type": "number"
           },
           {
+            "description": "Total touches over full 90-day window. LEAKAGE TRAP: uses post-snapshot data. Included for pedagogical purposes only.",
             "name": "total_touches_all",
             "type": "integer"
           },
           {
+            "description": "Label: True if a closed_won event occurred within 90 days of the snapshot anchor date. Derived from simulated events.",
             "name": "converted_within_90_days",
             "type": "boolean"
           }
@@ -2221,130 +2503,162 @@
     },
     {
       "description": "Advanced tier test split for `converted_within_90_days` (750 rows).",
+      "name": "advanced_tasks_converted_within_90_days_test",
       "path": "advanced/tasks/converted_within_90_days/test.parquet",
       "schema": {
         "fields": [
           {
+            "description": "Opaque account identifier.",
             "name": "account_id",
             "type": "string"
           },
           {
+            "description": "Industry vertical of the buying organization.",
             "name": "industry",
             "type": "string"
           },
           {
+            "description": "Geographic region of the account's headquarters.",
             "name": "region",
             "type": "string"
           },
           {
+            "description": "Banded employee headcount of the account.",
             "name": "employee_band",
             "type": "string"
           },
           {
+            "description": "Banded estimated annual revenue of the account.",
             "name": "estimated_revenue_band",
             "type": "string"
           },
           {
+            "description": "Banded internal process maturity score (latent).",
             "name": "process_maturity_band",
             "type": "string"
           },
           {
+            "description": "Opaque contact identifier.",
             "name": "contact_id",
             "type": "string"
           },
           {
+            "description": "Functional area of the primary contact (e.g. finance, ops).",
             "name": "role_function",
             "type": "string"
           },
           {
+            "description": "Seniority band of the primary contact.",
             "name": "seniority",
             "type": "string"
           },
           {
+            "description": "Buyer role classification (economic_buyer, champion, etc.).",
             "name": "buyer_role",
             "type": "string"
           },
           {
+            "description": "Opaque lead identifier.",
             "name": "lead_id",
             "type": "string"
           },
           {
+            "description": "ISO-8601 timestamp when the lead was created.",
             "name": "lead_created_at",
             "type": "string"
           },
           {
+            "description": "Origination source of the lead (e.g. inbound_form, sdr_outbound).",
             "name": "lead_source",
             "type": "string"
           },
           {
+            "description": "Total number of marketing/sales touches recorded before snapshot.",
             "name": "touch_count",
             "type": "number"
           },
           {
+            "description": "Number of inbound touches before snapshot.",
             "name": "inbound_touch_count",
             "type": "number"
           },
           {
+            "description": "Number of outbound touches before snapshot.",
             "name": "outbound_touch_count",
             "type": "number"
           },
           {
+            "description": "Number of web/trial sessions recorded before snapshot.",
             "name": "session_count",
             "type": "number"
           },
           {
+            "description": "Cumulative pricing page views across all sessions before snapshot.",
             "name": "pricing_page_views",
             "type": "number"
           },
           {
+            "description": "Cumulative demo page views across all sessions before snapshot.",
             "name": "demo_page_views",
             "type": "number"
           },
           {
+            "description": "Sum of session durations (seconds) before snapshot.",
             "name": "total_session_duration_seconds",
             "type": "number"
           },
           {
+            "description": "Number of touches in days 0–7 (inclusive) after lead creation. Renamed from touches_week_1 for precision: the window covers 8 days (0, 1, …, 7), not 7.",
             "name": "touches_days_0_7",
             "type": "number"
           },
           {
+            "description": "Number of touches in the last 7 days before snapshot cutoff.",
             "name": "touches_last_7_days",
             "type": "number"
           },
           {
+            "description": "Days between first touch and snapshot cutoff (NaN if no touches).",
             "name": "days_since_first_touch",
             "type": "number"
           },
           {
+            "description": "Number of sales activities logged before snapshot.",
             "name": "activity_count",
             "type": "number"
           },
           {
+            "description": "Days elapsed between most recent touch and snapshot cutoff.",
             "name": "days_since_last_touch",
             "type": "number"
           },
           {
+            "description": "Whether any opportunity was created by snapshot date (open or closed).",
             "name": "opportunity_created",
             "type": "boolean"
           },
           {
+            "description": "Whether an open opportunity existed at snapshot date.",
             "name": "has_open_opportunity",
             "type": "boolean"
           },
           {
+            "description": "Estimated ACV of the most recent open opportunity (NaN if none).",
             "name": "opportunity_estimated_acv",
             "type": "number"
           },
           {
+            "description": "Expected ACV: opportunity ACV if available by snapshot, else revenue band midpoint heuristic (NaN if neither available).",
             "name": "expected_acv",
             "type": "number"
           },
           {
+            "description": "Total touches over full 90-day window. LEAKAGE TRAP: uses post-snapshot data. Included for pedagogical purposes only.",
             "name": "total_touches_all",
             "type": "integer"
           },
           {
+            "description": "Label: True if a closed_won event occurred within 90 days of the snapshot anchor date. Derived from simulated events.",
             "name": "converted_within_90_days",
             "type": "boolean"
           }
@@ -2353,6 +2667,7 @@
     },
     {
       "description": "Advanced tier `accounts` relational table (1,500 rows) — snapshot-safe.",
+      "name": "advanced_tables_accounts",
       "path": "advanced/tables/accounts.parquet",
       "schema": {
         "fields": [
@@ -2401,6 +2716,7 @@
     },
     {
       "description": "Advanced tier `contacts` relational table (4,200 rows) — snapshot-safe.",
+      "name": "advanced_tables_contacts",
       "path": "advanced/tables/contacts.parquet",
       "schema": {
         "fields": [
@@ -2449,6 +2765,7 @@
     },
     {
       "description": "Advanced tier `leads` relational table (5,000 rows) — snapshot-safe.",
+      "name": "advanced_tables_leads",
       "path": "advanced/tables/leads.parquet",
       "schema": {
         "fields": [
@@ -2492,6 +2809,7 @@
     },
     {
       "description": "Advanced tier `touches` relational table (38,208 rows) — snapshot-safe.",
+      "name": "advanced_tables_touches",
       "path": "advanced/tables/touches.parquet",
       "schema": {
         "fields": [
@@ -2535,6 +2853,7 @@
     },
     {
       "description": "Advanced tier `sessions` relational table (9,942 rows) — snapshot-safe.",
+      "name": "advanced_tables_sessions",
       "path": "advanced/tables/sessions.parquet",
       "schema": {
         "fields": [
@@ -2583,6 +2902,7 @@
     },
     {
       "description": "Advanced tier `sales_activities` relational table (19,995 rows) — snapshot-safe.",
+      "name": "advanced_tables_sales_activities",
       "path": "advanced/tables/sales_activities.parquet",
       "schema": {
         "fields": [
@@ -2621,6 +2941,7 @@
     },
     {
       "description": "Advanced tier `opportunities` relational table (4,004 rows) — snapshot-safe.",
+      "name": "advanced_tables_opportunities",
       "path": "advanced/tables/opportunities.parquet",
       "schema": {
         "fields": [
@@ -2654,62 +2975,77 @@
     },
     {
       "description": "Advanced tier auto-rendered dataset card.",
+      "name": "advanced_dataset_card",
       "path": "advanced/dataset_card.md"
     },
     {
       "description": "Advanced tier headline metrics (cross-seed medians + spreads, difficulty knobs, JSON-path back-reference to validation_report.json).",
+      "name": "advanced_metrics",
       "path": "advanced/metrics.json"
     },
     {
       "description": "Advanced tier provenance manifest (recipe, seed, package version, file hashes, snapshot_day, redaction contract).",
+      "name": "advanced_manifest",
       "path": "advanced/manifest.json"
     },
     {
       "description": "Top-level cross-tier headline metrics (medians + spreads + cohort-shift + cross-tier ordering booleans). Machine-readable summary backing the README's Calibration table.",
+      "name": "metrics",
       "path": "metrics.json"
     },
     {
       "description": "Claims register (human-readable table). Rendered from `claims_register_source.yaml`.",
+      "name": "claims_register",
       "path": "claims_register.md"
     },
     {
       "description": "Claims register (machine-readable). Each numerical / structural claim in the README paired with its backing artifact and JSON / YAML path.",
+      "name": "claims_register",
       "path": "claims_register.json"
     },
     {
       "description": "Claims-register source YAML — hand-edited; `claims_register.{md,json}` are rendered from this.",
+      "name": "claims_register_source",
       "path": "claims_register_source.yaml"
     },
     {
       "description": "Vendoring guide for the docs/ subtree — explains that these files are mirrored copies of docs/release/ in the source repo, edits go in the source, and the sync script refuses to clobber locally-edited copies.",
+      "name": "docs_readme",
       "path": "docs/README.md"
     },
     {
       "description": "Adversarial-framing guide: nine breakage patterns (leakage, split contamination, ranking inversions, calibration drift) with worked-example detection recipes.",
+      "name": "docs_break_me_guide",
       "path": "docs/break_me_guide.md"
     },
     {
       "description": "Empirical backing for the 'channel signal is weak' claim — out-of-sample univariate AUCs of `lead_source` per tier.",
+      "name": "docs_channel_signal_audit",
       "path": "docs/channel_signal_audit.md"
     },
     {
       "description": "Long-form per-feature documentation grouped by analytical role; companion to the per-tier `feature_dictionary.csv` machine-readable spec.",
+      "name": "docs_feature_dictionary",
       "path": "docs/feature_dictionary.md"
     },
     {
       "description": "Generation method (DGP description) — what is and isn't modelled by the simulator.",
+      "name": "docs_generation_method",
       "path": "docs/generation_method.md"
     },
     {
       "description": "Per-column descriptions for the 7 public relational tables (and the 2 instructor-only ones) — surfaced into the schema-section of this page.",
+      "name": "docs_relational_table_schemas",
       "path": "docs/relational_table_schemas.csv"
     },
     {
       "description": "Operational acceptance bands per gate (G5–G8); the source-of-truth thresholds the validator checks against.",
+      "name": "docs_v1_acceptance_gates_bands",
       "path": "docs/v1_acceptance_gates_bands.yaml"
     },
     {
       "description": "Accepted-for-v2 findings register — issues flagged in v1 that are scoped to the v2 release.",
+      "name": "docs_v2_decision_log",
       "path": "docs/v2_decision_log.md"
     }
   ],

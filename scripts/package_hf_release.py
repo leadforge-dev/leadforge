@@ -395,6 +395,7 @@ class HuggingFaceCard:
     tags: tuple[str, ...]
     configs: tuple[ConfigEntry, ...]
     body: str
+    authors: tuple[str, ...] = ()
 
 
 # ---------------------------------------------------------------------------
@@ -545,6 +546,7 @@ def build_card(
     default_config: str = DEFAULT_DEFAULT_CONFIG,
     task: str = DEFAULT_TASK,
     body: str | None = None,
+    authors: Sequence[str] = ("shaypal5",),
 ) -> HuggingFaceCard:
     """Assemble a ``HuggingFaceCard`` from the release tree.
 
@@ -595,6 +597,7 @@ def build_card(
         tags=tuple(tags),
         configs=configs,
         body=body,
+        authors=tuple(authors),
     )
 
 
@@ -635,6 +638,7 @@ def _frontmatter_dict(card: HuggingFaceCard) -> dict[str, Any]:
     return {
         "pretty_name": card.pretty_name,
         "license": card.license,
+        **({"authors": list(card.authors)} if card.authors else {}),
         "language": list(card.language),
         "task_categories": list(card.task_categories),
         "size_categories": list(card.size_categories),
