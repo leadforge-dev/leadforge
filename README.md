@@ -11,7 +11,7 @@ Created by [Shay Palachy Affek](http://www.shaypalachy.com/).
 
 `leadforge` generates narrative-grounded synthetic revenue datasets — starting with lead scoring — designed for teaching, portfolio projects, and research. Rather than sampling rows from a distribution, it simulates a commercial world: a specific company, selling a specific product, to a specific kind of buyer, and renders realistic CRM-style outputs from that world.
 
-**Docs:** [leadforge-dev.github.io/leadforge](https://leadforge-dev.github.io/leadforge/) · **Dataset:** [HuggingFace](https://huggingface.co/datasets/leadforge/leadforge-lead-scoring-v1) · [Kaggle](https://www.kaggle.com/datasets/derelictpanda/leadforge-lead-scoring-v1)
+**Docs:** [leadforge-dev.github.io/leadforge](https://leadforge-dev.github.io/leadforge/) · **Dataset:** [HuggingFace](https://huggingface.co/datasets/shaypal5/leadforge-lead-scoring-v1) · Kaggle: [Intro](https://www.kaggle.com/datasets/derelictpanda/leadforge-lead-scoring-intro-v1) · [Intermediate](https://www.kaggle.com/datasets/derelictpanda/leadforge-lead-scoring-intermediate-v1) · [Advanced](https://www.kaggle.com/datasets/derelictpanda/leadforge-lead-scoring-advanced-v1)
 
 ---
 
