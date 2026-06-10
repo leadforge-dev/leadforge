@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from leadforge.core.enums import DifficultyProfile, ExposureMode
-from leadforge.core.models import DifficultyParams, GenerationConfig, WorldBundle, WorldSpec
+from leadforge.core.models import GenerationConfig, WorldBundle, WorldSpec
 from leadforge.core.rng import RNGRoot
 from leadforge.core.sentinels import _MISSING
 
@@ -152,7 +152,6 @@ class Generator:
         import dataclasses
 
         from leadforge.schemes import get_scheme
-        from leadforge.structure.sampler import sample_hidden_graph
 
         config = self._world_spec.config
 
@@ -179,70 +178,7 @@ class Generator:
                 "Generator.from_recipe() to resolve the narrative."
             )
 
-        rng_root = RNGRoot(config.seed)
-        world_graph = sample_hidden_graph(rng_root)
-
-        # Load category-latent correlations from difficulty profile if available.
-        from leadforge.api.recipes import Recipe
-        from leadforge.recipes.registry import load_recipe
-
-        category_latent_correlations = None
-        try:
-            raw = load_recipe(config.recipe_id)
-            recipe = Recipe.from_dict(raw)
-            profiles = recipe.load_difficulty_profiles()
-            profile = profiles.get(config.difficulty.value, {})
-            category_latent_correlations = profile.get("category_latent_correlations")
-
-            # Construct DifficultyParams from profile and attach to config.
-            # All keys are required — a missing key indicates a malformed profile
-            # YAML and should fail loudly rather than silently defaulting.
-            required_keys = (
-                "signal_strength",
-                "noise_scale",
-                "missing_rate",
-                "outlier_rate",
-                "conversion_rate_range",
-                "committee_friction",
-            )
-            missing = [k for k in required_keys if k not in profile]
-            if missing:
-                from leadforge.core.exceptions import InvalidRecipeError
-
-                raise InvalidRecipeError(
-                    f"Difficulty profile '{config.difficulty.value}' is missing "
-                    f"required keys: {missing}"
-                )
-            cr_range = profile["conversion_rate_range"]
-            difficulty_params = DifficultyParams(
-                signal_strength=profile["signal_strength"],
-                noise_scale=profile["noise_scale"],
-                missing_rate=profile["missing_rate"],
-                outlier_rate=profile["outlier_rate"],
-                conversion_rate_lo=cr_range[0],
-                conversion_rate_hi=cr_range[1],
-                committee_friction=profile["committee_friction"],
-            )
-            config = dataclasses.replace(config, difficulty_params=difficulty_params)
-        except (FileNotFoundError, KeyError):
-            category_latent_correlations = None
-
+        # Dispatch to the scheme: it owns structure sampling, difficulty
+        # interpretation, population, simulation, and bundle assembly.
         scheme = get_scheme(self._world_spec.scheme)
-        population = scheme.build_population(
-            config,
-            narrative,
-            world_graph,
-            category_latent_correlations=category_latent_correlations,
-        )
-        latent_touch_intensity = kwargs.pop("latent_touch_intensity", False)
-        result = scheme.simulate(
-            config, population, world_graph, latent_touch_intensity=latent_touch_intensity
-        )
-
-        spec = WorldSpec(config=config, narrative=narrative)
-        return WorldBundle(
-            spec=spec,
-            population=population,
-            simulation_result=result,
-            world_graph=world_graph,
-        )
+        return scheme.build_world(config, narrative, **kwargs)

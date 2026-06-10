@@ -5,7 +5,7 @@ import pytest
 from leadforge.api.generator import Generator
 from leadforge.api.recipes import Recipe
 from leadforge.core.exceptions import InvalidRecipeError
-from leadforge.core.models import WorldSpec
+from leadforge.core.models import DEFAULT_SCHEME, WorldSpec
 from leadforge.schemes import (
     GenerationScheme,
     UnknownSchemeError,
@@ -14,6 +14,8 @@ from leadforge.schemes import (
     register_scheme,
 )
 from leadforge.schemes.lead_scoring import LEAD_SCORING_SCHEME, LeadScoringScheme
+
+_SMALL = {"n_accounts": 20, "n_contacts": 40, "n_leads": 60, "difficulty": "intro"}
 
 # ---------------------------------------------------------------------------
 # Registry
@@ -29,9 +31,18 @@ def test_lead_scoring_scheme_name() -> None:
     assert LEAD_SCORING_SCHEME.name == "lead_scoring"
 
 
+def test_lead_scoring_name_matches_default_scheme() -> None:
+    # DEFAULT_SCHEME (core) and LeadScoringScheme.name (schemes) are declared in
+    # separate layers; guard against drift.
+    assert LeadScoringScheme.name == DEFAULT_SCHEME
+
+
 def test_lead_scoring_satisfies_protocol() -> None:
-    # runtime_checkable Protocol — structural check.
+    # runtime_checkable Protocol checks attribute *names* only (name,
+    # build_world), not signatures — a weak structural check, not full
+    # conformance. End-to-end behaviour is covered by the generate() tests.
     assert isinstance(LEAD_SCORING_SCHEME, GenerationScheme)
+    assert callable(LEAD_SCORING_SCHEME.build_world)
 
 
 def test_get_unknown_scheme_raises() -> None:
@@ -113,10 +124,36 @@ def test_from_recipe_sets_scheme_on_world_spec() -> None:
 
 def test_generate_runs_through_registered_scheme() -> None:
     gen = Generator.from_recipe("b2b_saas_procurement_v1", seed=42)
-    bundle = gen.generate(n_accounts=20, n_contacts=40, n_leads=60, difficulty="intro")
+    bundle = gen.generate(**_SMALL)
     assert bundle.population is not None
     assert bundle.simulation_result is not None
     assert len(bundle.population.leads) == 60
+
+
+def test_generate_records_scheme_on_bundle_spec() -> None:
+    # Regression: generate() must thread the scheme through to the returned
+    # bundle's spec (an earlier revision rebuilt WorldSpec without it, so
+    # bundle.spec.scheme silently fell back to the default).
+    gen = Generator.from_recipe("b2b_saas_procurement_v1", seed=42)
+    bundle = gen.generate(**_SMALL)
+    assert bundle.spec.scheme == "lead_scoring"
+
+
+def test_generate_is_deterministic_through_scheme() -> None:
+    # Locks the byte-identity intent of LTV-Pd: the scheme path is deterministic
+    # given (recipe, config, seed).
+    a = Generator.from_recipe("b2b_saas_procurement_v1", seed=42).generate(**_SMALL)
+    b = Generator.from_recipe("b2b_saas_procurement_v1", seed=42).generate(**_SMALL)
+    assert a.simulation_result is not None
+    assert b.simulation_result is not None
+    lead_outcomes_a = {
+        lead.lead_id: lead.converted_within_90_days for lead in a.simulation_result.leads
+    }
+    lead_outcomes_b = {
+        lead.lead_id: lead.converted_within_90_days for lead in b.simulation_result.leads
+    }
+    assert lead_outcomes_a == lead_outcomes_b
+    assert len(a.simulation_result.touches) == len(b.simulation_result.touches)
 
 
 def test_generate_unknown_scheme_raises() -> None:

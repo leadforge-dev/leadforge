@@ -11,27 +11,37 @@ and resolved via :func:`get_scheme`.  The recipe declares which scheme it runs
 via its ``scheme:`` field; :class:`~leadforge.api.generator.Generator` looks the
 scheme up and runs its pipeline rather than branching on a recipe type.
 
+Where the seam sits
+-------------------
+A scheme owns the **whole** generation pipeline from ``(config, narrative)`` to
+in-memory world artifacts: structure/graph sampling, difficulty interpretation,
+population, simulation, and :class:`~leadforge.core.models.WorldBundle`
+assembly.  These steps differ between schemes (the lead-scoring hidden DAG,
+``DifficultyParams``, and touch emission are all lead-scoring-specific), so the
+boundary is the single :meth:`GenerationScheme.build_world` method rather than a
+set of lead-scoring-shaped sub-steps.  This keeps
+:meth:`~leadforge.api.generator.Generator.generate` genuinely scheme-agnostic.
+
+Scheme-specific options are passed through ``Generator.generate(**kwargs)`` to
+``build_world`` and consumed by the scheme that understands them (e.g.
+``latent_touch_intensity`` for lead scoring).
+
 Scope note
 ----------
-This protocol currently covers the *generation* half (population + simulation)
-that flows through ``Generator.generate()``.  Render dispatch (``to_dataframes``
-/ snapshots / task splits) is added to the protocol as the lifecycle scheme is
-built out (see ``docs/ltv/roadmap.md`` — LTV-M6); today the bundle writer still
-calls the lead-scoring render functions directly.
+Render dispatch (``to_dataframes`` / snapshots / task splits, currently in
+``WorldBundle.save`` → the bundle writer) is folded into the scheme as the
+lifecycle scheme is built out (see ``docs/ltv/roadmap.md`` — LTV-M6).
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from leadforge.core.exceptions import LeadforgeError
 
 if TYPE_CHECKING:
-    from leadforge.core.models import GenerationConfig
+    from leadforge.core.models import GenerationConfig, WorldBundle
     from leadforge.narrative.spec import NarrativeSpec
-    from leadforge.simulation.engine import SimulationResult
-    from leadforge.simulation.population import PopulationResult
-    from leadforge.structure.graph import WorldGraph
 
 
 class UnknownSchemeError(LeadforgeError):
@@ -43,33 +53,25 @@ class GenerationScheme(Protocol):
     """One end-to-end dataset generation pipeline shape.
 
     Implementations are registered by :attr:`name` and resolved at generation
-    time.  The two methods below are the generation half of the pipeline; both
-    must be deterministic given ``(config, ...)`` per the package's RNG
-    contract.
+    time.  :meth:`build_world` must be deterministic given ``(config,
+    narrative, options)`` per the package's RNG contract.
     """
 
     name: str
 
-    def build_population(
+    def build_world(
         self,
         config: GenerationConfig,
         narrative: NarrativeSpec,
-        world_graph: WorldGraph,
-        *,
-        category_latent_correlations: dict | None = None,
-    ) -> PopulationResult:
-        """Generate the scheme's base population (entities + latent state)."""
-        ...
+        **options: Any,
+    ) -> WorldBundle:
+        """Run the scheme's full pipeline and return an in-memory bundle.
 
-    def simulate(
-        self,
-        config: GenerationConfig,
-        population: PopulationResult,
-        world_graph: WorldGraph,
-        *,
-        latent_touch_intensity: bool = False,
-    ) -> SimulationResult:
-        """Run the scheme's simulation over *population*, returning event tables."""
+        Implementations own structure sampling, difficulty interpretation,
+        population, simulation, and bundle assembly.  ``options`` carries
+        scheme-specific flags forwarded from ``Generator.generate(**kwargs)``;
+        a scheme ignores options it does not recognise.
+        """
         ...
 
 
