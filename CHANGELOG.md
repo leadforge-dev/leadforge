@@ -32,8 +32,15 @@ assembler (`to_dataframes`) moved to the scheme, and the scheme-agnostic writer
 (`write_relational_tables`) moved to the new `leadforge.render.relational_io`
 (renamed to avoid a basename clash with the scheme's `relational.py`).
 `leadforge.render` remains the shared bundle-output envelope
-(`relational_io` + `manifests`).  The lead-scoring `schema`
-specs relocate in a follow-up PR (LTV-Pg).  Consumers importing internals (e.g.
+(`relational_io` + `manifests`).
+
+The lifecycle (`b2b_saas_ltv_v1`) entity rows + registries moved from
+`leadforge.schema.entities` / `leadforge.schema.relationships` to the new
+`leadforge.schemes.lifecycle.entities` / `leadforge.schemes.lifecycle.relationships`,
+and a stub `lifecycle` scheme is registered alongside `lead_scoring`
+(`available_schemes()` → `("lead_scoring", "lifecycle")`).  The lead-scoring
+`schema` specs relocate under `leadforge.schemes.lead_scoring` in a follow-up
+PR (LTV-Pg.2).  Consumers importing internals (e.g.
 the `leadforge-datasets-private` build scripts) must update to the new paths;
 the package stays on the `1.x` line (the public contract did not change).
 

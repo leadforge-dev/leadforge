@@ -132,11 +132,22 @@ Total: ~19 PRs across 9 milestones.
     (The lead-scoring `schema` specs split lands with `LTV-Pg`.)
   - Tests: full suite + hash-determinism green; public API imports unchanged.
   - Labels: `type: refactor`, `layer: schema`, `layer: simulation`, `layer: render`
-- [ ] **`LTV-Pg`** — `refactor: scaffold schemes/lifecycle/ + relocate LTV-Pb/Pc specs`.
-  Create `schemes/lifecycle/`; move the lifecycle entity rows (from #104) and
-  the `LTV-Pc` feature/task specs into it; register a stub `LifecycleScheme`
-  (pipeline methods raise `NotImplementedError` until M3–M6). Split any
-  remaining shared schema primitives out cleanly.
+- [ ] **`LTV-Pg`** — `refactor: scaffold schemes/lifecycle/ + split lead-scoring schema`.
+  Split into two PRs to keep each tractable:
+  - [x] **`LTV-Pg.1`** — scaffold `schemes/lifecycle/`: moved the lifecycle
+    entity rows + `LIFECYCLE_ROW_TYPES`/`LIFECYCLE_TABLE_NAMES` (from #104) into
+    `schemes/lifecycle/entities.py` and `LIFECYCLE_CONSTRAINTS` into
+    `schemes/lifecycle/relationships.py`; registered a stub `LifecycleScheme`
+    (`build_world`/`write_bundle` raise `NotImplementedError` until M3–M6).
+    Shared primitives (`EntityRowProtocol`, `_empty_df`, `AccountRow`,
+    `FKConstraint`) stay in `schema/` and are imported. Byte-identical;
+    full suite green. (**PR #NNN**)
+  - [ ] **`LTV-Pg.2`** — split the **lead-scoring** schema: move the
+    lead-scoring entity rows / `ALL_ROW_TYPES` / `ALL_CONSTRAINTS` /
+    `LEAD_SNAPSHOT_FEATURES` / task specs into `schemes/lead_scoring/`, leaving
+    only genuinely shared primitives in `schema/`. (The lifecycle `LTV-Pc`
+    feature/task specs are authored directly in `schemes/lifecycle/` when M1's
+    `LTV-Pc` lands.)
   - Tests: lifecycle registry imports from new home; lead-scoring unaffected.
   - Labels: `type: refactor`, `layer: schema`
 

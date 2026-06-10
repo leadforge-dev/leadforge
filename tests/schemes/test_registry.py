@@ -27,6 +27,24 @@ def test_lead_scoring_registered() -> None:
     assert get_scheme("lead_scoring") is LEAD_SCORING_SCHEME
 
 
+def test_lifecycle_scheme_registered() -> None:
+    from leadforge.schemes.lifecycle import LIFECYCLE_SCHEME
+
+    assert "lifecycle" in available_schemes()
+    assert get_scheme("lifecycle") is LIFECYCLE_SCHEME
+    assert LIFECYCLE_SCHEME.name == "lifecycle"
+
+
+def test_lifecycle_scheme_is_a_stub() -> None:
+    # Pipeline not implemented yet (built across LTV-M3…M6); calling it must
+    # fail loudly rather than silently doing nothing.
+    sch = get_scheme("lifecycle")
+    with pytest.raises(NotImplementedError):
+        sch.build_world(None, None)  # type: ignore[arg-type]
+    with pytest.raises(NotImplementedError):
+        sch.write_bundle(None, "out")  # type: ignore[arg-type]
+
+
 def test_lead_scoring_scheme_name() -> None:
     assert LEAD_SCORING_SCHEME.name == "lead_scoring"
 
