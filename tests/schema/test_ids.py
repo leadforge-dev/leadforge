@@ -53,6 +53,9 @@ def test_id_prefixes_covers_all_entities() -> None:
         "customer",
         "subscription",
         "rep",
+        "subscription_event",
+        "health_signal",
+        "invoice",
     }
     assert set(ID_PREFIXES.keys()) == expected
 

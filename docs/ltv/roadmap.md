@@ -29,7 +29,7 @@ it. Default labels per PR: a `type:` label, relevant `layer:` labels, and
 | Milestone | Capability | PRs | GitHub PRs |
 |-----------|------------|-----|------------|
 | `LTV-M0` | Planning + design lock | `LTV-Pa` | #102 (+ pLTV reframe) |
-| `LTV-M1` | Schema foundation | `LTV-Pb`, `LTV-Pc` | |
+| `LTV-M1` | Schema foundation | `LTV-Pb`, `LTV-Pc` | #104 (Pb) |
 | `LTV-M2` | Customer population + lifecycle world | `LTV-Pd`, `LTV-Pe` | |
 | `LTV-M3` | Lifecycle simulation engine | `LTV-Pf`, `LTV-Pg` | |
 | `LTV-M4` | Customer snapshots + pLTV targets (both regimes) | `LTV-Ph`, `LTV-Pi` | |
@@ -55,7 +55,7 @@ Total: ~15 PRs across 8 milestones (LTV-M0 = planning).
 
 ## `LTV-M1` — Schema foundation
 
-- [ ] **`LTV-Pb`** — `feat(schema): lifecycle entity rows`. Add
+- [x] **`LTV-Pb`** — `feat(schema): lifecycle entity rows` (**PR #104**). Add
   `SubscriptionEventRow`, `HealthSignalRow`, `InvoiceRow` to `entities.py`;
   extend `CustomerRow` / `SubscriptionRow` with nullable lifecycle fields
   (lead-scoring output unchanged). Register in `ALL_ROW_TYPES`. Add FK

@@ -192,18 +192,34 @@ hard case: only a few weeks of health signal exist at the cutoff.
 | `amount_usd` | Int64 | the unit of pLTV value (§3) |
 | `payment_status` | string | `paid` / `failed` / `recovered` / `written_off` |
 
-### 4.2 Extended existing entity rows
+### 4.2 Richer customer / subscription rows (lifecycle-only)
 
 The current `CustomerRow` (4 fields) and `SubscriptionRow` (5 fields,
-`subscription_status` hardcoded `"active"`) are shells. The lifecycle recipe
-fills them out with **nullable** fields so the procurement recipe's output is
-unchanged.
+`subscription_status` hardcoded `"active"`) are thin shells that only record
+conversion in the procurement world. The lifecycle bundle needs much richer
+versions.
 
-`CustomerRow` gains: `initial_mrr`, `initial_plan`, `contract_term_months`,
-`csm_rep_id`.
+**Implementation note (decided in LTV-Pb):** these are added as *dedicated*
+classes — `CustomerLifecycleRow` and `SubscriptionLifecycleRow` (both reusing
+the logical table names `customers` / `subscriptions`) — kept in a separate
+`LIFECYCLE_ROW_TYPES` registry, **not** by extending the existing classes in
+place. The reason: `EntityRow.to_dict()` emits *every* dataclass field, so
+adding fields to `CustomerRow`/`SubscriptionRow` would silently change the
+lead-scoring instructor bundle's parquet schema. Dedicated classes keep the
+lead-scoring catalog (`ALL_ROW_TYPES`, `TABLE_NAMES`, `ALL_CONSTRAINTS`) and
+its output byte-for-byte unchanged. The two shapes never co-occur in one
+bundle.
 
-`SubscriptionRow` gains: `current_mrr`, `subscription_end_at`, `churn_at`,
-`churn_reason`, `renewal_count`, `expansion_count`.
+`CustomerLifecycleRow` carries: `customer_id`, `account_id`,
+`customer_start_at`, `initial_plan`, `initial_mrr`, `contract_term_months`,
+`csm_rep_id`, and a nullable `opportunity_id` (always `None` under independent
+generation; reserved for future chaining).
+
+`SubscriptionLifecycleRow` carries: `subscription_id`, `customer_id`,
+`plan_name`, `subscription_status`, `subscription_start_at`, `current_mrr`,
+`contract_term_months`, `renewal_count`, `expansion_count`, and the
+public-redacted terminal fields `subscription_end_at`, `churn_at`,
+`churn_reason`.
 
 ### 4.3 Public lifecycle table inventory
 
@@ -402,7 +418,7 @@ bands are fit on the regression metrics, not AUC.
 
 | file | change |
 |------|--------|
-| `leadforge/schema/entities.py` | add 3 rows; extend `CustomerRow`/`SubscriptionRow` |
+| `leadforge/schema/entities.py` | add 5 lifecycle rows + `LIFECYCLE_ROW_TYPES` registry (3 event tables + dedicated `CustomerLifecycleRow`/`SubscriptionLifecycleRow`); lead-scoring catalog untouched |
 | `leadforge/schema/features.py` | add `CUSTOMER_SNAPSHOT_FEATURES` (3 regression targets + secondary churn) |
 | `leadforge/schema/tasks.py` | add `LTV_REVENUE_{90,365,730}D` regression task specs + `CHURN_WITHIN_180D` |
 | `leadforge/schema/relationships.py` | FK constraints for new tables |

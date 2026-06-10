@@ -41,6 +41,22 @@ ALL_CONSTRAINTS: tuple[FKConstraint, ...] = (
 )
 
 
+# Lifecycle (b2b_saas_ltv_v1) FK constraints — see docs/ltv/design.md.
+# Kept separate from ALL_CONSTRAINTS so the lead-scoring model is unchanged.
+# The lifecycle ``customers`` table links only to ``accounts`` (independent
+# generation, no ``opportunities`` table), so there is no customer→opportunity
+# FK here despite the nullable ``opportunity_id`` column being reserved for
+# future chained generation.
+LIFECYCLE_CONSTRAINTS: tuple[FKConstraint, ...] = (
+    FKConstraint("customers", "account_id", "accounts", "account_id"),
+    FKConstraint("subscriptions", "customer_id", "customers", "customer_id"),
+    FKConstraint("subscription_events", "subscription_id", "subscriptions", "subscription_id"),
+    FKConstraint("subscription_events", "customer_id", "customers", "customer_id"),
+    FKConstraint("health_signals", "customer_id", "customers", "customer_id"),
+    FKConstraint("invoices", "customer_id", "customers", "customer_id"),
+)
+
+
 def validate_fk(
     child_values: list[str],
     parent_values: set[str],
