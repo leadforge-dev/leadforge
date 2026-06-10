@@ -9,18 +9,30 @@
 Work items use a deliberate **`LTV-` prefix** scheme so they never collide
 with GitHub PR numbers (`#NNN`):
 
-- **Milestones** — `LTV-M0` … `LTV-M7`. A milestone is a coherent capability.
+- **Milestones** — `LTV-M0` … `LTV-M8`. A milestone is a coherent capability.
 - **PRs** — `LTV-Pa`, `LTV-Pb`, … (sequential letters, globally unique across
   the whole roadmap). Each PR maps to exactly one milestone.
 
 When a PR is opened on GitHub, reference its planning code in the title, e.g.
 `feat(schema): lifecycle entity rows [LTV-Pb]`, and the GitHub number (`#NNN`)
-is recorded back here on merge. The two namespaces stay distinct: `LTV-Pb`
-(plan) ↔ `#123` (GitHub).
+is recorded back here on merge. The two namespaces stay distinct.
 
 GitHub milestone: **`dataset: leadforge-ltv-v1`** (#8) — all LTV PRs assign to
-it. Default labels per PR: a `type:` label, relevant `layer:` labels, and
-`dataset: leadforge-ltv-v1`.
+it.
+
+## Architecture context (peer generation schemes)
+
+Per `design.md` §2.5, leadforge becomes a platform hosting **two parallel
+generation schemes** (`lead_scoring`, `lifecycle`) behind a `GenerationScheme`
+protocol + registry, with the package physically reorganized into
+`leadforge/schemes/{lead_scoring,lifecycle}/`. Two consequences for sequencing:
+
+- **`LTV-M2`** extracts the scheme abstraction **against the known-good
+  lead-scoring path first** (output byte-identical) and performs the physical
+  reorg — it lands early, before lifecycle internals are built, so those
+  internals are written directly in their new home.
+- The reorg touches a **published 1.x package**; every reorg PR keeps
+  `verify_hash_determinism` + the full suite green and the public API stable.
 
 ---
 
@@ -28,175 +40,184 @@ it. Default labels per PR: a `type:` label, relevant `layer:` labels, and
 
 | Milestone | Capability | PRs | GitHub PRs |
 |-----------|------------|-----|------------|
-| `LTV-M0` | Planning + design lock | `LTV-Pa` | #102 (+ pLTV reframe) |
-| `LTV-M1` | Schema foundation | `LTV-Pb`, `LTV-Pc` | #104 (Pb) |
-| `LTV-M2` | Customer population + lifecycle world | `LTV-Pd`, `LTV-Pe` | |
-| `LTV-M3` | Lifecycle simulation engine | `LTV-Pf`, `LTV-Pg` | |
-| `LTV-M4` | Customer snapshots + pLTV targets (both regimes) | `LTV-Ph`, `LTV-Pi` | |
-| `LTV-M5` | Recipe wiring + framework dispatch | `LTV-Pj`, `LTV-Pk` | |
-| `LTV-M6` | Validation + regression-metric calibration | `LTV-Pl` | |
-| `LTV-M7` | CLI, notebooks, publish | `LTV-Pm`, `LTV-Pn`, `LTV-Po` | |
+| `LTV-M0` | Planning + design lock | `LTV-Pa` | #102, #103 (+ scheme reframe) |
+| `LTV-M1` | Lifecycle schema foundation | `LTV-Pb`, `LTV-Pc` | #104 (Pb) |
+| `LTV-M2` | Generation-scheme architecture + physical reorg | `LTV-Pd`, `LTV-Pe`, `LTV-Pf` | |
+| `LTV-M3` | Customer population + lifecycle world | `LTV-Pg`, `LTV-Ph` | |
+| `LTV-M4` | Lifecycle simulation engine | `LTV-Pi`, `LTV-Pj` | |
+| `LTV-M5` | Customer snapshots + pLTV targets (both regimes) | `LTV-Pk`, `LTV-Pl` | |
+| `LTV-M6` | Register LifecycleScheme + recipe + manifest/version | `LTV-Pm`, `LTV-Pn` | |
+| `LTV-M7` | Validation + regression-metric calibration | `LTV-Po` | |
+| `LTV-M8` | CLI, notebooks, publish | `LTV-Pp`, `LTV-Pq`, `LTV-Pr` | |
 
-Total: ~15 PRs across 8 milestones (LTV-M0 = planning).
+Total: ~18 PRs across 9 milestones.
 
 ---
 
 ## `LTV-M0` — Planning + design lock
 
-- [x] **`LTV-Pa`** — planning. Land `docs/ltv/design.md` + `docs/ltv/roadmap.md`;
-  create the `dataset: leadforge-ltv-v1` GitHub milestone + label; record the
-  locked design decisions. **Merged as #102.** A follow-up docs PR corrected
-  the target framing from churn classification to **pLTV regression** (ZILN;
-  multiple windows; gross revenue; first-class early-pLTV variant; churn kept
-  secondary) — see `design.md` §2.2. No package code.
+- [x] **`LTV-Pa`** — planning. `docs/ltv/design.md` + `docs/ltv/roadmap.md`;
+  milestone #8 + label. **Merged #102**, reframed to pLTV regression in
+  **#103**, then reframed again to peer generation schemes (design.md §2.5).
   - Labels: `type: docs`
 
 ---
 
-## `LTV-M1` — Schema foundation
+## `LTV-M1` — Lifecycle schema foundation
 
-- [x] **`LTV-Pb`** — `feat(schema): lifecycle entity rows` (**PR #104**). Add
-  `SubscriptionEventRow`, `HealthSignalRow`, `InvoiceRow` to `entities.py`;
-  extend `CustomerRow` / `SubscriptionRow` with nullable lifecycle fields
-  (lead-scoring output unchanged). Register in `ALL_ROW_TYPES`. Add FK
-  constraints to `relationships.py`. Add ID prefixes (`subev_`, `hsig_`,
-  `inv_`).
-  - Tests: row round-trips, empty-dataframe dtypes, FK constraint registration,
-    lead-scoring schema unaffected.
+- [x] **`LTV-Pb`** — `feat(schema): lifecycle entity rows` (**PR #104**).
+  `SubscriptionEventRow`, `HealthSignalRow`, `InvoiceRow` + dedicated
+  `CustomerLifecycleRow`/`SubscriptionLifecycleRow`; separate
+  `LIFECYCLE_ROW_TYPES` / `LIFECYCLE_CONSTRAINTS` registries; new ID prefixes.
+  Lead-scoring catalog untouched. (These rows relocate into
+  `schemes/lifecycle/` during `LTV-M2`.)
   - Labels: `type: feature`, `layer: schema`
 - [ ] **`LTV-Pc`** — `feat(schema): pLTV feature spec + regression task specs`.
-  Add `CUSTOMER_SNAPSHOT_FEATURES` to `features.py` — including the three
-  continuous targets (`ltv_revenue_{90,365,730}d`), the secondary
-  `churned_within_180d`, and the `mrr_change_full_period` trap
-  (`leakage_risk=True`). Add **regression** task specs
-  (`LTV_REVENUE_{90,365,730}D`) + the secondary `CHURN_WITHIN_180D` to
-  `tasks.py`; extend the task-spec model to carry `task_type`
-  (`regression` | `classification`).
-  - Tests: feature-spec invariants (multiple targets allowed, trap flagged,
-    no zero-variance by construction), regression task-spec shape.
+  `CUSTOMER_SNAPSHOT_FEATURES` (three `ltv_revenue_{90,365,730}d` targets, the
+  secondary `churned_within_180d`, the `mrr_change_full_period` trap); regression
+  task specs + a `task_type` (`regression` | `classification`) on the task model.
+  - Tests: feature-spec invariants, regression task-spec shape.
   - Labels: `type: feature`, `layer: schema`
 
 ---
 
-## `LTV-M2` — Customer population + lifecycle world
+## `LTV-M2` — Generation-scheme architecture + physical reorg
 
-- [ ] **`LTV-Pd`** — `feat(simulation): customer population builder`.
-  `build_customer_population()` in `customer_population.py`: customer entities,
-  5 new latent traits, **staggered start dates** within an acquisition window
-  ending at the absolute `observation_date` (D4). Keep a seam for future
-  chained generation (D3). Reuse the `RNGRoot` named-substream convention.
-  - Tests: determinism under seed, latent distributions, staggered-start
-    spread, FK integrity, acquisition-window boundary.
+> The foundational refactor. Extract the abstraction against the shipped
+> lead-scoring path, then move both schemes into `leadforge/schemes/`. Each PR
+> keeps lead-scoring output byte-identical (hash-determinism) and the public
+> API stable.
+
+- [ ] **`LTV-Pd`** — `refactor(api): GenerationScheme protocol + registry`.
+  Add `schemes/base.py` (`GenerationScheme` protocol + `SCHEME_REGISTRY`). Wrap
+  the **existing** lead-scoring pipeline as `LeadScoringScheme` *in place* (no
+  file moves yet); route `Generator.generate()` through the registry; recipes
+  gain a `scheme:` field (defaulting to `lead_scoring`). Output byte-identical.
+  - Tests: registry lookup, dispatch, hash-determinism, full suite green.
+  - Labels: `type: refactor`, `layer: api`, `layer: core`
+- [ ] **`LTV-Pe`** — `refactor: move lead-scoring pipeline to schemes/lead_scoring/`.
+  Physically relocate the lead-scoring population/engine/state/mechanisms/
+  structure/snapshot/relational/task modules + its entity/feature/task specs
+  under `schemes/lead_scoring/`; leave shared primitives in `schema/`,
+  `render/` envelope, etc. Add back-compat import shims where `scripts/` or the
+  sibling datasets repo reference internal paths.
+  - Tests: full suite + hash-determinism green; public API imports unchanged;
+    shim coverage.
+  - Labels: `type: refactor`, `layer: schema`, `layer: simulation`, `layer: render`
+- [ ] **`LTV-Pf`** — `refactor: scaffold schemes/lifecycle/ + relocate LTV-Pb/Pc specs`.
+  Create `schemes/lifecycle/`; move the lifecycle entity rows (from #104) and
+  the `LTV-Pc` feature/task specs into it; register a stub `LifecycleScheme`
+  (pipeline methods raise `NotImplementedError` until M3–M6). Split any
+  remaining shared schema primitives out cleanly.
+  - Tests: lifecycle registry imports from new home; lead-scoring unaffected.
+  - Labels: `type: refactor`, `layer: schema`
+
+---
+
+## `LTV-M3` — Customer population + lifecycle world
+
+> Built directly under `schemes/lifecycle/`.
+
+- [ ] **`LTV-Pg`** — `feat(lifecycle): customer population builder`. Customer
+  entities, 5 new latent traits, **staggered start dates** ending at the
+  absolute `observation_date` (D4); seam for future chained generation (D3).
+  - Tests: determinism, latent distributions, staggered-start spread, FK
+    integrity, acquisition-window boundary.
   - Labels: `type: feature`, `layer: simulation`
-- [ ] **`LTV-Pe`** — `feat(mechanisms): lifecycle motif families + policies`. 5
-  retention motif families with latent-mean biases; `assign_lifecycle_mechanisms()`
-  mapping motif → churn/expansion/payment params.
-  - Tests: per-motif param tables, policy dispatch, determinism.
+- [ ] **`LTV-Ph`** — `feat(lifecycle): motif families + mechanism policies`. 5
+  retention motif families; `assign_lifecycle_mechanisms()` mapping motif →
+  churn/expansion/payment params.
+  - Tests: per-motif param tables, dispatch, determinism.
   - Labels: `type: feature`, `layer: mechanisms`
 
 ---
 
-## `LTV-M3` — Lifecycle simulation engine
+## `LTV-M4` — Lifecycle simulation engine
 
-- [ ] **`LTV-Pf`** — `feat(mechanisms): churn / expansion / payment hazards`.
-  `lifecycle_hazards.py`: Weibull-shaped churn hazard with renewal-date spike,
-  expansion propensity (the heavy-tail generator for pLTV), payment failure +
-  dunning. Built on `LatentScore` + per-step Bernoulli.
+- [ ] **`LTV-Pi`** — `feat(lifecycle): churn / expansion / payment hazards`.
+  Weibull churn hazard with renewal-date spike, expansion propensity (the
+  heavy-tail generator for pLTV), payment failure + dunning.
   - Tests: hazard shape over tenure, renewal spike, dunning escalation,
     expansion MRR-delta bounds.
   - Labels: `type: feature`, `layer: mechanisms`
-- [ ] **`LTV-Pg`** — `feat(simulation): weekly lifecycle engine`.
-  `simulate_lifecycle()` in `lifecycle.py`: weekly loop (D2) per customer from
-  staggered start through `observation_date + 730d (+ buffer for the early
-  regime)` so **all three target windows are fully simulated** (D6); emits
-  `subscription_events`, `health_signals`, `invoices`; updates
-  customer/subscription terminal state. RNG substreams
-  `lifecycle_transitions` / `lifecycle_events` / `lifecycle_post_sim`.
-  - Tests: determinism, churn-rate bounds per difficulty, still-active
-    fraction, weekly health cadence, monthly invoice cadence, every customer
-    simulated through the longest forward window.
+- [ ] **`LTV-Pj`** — `feat(lifecycle): weekly simulation engine`.
+  `simulate_lifecycle()`: weekly loop per customer through `observation_date +
+  730d (+ early-regime buffer)` so all three windows are fully simulated (D6);
+  emits `subscription_events`, `health_signals`, `invoices`; updates terminal
+  state.
+  - Tests: determinism, churn-rate bounds per difficulty, still-active fraction,
+    weekly health cadence, monthly invoice cadence, full-window coverage.
   - Labels: `type: feature`, `layer: simulation`
 
 ---
 
-## `LTV-M4` — Customer snapshots + pLTV targets (both regimes)
+## `LTV-M5` — Customer snapshots + pLTV targets (both regimes)
 
-- [ ] **`LTV-Ph`** — `feat(render): calendar-anchored customer snapshot`.
-  `build_customer_snapshot(cutoff=observation_date)` in `customer_snapshots.py`:
-  **absolute `observation_date` cutoff**; aggregate health / events / invoices
-  over last-12-weeks windows; compute `mrr_change_at_snapshot` (valid) and
-  `mrr_change_full_period` (trap); compute the three forward-window gross-revenue
-  targets `ltv_revenue_{90,365,730}d` (D6/D7) and the secondary
+- [ ] **`LTV-Pk`** — `feat(lifecycle): calendar-anchored customer snapshot`.
+  `build_customer_snapshot(cutoff=observation_date)`: last-12-week health
+  aggregates; `mrr_change_at_snapshot` (valid) + `mrr_change_full_period`
+  (trap); the three `ltv_revenue_{90,365,730}d` gross-revenue targets +
   `churned_within_180d`; difficulty distortions.
-  - Tests: no post-cutoff data in windowed feature columns; ZILN target shape
-    (positive zero-mass + heavy tail; mass grows with window); trap-invariant;
-    label/target derivation; trap exempt from distortion.
+  - Tests: no post-cutoff data in windowed columns; ZILN target shape; trap
+    invariant; target derivation; trap exempt from distortion.
   - Labels: `type: feature`, `layer: render`
-- [ ] **`LTV-Pi`** — `feat(render): early-pLTV (tenure-anchored) task family`.
-  Reuse `build_customer_snapshot` with a **per-customer relative cutoff**
-  (`customer_start + early_tenure_weeks`, e.g. 4w) to emit the cold-start
-  snapshot + the same three forward-window targets recomputed off that cutoff
-  (D8). Exported under a separate task directory.
-  - Tests: per-customer cutoff correctness, short-tenure feature sparsity,
-    target recomputation parity, no post-cutoff leakage.
+- [ ] **`LTV-Pl`** — `feat(lifecycle): early-pLTV (tenure-anchored) task family`.
+  Reuse the snapshot builder with a per-customer relative cutoff
+  (`customer_start + early_tenure_weeks`) to emit the cold-start snapshot +
+  recomputed targets (D8); separate task directory.
+  - Tests: per-customer cutoff correctness, short-tenure sparsity, target parity,
+    no post-cutoff leakage.
   - Labels: `type: feature`, `layer: render`
 
 ---
 
-## `LTV-M5` — Recipe wiring + framework dispatch
+## `LTV-M6` — Register LifecycleScheme + recipe + manifest/version
 
-- [ ] **`LTV-Pj`** — `feat(api,core,render): recipe_type dispatch + regression
-  task splits`. Add `n_customers` + lifecycle config (windows, early-tenure,
-  observation anchor) to `GenerationConfig`; parse `recipe_type` + `lifecycle:`
-  in `recipes.py`; dispatch the lifecycle path in `Generator.generate()`; bump
-  `BUNDLE_SCHEMA_VERSION` 5 → 6 (D5); record `observation_date` + windows in the
-  manifest; teach the task-split writer a **continuous-target** path. Extend
-  `CLAUDE.md` hard constraints with the lifecycle snapshot-safety clause.
-  - Tests: config precedence, dispatch on recipe_type, lead-scoring path
-    unaffected, manifest schema-version + observation_date, regression split
-    writer, exposure filtering for new tables.
-  - Labels: `type: feature`, `layer: api`, `layer: core`, `layer: render`
-- [ ] **`LTV-Pk`** — `feat(recipes): b2b_saas_ltv_v1 recipe assets`. The three
-  recipe YAMLs; register in the recipe registry; end-to-end
-  `Generator.from_recipe("b2b_saas_ltv_v1").generate()` smoke test producing a
-  saved bundle with both task families.
-  - Tests: recipe loads, full generation round-trip, determinism under seed,
-    all task splits written (3 windows × 2 regimes + secondary churn),
-    public/instructor exposure split.
+- [ ] **`LTV-Pm`** — `feat(lifecycle): complete LifecycleScheme + manifest/version`.
+  Fill in the `LifecycleScheme` pipeline methods (population→sim→render→tasks);
+  add `n_customers` + lifecycle config (windows, early-tenure, observation
+  anchor) to `GenerationConfig`; record `generation_scheme` + `observation_date`
+  + windows in the manifest; bump `BUNDLE_SCHEMA_VERSION` 5 → 6 (D5); teach the
+  task-split writer the continuous-target path. Extend `CLAUDE.md` hard
+  constraints with the lifecycle snapshot-safety clause + the schemes/ layout.
+  - Tests: dispatch, lead-scoring path unaffected, manifest fields, regression
+    split writer, exposure filtering for new tables.
+  - Labels: `type: feature`, `layer: api`, `layer: render`
+- [ ] **`LTV-Pn`** — `feat(recipes): b2b_saas_ltv_v1 recipe assets`. The three
+  recipe YAMLs (`scheme: lifecycle`); register in the recipe registry;
+  end-to-end `Generator.from_recipe("b2b_saas_ltv_v1").generate()` smoke test.
+  - Tests: recipe loads, full round-trip, determinism, all task splits (3
+    windows × 2 regimes + secondary churn), public/instructor split.
   - Labels: `type: feature`, `layer: recipes`
 
 ---
 
-## `LTV-M6` — Validation + regression-metric calibration
+## `LTV-M7` — Validation + regression-metric calibration
 
-- [ ] **`LTV-Pl`** — `feat(validation): lifecycle leakage probes + pLTV metric
-  bands`. Lifecycle leakage probes (cutoff window check; banned terminal
-  columns/tables; banned forward-window target columns in relational tables);
-  **regression** evaluation (Spearman, normalized Gini, decile calibration,
-  total-pred-vs-actual, value capture) and per-tier/per-window bands;
-  trap-invariant guard; cross-seed drift. Dataset-card renderer for the
-  lifecycle narrative.
-  - Tests: probe coverage, regression metric bands per tier × window,
-    cross-seed stability.
+- [ ] **`LTV-Po`** — `feat(validation): lifecycle leakage probes + pLTV metric bands`.
+  Scheme-aware leakage probes (cutoff window check; banned terminal
+  columns/tables; banned forward-window target columns); regression evaluation
+  (Spearman, normalized Gini, decile calibration, total-pred-vs-actual, value
+  capture) + per-tier × per-window bands; trap-invariant guard; cross-seed
+  drift; lifecycle dataset-card renderer.
+  - Tests: probe coverage, regression bands, cross-seed stability.
   - Labels: `type: feature`, `layer: validation`
 
 ---
 
-## `LTV-M7` — CLI, notebooks, publish
+## `LTV-M8` — CLI, notebooks, publish
 
-- [ ] **`LTV-Pm`** — `feat(cli): lifecycle generate flags + inspect surfacing`.
-  `--n-customers`, observation/early-tenure flags; `inspect` surfaces lifecycle
-  manifest fields (observation_date, windows, task inventory).
+- [ ] **`LTV-Pp`** — `feat(cli): lifecycle generate flags + scheme-aware inspect`.
+  `--n-customers`, observation/early-tenure flags; `inspect` dispatches on the
+  bundle's `generation_scheme`.
   - Labels: `type: feature`, `layer: cli`
-- [ ] **`LTV-Pn`** — `docs(notebooks): pLTV teaching sequence`. Notebooks:
-  ZILN vs MSE regression baseline, discrimination/calibration metrics
-  (Spearman / normalized Gini / decile charts), the `mrr_change_full_period`
-  leakage demo, **early/cold-start pLTV** (predict long-horizon value from a
-  short window), value-aware ranking, and a right-censoring note on total LTV.
+- [ ] **`LTV-Pq`** — `docs(notebooks): pLTV teaching sequence`. ZILN-vs-MSE
+  baseline; discrimination/calibration metrics; the `mrr_change_full_period`
+  leakage demo; early/cold-start pLTV; value-aware ranking; right-censoring note.
   - Labels: `type: docs`, `layer: render`
-- [ ] **`LTV-Po`** — `feat(release): package + publish b2b_saas_ltv_v1`. Kaggle
-  + HF packaging (reuse Phase-5 packagers), LLM critique run, dataset card,
-  release notes, tag. Publishes under the now-live `leadforge` Kaggle org.
+- [ ] **`LTV-Pr`** — `feat(release): package + publish b2b_saas_ltv_v1`. Kaggle
+  + HF packaging (reuse Phase-5 packagers, scheme-aware), LLM critique, dataset
+  card, release notes, tag. Publishes under the live `leadforge` Kaggle org.
   - Labels: `type: feature`, `layer: validation`
 
 ---
@@ -205,15 +226,16 @@ Total: ~15 PRs across 8 milestones (LTV-M0 = planning).
 
 ```
 LTV-M0 (plan)
-  └─ LTV-M1 (schema)
-       └─ LTV-M2 (population + motifs)
-            └─ LTV-M3 (engine)
-                 └─ LTV-M4 (snapshots + pLTV targets, both regimes)
-                      └─ LTV-M5 (wiring + recipe)  ← first end-to-end bundle
-                           └─ LTV-M6 (validation)
-                                └─ LTV-M7 (publish)
+  └─ LTV-M1 (lifecycle schema)
+       └─ LTV-M2 (scheme abstraction + physical reorg)   ← refactor vs known-good path
+            └─ LTV-M3 (population + motifs, in schemes/lifecycle/)
+                 └─ LTV-M4 (engine)
+                      └─ LTV-M5 (snapshots + pLTV targets, both regimes)
+                           └─ LTV-M6 (register scheme + recipe + manifest/v6)  ← first e2e bundle
+                                └─ LTV-M7 (validation)
+                                     └─ LTV-M8 (publish)
 ```
 
-`LTV-M5` is the first point where `leadforge generate --recipe
-b2b_saas_ltv_v1` produces a bundle end-to-end. Everything before it is
-bottom-up framework construction; everything after is quality + delivery.
+`LTV-M2` can begin in parallel with `LTV-M1` finishing — it only touches the
+existing lead-scoring path. `LTV-M6` is the first point where `leadforge
+generate --recipe b2b_saas_ltv_v1` produces a bundle end-to-end.
