@@ -32,7 +32,7 @@ from leadforge.pipelines.build_v5 import (
     rename_and_select,
     subsample,
 )
-from leadforge.render.snapshots import build_snapshot
+from leadforge.schemes.lead_scoring.render.snapshots import build_snapshot
 
 # ---------------------------------------------------------------------------
 # Orchestration (stays in script — depends on Generator)

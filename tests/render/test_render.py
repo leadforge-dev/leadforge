@@ -58,7 +58,7 @@ def sim_outputs():
 class TestToDataframes:
     def test_returns_all_table_names(self, sim_outputs):
         _, population, result, _ = sim_outputs
-        from leadforge.render.relational import to_dataframes
+        from leadforge.schemes.lead_scoring.render.relational import to_dataframes
 
         dfs = to_dataframes(result, population)
         expected = {
@@ -76,14 +76,14 @@ class TestToDataframes:
 
     def test_lead_count_matches(self, sim_outputs):
         config, population, result, _ = sim_outputs
-        from leadforge.render.relational import to_dataframes
+        from leadforge.schemes.lead_scoring.render.relational import to_dataframes
 
         dfs = to_dataframes(result, population)
         assert len(dfs["leads"]) == config.n_leads
 
     def test_account_and_contact_counts(self, sim_outputs):
         config, population, result, _ = sim_outputs
-        from leadforge.render.relational import to_dataframes
+        from leadforge.schemes.lead_scoring.render.relational import to_dataframes
 
         dfs = to_dataframes(result, population)
         assert len(dfs["accounts"]) == config.n_accounts
@@ -91,7 +91,7 @@ class TestToDataframes:
 
     def test_dataframes_are_dataframes(self, sim_outputs):
         _, population, result, _ = sim_outputs
-        from leadforge.render.relational import to_dataframes
+        from leadforge.schemes.lead_scoring.render.relational import to_dataframes
 
         dfs = to_dataframes(result, population)
         for name, df in dfs.items():
@@ -100,8 +100,8 @@ class TestToDataframes:
     def test_empty_tables_have_schema(self, sim_outputs):
         """Tables with zero rows must still expose the correct column names."""
         _, population, result, _ = sim_outputs
-        from leadforge.render.relational import to_dataframes
         from leadforge.schema.entities import CustomerRow
+        from leadforge.schemes.lead_scoring.render.relational import to_dataframes
 
         dfs = to_dataframes(result, population)
         assert set(CustomerRow.DTYPE_MAP.keys()).issubset(set(dfs["customers"].columns))
@@ -109,8 +109,8 @@ class TestToDataframes:
     def test_fk_integrity(self, sim_outputs):
         """All FK constraints must hold on the produced DataFrames."""
         _, population, result, _ = sim_outputs
-        from leadforge.render.relational import to_dataframes
         from leadforge.schema.relationships import ALL_CONSTRAINTS, validate_fk
+        from leadforge.schemes.lead_scoring.render.relational import to_dataframes
 
         dfs = to_dataframes(result, population)
         for constraint in ALL_CONSTRAINTS:
@@ -126,7 +126,7 @@ class TestToDataframes:
 
     def test_deterministic_under_same_seed(self):
         """Same seed → identical relational DataFrames."""
-        from leadforge.render.relational import to_dataframes
+        from leadforge.schemes.lead_scoring.render.relational import to_dataframes
 
         def _run(seed):
             cfg = _make_config(seed=seed)
@@ -150,14 +150,14 @@ class TestToDataframes:
 class TestBuildSnapshot:
     def test_row_count_equals_lead_count(self, sim_outputs):
         config, population, result, _ = sim_outputs
-        from leadforge.render.snapshots import build_snapshot
+        from leadforge.schemes.lead_scoring.render.snapshots import build_snapshot
 
         snap = build_snapshot(result, population, horizon_days=config.horizon_days)
         assert len(snap) == config.n_leads
 
     def test_all_snapshot_columns_present(self, sim_outputs):
         _, population, result, _ = sim_outputs
-        from leadforge.render.snapshots import build_snapshot
+        from leadforge.schemes.lead_scoring.render.snapshots import build_snapshot
 
         snap = build_snapshot(result, population)
         for col in _SNAPSHOT_COLUMNS:
@@ -165,21 +165,21 @@ class TestBuildSnapshot:
 
     def test_no_extra_columns(self, sim_outputs):
         _, population, result, _ = sim_outputs
-        from leadforge.render.snapshots import build_snapshot
+        from leadforge.schemes.lead_scoring.render.snapshots import build_snapshot
 
         snap = build_snapshot(result, population)
         assert set(snap.columns) == set(_SNAPSHOT_COLUMNS)
 
     def test_target_column_is_boolean(self, sim_outputs):
         _, population, result, _ = sim_outputs
-        from leadforge.render.snapshots import build_snapshot
+        from leadforge.schemes.lead_scoring.render.snapshots import build_snapshot
 
         snap = build_snapshot(result, population)
         assert snap["converted_within_90_days"].dtype.name == "boolean"
 
     def test_touch_counts_non_negative(self, sim_outputs):
         _, population, result, _ = sim_outputs
-        from leadforge.render.snapshots import build_snapshot
+        from leadforge.schemes.lead_scoring.render.snapshots import build_snapshot
 
         snap = build_snapshot(result, population)
         assert (snap["touch_count"].dropna() >= 0).all()
@@ -189,7 +189,7 @@ class TestBuildSnapshot:
     def test_inbound_plus_outbound_equals_total(self, sim_outputs):
         """inbound + outbound must equal touch_count exactly (only two directions in v1)."""
         _, population, result, _ = sim_outputs
-        from leadforge.render.snapshots import build_snapshot
+        from leadforge.schemes.lead_scoring.render.snapshots import build_snapshot
 
         snap = build_snapshot(result, population)
         valid = snap[["touch_count", "inbound_touch_count", "outbound_touch_count"]].dropna()
@@ -198,7 +198,7 @@ class TestBuildSnapshot:
 
     def test_days_since_last_touch_finite_when_touches_exist(self, sim_outputs):
         _, population, result, _ = sim_outputs
-        from leadforge.render.snapshots import build_snapshot
+        from leadforge.schemes.lead_scoring.render.snapshots import build_snapshot
 
         snap = build_snapshot(result, population)
         has_touch = snap["touch_count"] > 0
@@ -208,7 +208,7 @@ class TestBuildSnapshot:
     def test_no_post_anchor_columns_in_snapshot(self, sim_outputs):
         """Columns that represent post-anchor truth must not appear in the snapshot."""
         _, population, result, _ = sim_outputs
-        from leadforge.render.snapshots import build_snapshot
+        from leadforge.schemes.lead_scoring.render.snapshots import build_snapshot
 
         snap = build_snapshot(result, population)
         # These exist in LeadRow / OpportunityRow but must be excluded (leakage rule).
@@ -218,7 +218,7 @@ class TestBuildSnapshot:
     def test_target_matches_simulation_result(self, sim_outputs):
         """converted_within_90_days in snapshot must match SimulationResult's flag."""
         _, population, result, _ = sim_outputs
-        from leadforge.render.snapshots import build_snapshot
+        from leadforge.schemes.lead_scoring.render.snapshots import build_snapshot
 
         snap = build_snapshot(result, population)
         lead_flags = {row.lead_id: row.converted_within_90_days for row in result.leads}
@@ -228,7 +228,7 @@ class TestBuildSnapshot:
 
     def test_deterministic_under_same_seed(self):
         """Same seed → identical snapshots."""
-        from leadforge.render.snapshots import build_snapshot
+        from leadforge.schemes.lead_scoring.render.snapshots import build_snapshot
 
         def _snap(seed):
             cfg = _make_config(seed=seed)
@@ -251,8 +251,8 @@ class TestBuildSnapshot:
 class TestWriteTaskSplits:
     def test_three_files_written(self, sim_outputs, tmp_path):
         config, population, result, _ = sim_outputs
-        from leadforge.render.snapshots import build_snapshot
-        from leadforge.render.tasks import write_task_splits
+        from leadforge.schemes.lead_scoring.render.snapshots import build_snapshot
+        from leadforge.schemes.lead_scoring.render.tasks import write_task_splits
 
         snap = build_snapshot(result, population, horizon_days=config.horizon_days)
         write_task_splits(snap, tmp_path, seed=config.seed)
@@ -263,8 +263,8 @@ class TestWriteTaskSplits:
 
     def test_task_manifest_written(self, sim_outputs, tmp_path):
         config, population, result, _ = sim_outputs
-        from leadforge.render.snapshots import build_snapshot
-        from leadforge.render.tasks import write_task_splits
+        from leadforge.schemes.lead_scoring.render.snapshots import build_snapshot
+        from leadforge.schemes.lead_scoring.render.tasks import write_task_splits
 
         snap = build_snapshot(result, population, horizon_days=config.horizon_days)
         write_task_splits(snap, tmp_path, seed=config.seed)
@@ -276,8 +276,8 @@ class TestWriteTaskSplits:
 
     def test_row_counts_sum_to_total(self, sim_outputs, tmp_path):
         config, population, result, _ = sim_outputs
-        from leadforge.render.snapshots import build_snapshot
-        from leadforge.render.tasks import write_task_splits
+        from leadforge.schemes.lead_scoring.render.snapshots import build_snapshot
+        from leadforge.schemes.lead_scoring.render.tasks import write_task_splits
 
         snap = build_snapshot(result, population, horizon_days=config.horizon_days)
         counts = write_task_splits(snap, tmp_path, seed=config.seed)
@@ -287,8 +287,8 @@ class TestWriteTaskSplits:
     def test_split_ratios_approx(self, sim_outputs, tmp_path):
         """Train ≈ 70%, valid ≈ 15%, test ≈ 15% (±5% tolerance for small samples)."""
         config, population, result, _ = sim_outputs
-        from leadforge.render.snapshots import build_snapshot
-        from leadforge.render.tasks import write_task_splits
+        from leadforge.schemes.lead_scoring.render.snapshots import build_snapshot
+        from leadforge.schemes.lead_scoring.render.tasks import write_task_splits
 
         snap = build_snapshot(result, population, horizon_days=config.horizon_days)
         counts = write_task_splits(snap, tmp_path, seed=config.seed)
@@ -299,8 +299,8 @@ class TestWriteTaskSplits:
 
     def test_splits_are_disjoint(self, sim_outputs, tmp_path):
         config, population, result, _ = sim_outputs
-        from leadforge.render.snapshots import build_snapshot
-        from leadforge.render.tasks import write_task_splits
+        from leadforge.schemes.lead_scoring.render.snapshots import build_snapshot
+        from leadforge.schemes.lead_scoring.render.tasks import write_task_splits
 
         snap = build_snapshot(result, population, horizon_days=config.horizon_days)
         write_task_splits(snap, tmp_path, seed=config.seed)
@@ -314,8 +314,8 @@ class TestWriteTaskSplits:
 
     def test_deterministic_under_same_seed(self, sim_outputs, tmp_path):
         config, population, result, _ = sim_outputs
-        from leadforge.render.snapshots import build_snapshot
-        from leadforge.render.tasks import write_task_splits
+        from leadforge.schemes.lead_scoring.render.snapshots import build_snapshot
+        from leadforge.schemes.lead_scoring.render.tasks import write_task_splits
 
         snap = build_snapshot(result, population, horizon_days=config.horizon_days)
 
@@ -341,10 +341,10 @@ class TestBuildManifest:
     def _make_manifest(self, sim_outputs, tmp_path):
         config, population, result, world_graph = sim_outputs
         from leadforge.render.manifests import build_manifest
-        from leadforge.render.relational import to_dataframes
-        from leadforge.render.snapshots import build_snapshot
-        from leadforge.render.tasks import write_task_splits
         from leadforge.schema.tables import write_parquet
+        from leadforge.schemes.lead_scoring.render.relational import to_dataframes
+        from leadforge.schemes.lead_scoring.render.snapshots import build_snapshot
+        from leadforge.schemes.lead_scoring.render.tasks import write_task_splits
 
         tables_dir = tmp_path / "tables"
         tables_dir.mkdir()

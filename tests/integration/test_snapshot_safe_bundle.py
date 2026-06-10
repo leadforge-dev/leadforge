@@ -2,7 +2,7 @@
 
 Covers the contract turned on in PR 2.2: ``student_public`` bundles
 route ``tables/`` through
-:func:`leadforge.render.relational_snapshot_safe.to_dataframes_snapshot_safe`
+:func:`leadforge.schemes.lead_scoring.render.relational_snapshot_safe.to_dataframes_snapshot_safe`
 (the structural fix against the alpha-bundle reconstruction paths
 A-E), ``research_instructor`` bundles keep the full-horizon export,
 and the manifest is self-describing via ``relational_snapshot_safe``,

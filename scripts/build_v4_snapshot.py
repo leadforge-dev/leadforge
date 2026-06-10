@@ -20,7 +20,7 @@ import numpy as np
 import pandas as pd
 
 from leadforge.api.generator import Generator
-from leadforge.render.snapshots import build_snapshot
+from leadforge.schemes.lead_scoring.render.snapshots import build_snapshot
 
 # ---------------------------------------------------------------------------
 # Constants

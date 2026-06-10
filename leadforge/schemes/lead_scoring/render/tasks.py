@@ -35,7 +35,7 @@ def write_task_splits(
 
     Args:
         snapshot: Lead snapshot DataFrame from
-            :func:`~leadforge.render.snapshots.build_snapshot`.
+            :func:`~leadforge.schemes.lead_scoring.render.snapshots.build_snapshot`.
         out_dir: Parent directory for task outputs (typically
             ``bundle_root / "tasks"``).
         seed: Seed used for deterministic row shuffle.

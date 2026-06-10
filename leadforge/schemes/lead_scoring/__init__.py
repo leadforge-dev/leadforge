@@ -162,13 +162,16 @@ class LeadScoringScheme:
         from leadforge.exposure.modes import apply_exposure
         from leadforge.narrative.dataset_card import render_dataset_card
         from leadforge.render.manifests import build_manifest, write_manifest
-        from leadforge.render.relational import to_dataframes, write_relational_tables
-        from leadforge.render.relational_snapshot_safe import to_dataframes_snapshot_safe
-        from leadforge.render.snapshots import build_snapshot
-        from leadforge.render.tasks import write_task_splits
+        from leadforge.render.relational import write_relational_tables
         from leadforge.schema.dictionaries import write_feature_dictionary
         from leadforge.schema.features import LEAD_SNAPSHOT_FEATURES, redacted_columns_for
         from leadforge.schema.tasks import task_manifest_for_config
+        from leadforge.schemes.lead_scoring.render.relational import to_dataframes
+        from leadforge.schemes.lead_scoring.render.relational_snapshot_safe import (
+            to_dataframes_snapshot_safe,
+        )
+        from leadforge.schemes.lead_scoring.render.snapshots import build_snapshot
+        from leadforge.schemes.lead_scoring.render.tasks import write_task_splits
 
         if (
             bundle.simulation_result is None

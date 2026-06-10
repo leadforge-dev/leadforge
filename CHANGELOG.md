@@ -21,10 +21,16 @@ back-compat shims, by design):
 | `leadforge.simulation.*` | `leadforge.schemes.lead_scoring.simulation.*` |
 | `leadforge.mechanisms.*` | `leadforge.schemes.lead_scoring.mechanisms.*` |
 | `leadforge.structure.*` | `leadforge.schemes.lead_scoring.structure.*` |
+| `leadforge.render.snapshots` | `leadforge.schemes.lead_scoring.render.snapshots` |
+| `leadforge.render.relational_snapshot_safe` | `leadforge.schemes.lead_scoring.render.relational_snapshot_safe` |
+| `leadforge.render.tasks` | `leadforge.schemes.lead_scoring.render.tasks` |
+| `leadforge.render.relational:to_dataframes` | `leadforge.schemes.lead_scoring.render.relational:to_dataframes` |
 
-`render/{snapshots,relational,tasks}` and the lead-scoring `schema` specs
-relocate in follow-up PRs.  Consumers importing internals (e.g. the
-`leadforge-datasets-private` build scripts) must update to the new paths;
+`leadforge.render` remains the shared bundle-output envelope:
+`leadforge.render.relational.write_relational_tables` (the scheme-agnostic table
+writer) and `leadforge.render.manifests` stay put.  The lead-scoring `schema`
+specs relocate in a follow-up PR (LTV-Pg).  Consumers importing internals (e.g.
+the `leadforge-datasets-private` build scripts) must update to the new paths;
 the package stays on the `1.x` line (the public contract did not change).
 
 ### CLI surfaces v4 fields

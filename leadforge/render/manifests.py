@@ -43,7 +43,7 @@ if TYPE_CHECKING:
 #         self-describing (``null`` means full-horizon, legacy behaviour).
 #   "5" — PR 2.2: ``student_public`` bundles route through the
 #         snapshot-safe relational export (
-#         :mod:`leadforge.render.relational_snapshot_safe`).  Public
+#         :mod:`leadforge.schemes.lead_scoring.render.relational_snapshot_safe`).  Public
 #         ``leads`` drops ``converted_within_90_days`` /
 #         ``conversion_timestamp``; public ``opportunities`` drops
 #         ``close_outcome`` / ``closed_at``; public bundles omit
@@ -91,7 +91,7 @@ def build_manifest(
             package internals.  Defaults to ``[]`` (nothing redacted).
         relational_snapshot_safe: ``True`` if the relational ``tables/``
             were projected through
-            :func:`leadforge.render.relational_snapshot_safe.to_dataframes_snapshot_safe`
+            :func:`leadforge.schemes.lead_scoring.render.relational_snapshot_safe.to_dataframes_snapshot_safe`
             before being written.  Recorded in the manifest so a tool
             reading a v5+ bundle can tell from the manifest alone whether
             ``tables/`` is the snapshot-safe (public) shape or the

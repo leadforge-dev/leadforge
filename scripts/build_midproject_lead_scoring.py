@@ -31,7 +31,7 @@ from leadforge.pipelines.build_midproject import (
     softcap_expected_acv,
     subsample,
 )
-from leadforge.render.snapshots import build_snapshot
+from leadforge.schemes.lead_scoring.render.snapshots import build_snapshot
 
 # ---------------------------------------------------------------------------
 # Orchestration
