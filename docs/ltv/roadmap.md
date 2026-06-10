@@ -42,7 +42,7 @@ protocol + registry, with the package physically reorganized into
 |-----------|------------|-----|------------|
 | `LTV-M0` | Planning + design lock | `LTV-Pa` | #102, #103 (+ scheme reframe) |
 | `LTV-M1` | Lifecycle schema foundation | `LTV-Pb`, `LTV-Pc` | #104 (Pb) |
-| `LTV-M2` | Generation-scheme architecture + physical reorg | `LTV-Pd`, `LTV-Pe`, `LTV-Pf`, `LTV-Pg` | #107 (Pd) |
+| `LTV-M2` | Generation-scheme architecture + physical reorg | `LTV-Pd`, `LTV-Pe`, `LTV-Pf`, `LTV-Pg` | #107 (Pd), #108 (Pe) |
 | `LTV-M3` | Customer population + lifecycle world | `LTV-Ph`, `LTV-Pi` | |
 | `LTV-M4` | Lifecycle simulation engine | `LTV-Pj`, `LTV-Pk` | |
 | `LTV-M5` | Customer snapshots + pLTV targets (both regimes) | `LTV-Pl`, `LTV-Pm` | |
@@ -96,7 +96,7 @@ Total: ~19 PRs across 9 milestones.
   byte-identical (all 14 files of a pinned-timestamp bundle hash identically,
   main vs branch).
   - Labels: `type: refactor`, `layer: api`, `layer: core`
-- [ ] **`LTV-Pe`** — `refactor(render): scheme owns bundle rendering`. Complete
+- [x] **`LTV-Pe`** — `refactor(render): scheme owns bundle rendering` (**PR #108**). Complete
   the **second half** of the seam against the known-good lead-scoring path:
   add `write_bundle` to the `GenerationScheme` protocol; move the
   `api/bundle.py` orchestration body into `LeadScoringScheme.write_bundle`
