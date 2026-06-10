@@ -157,10 +157,13 @@ leadforge/
   core/           rng.py, ids.py, time.py, enums.py, models.py, exceptions.py, ...
   narrative/      spec.py, company.py, product.py, personas.py, market.py, funnel.py, dataset_card.py
   schema/         entities.py, relationships.py, events.py, features.py, tasks.py, dictionaries.py
-  structure/      node_types.py, graph.py, motifs.py, templates.py, rewiring.py, sampler.py, constraints.py
-  mechanisms/     base.py, static.py, transitions.py, counts.py, categorical.py, scores.py, hazards.py, measurement.py, policies.py
-  simulation/     world.py, state.py, population.py, scheduler.py, engine.py, interventions.py
-  render/         relational.py, snapshots.py, metadata.py, manifests.py, graph_export.py, notebooks.py
+  schemes/        base.py (GenerationScheme protocol + SCHEME_REGISTRY);
+                  lead_scoring/ — the lead-scoring scheme: __init__.py (build_world/
+                  write_bundle) + simulation/, mechanisms/, structure/ (moved in
+                  LTV-Pf.1).  render/ + lead-scoring schema specs migrate here in
+                  LTV-Pf.2 / LTV-Pg.  See docs/ltv/design.md §2.5.
+  render/         relational.py (+ write_relational_tables), snapshots.py, manifests.py, tasks.py
+                  # lead-scoring render still here pending LTV-Pf.2
   exposure/       modes.py, filters.py, redaction.py
   validation/     invariants.py, artifact_checks.py, realism.py, difficulty.py, drift.py
   recipes/        registry.py, b2b_saas_procurement_v1/{recipe,narrative,schema,motifs,difficulty_profiles}.yaml
