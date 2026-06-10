@@ -139,11 +139,22 @@ class LeadScoringScheme:
     ) -> None:
         """Serialise a lead-scoring *bundle* to *path*.
 
-        Owns the lead-scoring on-disk shape — 9-table relational export
-        (snapshot-safe for ``student_public``), lead snapshot + task splits,
-        dataset card, feature dictionary, exposure metadata, and manifest —
-        reusing the shared envelope helpers (``build_manifest``,
-        ``apply_exposure``, ``get_filter``).
+        This method currently owns the *entire* lead-scoring on-disk shape —
+        relational export (snapshot-safe for ``student_public``), lead snapshot
+        + task splits, dataset card, feature dictionary, exposure metadata, and
+        manifest.  Only the genuinely scheme-agnostic relational-table write is
+        factored out (``write_relational_tables``); the rest is intentionally
+        *not* yet shared.
+
+        The deeper envelope/scheme decomposition (a shared bundle orchestrator
+        with scheme render hooks) is deferred to ``LTV-M6``: it requires
+        generalising ``build_manifest`` (today it takes the lead-scoring
+        ``world_graph``) and ``apply_exposure`` (today it writes the
+        lead-scoring hidden graph + latent registry), and is best designed with
+        a second scheme in hand.  Until then ``LifecycleScheme.write_bundle``
+        will reuse ``write_relational_tables`` + the leaf helpers
+        (``build_manifest`` / ``apply_exposure`` / ``get_filter``) but
+        orchestrate them itself.
         """
         from pathlib import Path
 
@@ -151,13 +162,12 @@ class LeadScoringScheme:
         from leadforge.exposure.modes import apply_exposure
         from leadforge.narrative.dataset_card import render_dataset_card
         from leadforge.render.manifests import build_manifest, write_manifest
-        from leadforge.render.relational import to_dataframes
+        from leadforge.render.relational import to_dataframes, write_relational_tables
         from leadforge.render.relational_snapshot_safe import to_dataframes_snapshot_safe
         from leadforge.render.snapshots import build_snapshot
         from leadforge.render.tasks import write_task_splits
         from leadforge.schema.dictionaries import write_feature_dictionary
         from leadforge.schema.features import LEAD_SNAPSHOT_FEATURES, redacted_columns_for
-        from leadforge.schema.tables import write_parquet
         from leadforge.schema.tasks import task_manifest_for_config
 
         if (
@@ -188,10 +198,11 @@ class LeadScoringScheme:
 
         # ------------------------------------------------------------------
         # 1. Relational tables → tables/
+        #
+        # The lead-scoring *shape* (9 tables; snapshot-safe projection for
+        # student_public) is decided here; the redaction-drop + parquet-write +
+        # row-count loop is the shared, scheme-agnostic envelope step.
         # ------------------------------------------------------------------
-        tables_dir = root / "tables"
-        tables_dir.mkdir(exist_ok=True)
-
         dfs = to_dataframes(result, population)
         if bundle_filter.relational_snapshot_safe:
             if config.snapshot_day is None:
@@ -203,14 +214,7 @@ class LeadScoringScheme:
                     "pass it explicitly."
                 )
             dfs = to_dataframes_snapshot_safe(dfs, snapshot_day=config.snapshot_day)
-        table_row_counts: dict[str, int] = {}
-        for table_name, df in dfs.items():
-            if redacted:
-                cols_to_drop = [c for c in redacted if c in df.columns]
-                if cols_to_drop:
-                    df = df.drop(columns=cols_to_drop)
-            write_parquet(df, tables_dir / f"{table_name}.parquet")
-            table_row_counts[table_name] = len(df)
+        table_row_counts = write_relational_tables(dfs, root / "tables", redacted=redacted)
 
         # ------------------------------------------------------------------
         # 2. Snapshot + task splits → tasks/

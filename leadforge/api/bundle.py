@@ -3,14 +3,17 @@
 :func:`write_bundle` is called by :meth:`WorldBundle.save`.  It resolves the
 bundle's generation scheme (``bundle.spec.scheme``) and delegates to that
 scheme's :meth:`~leadforge.schemes.base.GenerationScheme.write_bundle`, which
-owns the on-disk shape (relational tables, task splits, dataset card, feature
-dictionary, exposure metadata, manifest).  Schemes reuse the shared envelope
-helpers in ``leadforge.render`` / ``leadforge.exposure`` for the parts that do
-not differ between schemes.
+owns the bundle's on-disk shape end to end (relational tables, task splits,
+dataset card, feature dictionary, exposure metadata, manifest).
 
-Keeping this thin module (rather than folding the dispatch into
-``WorldBundle.save``) preserves the historical ``write_bundle(bundle, path)``
-entry point that existing call sites and tests use.
+Scope note: each scheme currently orchestrates its *own* write sequence; only
+the scheme-agnostic relational-table write is shared today
+(:func:`leadforge.render.relational.write_relational_tables`).  A shared bundle
+orchestrator with scheme render hooks is deferred to ``LTV-M6`` — it depends on
+generalising ``build_manifest`` and ``apply_exposure``, which are still
+lead-scoring-coupled (see ``docs/ltv/roadmap.md``).
+
+This thin module preserves the ``write_bundle(bundle, path)`` entry point.
 """
 
 from __future__ import annotations

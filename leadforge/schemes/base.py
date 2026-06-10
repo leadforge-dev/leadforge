@@ -82,11 +82,13 @@ class GenerationScheme(Protocol):
     ) -> None:
         """Serialise *bundle* to *path* (the render half of the pipeline).
 
-        Implementations own the bundle's on-disk shape: which relational tables
-        are written, the task snapshot/splits, dataset card, feature dictionary,
-        exposure filtering, and manifest.  Shared envelope helpers
-        (``build_manifest``, ``apply_exposure``, ``get_filter``) are reused
-        across schemes.
+        Implementations own the bundle's full on-disk shape: which relational
+        tables are written, the task snapshot/splits, dataset card, feature
+        dictionary, exposure filtering, and manifest.  Today each scheme
+        orchestrates this itself; the only shared step is
+        :func:`leadforge.render.relational.write_relational_tables`.  A shared
+        orchestrator with scheme render hooks lands in ``LTV-M6`` once
+        ``build_manifest`` / ``apply_exposure`` are scheme-agnostic.
         """
         ...
 
