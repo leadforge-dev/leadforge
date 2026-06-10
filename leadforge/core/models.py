@@ -144,6 +144,9 @@ class WorldSpec:
 
     config: GenerationConfig = field(default_factory=GenerationConfig)
     narrative: NarrativeSpec | None = None
+    # Generation scheme this world runs (see leadforge.schemes).  Defaults to
+    # the lead-scoring pipeline so direct WorldSpec construction is unchanged.
+    scheme: str = "lead_scoring"
 
 
 @dataclass

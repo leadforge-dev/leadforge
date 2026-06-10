@@ -117,7 +117,7 @@ class Generator:
 
         narrative_data = recipe.load_narrative()
         narrative = NarrativeSpec.from_dict(narrative_data) if narrative_data else None
-        world_spec = WorldSpec(config=config, narrative=narrative)
+        world_spec = WorldSpec(config=config, narrative=narrative, scheme=recipe.scheme)
 
         return cls(world_spec)
 
@@ -151,8 +151,7 @@ class Generator:
         """
         import dataclasses
 
-        from leadforge.simulation.engine import simulate_world
-        from leadforge.simulation.population import build_population
+        from leadforge.schemes import get_scheme
         from leadforge.structure.sampler import sample_hidden_graph
 
         config = self._world_spec.config
@@ -228,14 +227,15 @@ class Generator:
         except (FileNotFoundError, KeyError):
             category_latent_correlations = None
 
-        population = build_population(
+        scheme = get_scheme(self._world_spec.scheme)
+        population = scheme.build_population(
             config,
             narrative,
             world_graph,
             category_latent_correlations=category_latent_correlations,
         )
         latent_touch_intensity = kwargs.pop("latent_touch_intensity", False)
-        result = simulate_world(
+        result = scheme.simulate(
             config, population, world_graph, latent_touch_intensity=latent_touch_intensity
         )
 

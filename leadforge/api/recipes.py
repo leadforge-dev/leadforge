@@ -42,6 +42,9 @@ class Recipe:
     horizon_days: int
     label_window_days: int | None = None
     snapshot_day: int | None = None
+    # Which generation scheme this recipe runs (see leadforge.schemes).
+    # Defaults to "lead_scoring" so existing recipes need no change.
+    scheme: str = "lead_scoring"
 
     # ------------------------------------------------------------------ #
     # Construction
@@ -119,6 +122,12 @@ class Recipe:
                 )
             snapshot_day = raw_sd
 
+        scheme = data.get("scheme", "lead_scoring")
+        if not isinstance(scheme, str) or not scheme:
+            raise InvalidRecipeError(
+                f"'scheme' must be a non-empty string, got {scheme!r}"
+            )
+
         return cls(
             id=data["id"],
             title=data["title"],
@@ -131,6 +140,7 @@ class Recipe:
             horizon_days=horizon_days,
             label_window_days=label_window_days,
             snapshot_day=snapshot_day,
+            scheme=scheme,
         )
 
     # ------------------------------------------------------------------ #
