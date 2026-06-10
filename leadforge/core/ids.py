@@ -23,6 +23,18 @@ sub_    — Subscription
 The ``rep_`` prefix is an internal-only namespace used for sales-rep entities
 that participate in simulation mechanics but do **not** have a corresponding
 standalone relational table in the v1 output bundle.
+
+Lifecycle prefixes
+------------------
+The following prefixes are used by the lifecycle (``b2b_saas_ltv_v1``) bundle
+for entity types that exist only in the post-conversion world:
+
+subev_  — SubscriptionEvent
+hsig_   — HealthSignal
+inv_    — Invoice
+
+Customers and subscriptions in the lifecycle bundle reuse the existing
+``cust_`` / ``sub_`` prefixes.
 """
 
 from __future__ import annotations
@@ -40,6 +52,10 @@ ID_PREFIXES: dict[str, str] = {
     "customer": "cust",
     "subscription": "sub",
     "rep": "rep",
+    # Lifecycle (b2b_saas_ltv_v1) entity types.
+    "subscription_event": "subev",
+    "health_signal": "hsig",
+    "invoice": "inv",
 }
 
 _PAD_WIDTH = 6  # e.g. acct_000001
