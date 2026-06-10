@@ -3,13 +3,13 @@
 Owns the lead-scoring pipeline — hidden-DAG sampling, difficulty interpretation,
 population, simulation, and bundle assembly — behind the single
 :meth:`~leadforge.schemes.base.GenerationScheme.build_world` entry point.  This
-is the first scheme extracted (LTV-Pd) and the trunk the lifecycle scheme
-parallels.
+is the first scheme extracted, and the trunk the lifecycle scheme parallels.
 
-The implementation modules (``population``, ``engine``, mechanisms, structure,
-render) still live under their original package paths; they are physically
-relocated into this package in LTV-Pe.  Until then ``build_world`` calls the
-current homes, keeping the lead-scoring bundle's output byte-for-byte identical.
+The compute-core modules (``simulation``, ``mechanisms``, ``structure``) live
+under this package as of LTV-Pf.  The render modules (``snapshots``,
+``relational``, ``tasks``) still live under ``leadforge.render`` and are
+relocated in a follow-up; ``build_world`` / ``write_bundle`` import from their
+current homes.
 """
 
 from __future__ import annotations
@@ -43,9 +43,9 @@ class LeadScoringScheme:
         """
         from leadforge.core.models import WorldBundle, WorldSpec
         from leadforge.core.rng import RNGRoot
-        from leadforge.simulation.engine import simulate_world
-        from leadforge.simulation.population import build_population
-        from leadforge.structure.sampler import sample_hidden_graph
+        from leadforge.schemes.lead_scoring.simulation.engine import simulate_world
+        from leadforge.schemes.lead_scoring.simulation.population import build_population
+        from leadforge.schemes.lead_scoring.structure.sampler import sample_hidden_graph
 
         latent_touch_intensity = bool(options.get("latent_touch_intensity", False))
 

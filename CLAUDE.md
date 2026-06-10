@@ -239,23 +239,17 @@ leadforge/                    # Python package root
 │   ├── relationships.py      # FK constraints (ALL_CONSTRAINTS)
 │   ├── tasks.py              # SplitSpec, TaskManifest, CONVERTED_WITHIN_90_DAYS
 │   └── dictionaries.py       # Feature dictionary CSV writer
-├── structure/                # Hidden world graph
-│   ├── graph.py              # WorldGraph (DAG wrapper)
-│   ├── motifs.py             # 5 motif families
-│   ├── rewiring.py           # Stochastic graph perturbation
-│   └── sampler.py            # sample_hidden_graph()
-├── mechanisms/               # Node/edge behavior
-│   ├── policies.py           # assign_mechanisms() — motif → MechanismAssignment
-│   ├── hazards.py            # ConversionHazard
-│   ├── transitions.py        # StageSequence, HazardTransition
-│   ├── counts.py             # PoissonIntensity, RecencyDecayIntensity
-│   ├── categorical.py        # CategoricalInfluence, CHANNEL_QUALITY_SCORES
-│   └── scores.py             # LatentScore
-├── simulation/               # World evolution
-│   ├── engine.py             # simulate_world() — 90-day daily loop
-│   ├── state.py              # LeadSimState (per-lead mutable state)
-│   └── population.py         # build_population() — accounts, contacts, leads
-├── render/                   # Bundle output
+├── schemes/                  # Generation schemes (peer pipelines) + registry
+│   ├── base.py               # GenerationScheme protocol + SCHEME_REGISTRY
+│   └── lead_scoring/         # The lead-scoring scheme (LeadScoringScheme)
+│       ├── __init__.py       # build_world() + write_bundle()
+│       ├── structure/        # Hidden world graph (WorldGraph, motifs, sampler)
+│       ├── mechanisms/       # Node/edge behavior (policies, hazards, scores, …)
+│       └── simulation/       # World evolution (engine, population, state)
+│   # NOTE (LTV-M2 reorg in progress): render/{snapshots,relational,tasks}
+│   # relocate under schemes/lead_scoring/ in a follow-up; schema specs split
+│   # in LTV-Pg.  See docs/ltv/design.md §2.5 for the target layout.
+├── render/                   # Bundle output (envelope + not-yet-moved lead-scoring render)
 │   ├── snapshots.py          # build_snapshot() — ML-ready lead table
 │   ├── relational.py         # to_dataframes() — 9-table dict
 │   ├── tasks.py              # write_task_splits() — train/valid/test Parquet

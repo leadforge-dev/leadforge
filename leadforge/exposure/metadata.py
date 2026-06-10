@@ -29,7 +29,7 @@ def write_metadata_dir(bundle: WorldBundle, bundle_root: Path) -> None:
         bundle_root: Root directory of the written bundle.
     """
     from leadforge.core.rng import RNGRoot
-    from leadforge.mechanisms.policies import assign_mechanisms
+    from leadforge.schemes.lead_scoring.mechanisms.policies import assign_mechanisms
 
     # Callers must only invoke this after full bundle assembly; world_graph
     # and population are guaranteed non-None at that point.

@@ -7,28 +7,46 @@ import random
 
 import pytest
 
-from leadforge.mechanisms.base import MechanismAssignment, MechanismContext, MechanismSummary
-from leadforge.mechanisms.categorical import CHANNEL_QUALITY_SCORES, CategoricalInfluence
-from leadforge.mechanisms.counts import (
+from leadforge.schemes.lead_scoring.mechanisms.base import (
+    MechanismAssignment,
+    MechanismContext,
+    MechanismSummary,
+)
+from leadforge.schemes.lead_scoring.mechanisms.categorical import (
+    CHANNEL_QUALITY_SCORES,
+    CategoricalInfluence,
+)
+from leadforge.schemes.lead_scoring.mechanisms.counts import (
     FollowupRampConfig,
     LatentDecayIntensity,
     PoissonIntensity,
     RecencyDecayIntensity,
 )
-from leadforge.mechanisms.hazards import ConversionHazard
-from leadforge.mechanisms.influence import (
+from leadforge.schemes.lead_scoring.mechanisms.hazards import ConversionHazard
+from leadforge.schemes.lead_scoring.mechanisms.influence import (
     AdditiveInfluence,
     InteractionTerm,
     LogisticInfluence,
     SaturatingInfluence,
     ThresholdInfluence,
 )
-from leadforge.mechanisms.measurement import NoisyCategorization, NoisyProxy, ProxyCompression
-from leadforge.mechanisms.policies import assign_mechanisms, mechanism_params_for_motif
-from leadforge.mechanisms.scores import LatentScore
-from leadforge.mechanisms.static import BoundedNumericDraw, CategoricalDraw, MixtureDraw
-from leadforge.mechanisms.transitions import HazardTransition, StageSequence
-from leadforge.structure.motifs import MOTIF_FAMILY_NAMES
+from leadforge.schemes.lead_scoring.mechanisms.measurement import (
+    NoisyCategorization,
+    NoisyProxy,
+    ProxyCompression,
+)
+from leadforge.schemes.lead_scoring.mechanisms.policies import (
+    assign_mechanisms,
+    mechanism_params_for_motif,
+)
+from leadforge.schemes.lead_scoring.mechanisms.scores import LatentScore
+from leadforge.schemes.lead_scoring.mechanisms.static import (
+    BoundedNumericDraw,
+    CategoricalDraw,
+    MixtureDraw,
+)
+from leadforge.schemes.lead_scoring.mechanisms.transitions import HazardTransition, StageSequence
+from leadforge.schemes.lead_scoring.structure.motifs import MOTIF_FAMILY_NAMES
 
 _LATENTS = {
     "latent_account_fit": 0.7,

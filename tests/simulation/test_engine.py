@@ -15,10 +15,14 @@ from leadforge.schema.entities import (
     SubscriptionRow,
     TouchRow,
 )
-from leadforge.simulation.engine import SimulationResult, _plan_from_acv, simulate_world
-from leadforge.simulation.population import build_population
-from leadforge.simulation.state import LeadSimState
-from leadforge.structure.sampler import sample_hidden_graph
+from leadforge.schemes.lead_scoring.simulation.engine import (
+    SimulationResult,
+    _plan_from_acv,
+    simulate_world,
+)
+from leadforge.schemes.lead_scoring.simulation.population import build_population
+from leadforge.schemes.lead_scoring.simulation.state import LeadSimState
+from leadforge.schemes.lead_scoring.structure.sampler import sample_hidden_graph
 
 # ---------------------------------------------------------------------------
 # Fixtures

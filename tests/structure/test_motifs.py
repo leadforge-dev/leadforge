@@ -1,14 +1,14 @@
-"""Tests for leadforge.structure.motifs — motif family definitions."""
+"""Tests for leadforge.schemes.lead_scoring.structure.motifs — motif family definitions."""
 
 import pytest
 
-from leadforge.structure.motifs import (
+from leadforge.schemes.lead_scoring.structure.motifs import (
     ALL_MOTIF_FAMILIES,
     MOTIF_FAMILY_NAMES,
     MotifFamily,
     get_motif_family,
 )
-from leadforge.structure.node_types import NodeType
+from leadforge.schemes.lead_scoring.structure.node_types import NodeType
 
 # ---------------------------------------------------------------------------
 # Registry
@@ -89,7 +89,7 @@ def test_motif_edge_weights_in_range(motif: MotifFamily) -> None:
 @pytest.mark.parametrize("motif", ALL_MOTIF_FAMILIES)
 def test_motif_canonical_skeleton_builds_valid_graph(motif: MotifFamily) -> None:
     """The canonical (non-rewired) skeleton must pass WorldGraph validation."""
-    from leadforge.structure.graph import WorldGraph
+    from leadforge.schemes.lead_scoring.structure.graph import WorldGraph
 
     g = WorldGraph(
         nodes=list(motif.canonical_nodes),

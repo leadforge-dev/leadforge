@@ -30,8 +30,8 @@ if TYPE_CHECKING:
     from collections.abc import Collection
     from pathlib import Path
 
-    from leadforge.simulation.engine import SimulationResult
-    from leadforge.simulation.population import PopulationResult
+    from leadforge.schemes.lead_scoring.simulation.engine import SimulationResult
+    from leadforge.schemes.lead_scoring.simulation.population import PopulationResult
 
 _Source = Literal["population", "simulation"]
 
@@ -63,9 +63,9 @@ def to_dataframes(
     """Convert simulation output to one typed DataFrame per relational table.
 
     Args:
-        result: Output of :func:`~leadforge.simulation.engine.simulate_world`.
+        result: Output of :func:`~leadforge.schemes.lead_scoring.simulation.engine.simulate_world`.
         population: Output of
-            :func:`~leadforge.simulation.population.build_population`.
+            :func:`~leadforge.schemes.lead_scoring.simulation.population.build_population`.
 
     Returns:
         Dict mapping table name → ``pd.DataFrame`` with dtypes matching the

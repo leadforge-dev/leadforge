@@ -1,12 +1,12 @@
-"""Tests for leadforge.structure.sampler — sample_hidden_graph."""
+"""Tests for leadforge.schemes.lead_scoring.structure.sampler — sample_hidden_graph."""
 
 import pytest
 
 from leadforge.core.rng import RNGRoot
-from leadforge.structure.graph import WorldGraph
-from leadforge.structure.motifs import MOTIF_FAMILY_NAMES
-from leadforge.structure.node_types import NodeType
-from leadforge.structure.sampler import sample_hidden_graph
+from leadforge.schemes.lead_scoring.structure.graph import WorldGraph
+from leadforge.schemes.lead_scoring.structure.motifs import MOTIF_FAMILY_NAMES
+from leadforge.schemes.lead_scoring.structure.node_types import NodeType
+from leadforge.schemes.lead_scoring.structure.sampler import sample_hidden_graph
 
 # ---------------------------------------------------------------------------
 # Basic contract

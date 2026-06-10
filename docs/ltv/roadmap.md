@@ -114,13 +114,23 @@ Total: ~19 PRs across 9 milestones.
     `save`, base-direct resolution (footgun guard), full suite green.
   - Labels: `type: refactor`, `layer: render`, `layer: api`
 - [ ] **`LTV-Pf`** — `refactor: move lead-scoring pipeline to schemes/lead_scoring/`.
-  Physically relocate the (now fully scheme-owned) lead-scoring population/
-  engine/state/mechanisms/structure/snapshot/relational/task modules + its
-  entity/feature/task specs under `schemes/lead_scoring/`; leave shared
-  primitives in `schema/`, `render/` envelope, etc. Add back-compat import
-  shims where `scripts/` or the sibling datasets repo reference internal paths.
-  - Tests: full suite + hash-determinism green; public API imports unchanged;
-    shim coverage.
+  Physically relocate the (now fully scheme-owned) lead-scoring modules under
+  `schemes/lead_scoring/`; leave shared primitives in `schema/` and the
+  `render/` envelope. **Hard break, no shims** (decision D12): old internal
+  import paths are removed and all in-repo callers updated; the
+  `leadforge-datasets-private` build scripts must update in lockstep (tracked
+  via a breakage issue there). Public API (`leadforge.api`, CLI) unchanged;
+  package stays `1.x` with a CHANGELOG "Moved" note. Split into two PRs to keep
+  each reviewable and byte-identical:
+  - [x] **`LTV-Pf.1`** — compute core: `simulation/` + `mechanisms/` +
+    `structure/` moved as whole directories (21 file renames, all callers
+    rewritten). Verified byte-identical; full suite green. (**PR #NNN**)
+  - [ ] **`LTV-Pf.2`** — render: relocate `render/{snapshots,relational,tasks}`
+    under the scheme, splitting `render/relational.py` so the shared
+    `write_relational_tables` stays in the envelope while the 9-table
+    `to_dataframes` moves. (The lead-scoring `schema` specs split lands with
+    `LTV-Pg`.)
+  - Tests: full suite + hash-determinism green; public API imports unchanged.
   - Labels: `type: refactor`, `layer: schema`, `layer: simulation`, `layer: render`
 - [ ] **`LTV-Pg`** — `refactor: scaffold schemes/lifecycle/ + relocate LTV-Pb/Pc specs`.
   Create `schemes/lifecycle/`; move the lifecycle entity rows (from #104) and

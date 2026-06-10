@@ -22,7 +22,7 @@ from leadforge.validation.leakage_probes import (
 
 if TYPE_CHECKING:
     from leadforge.core.models import GenerationConfig
-    from leadforge.structure.graph import WorldGraph
+    from leadforge.schemes.lead_scoring.structure.graph import WorldGraph
 
 # Bump this whenever the bundle layout or manifest schema changes.
 # History:
