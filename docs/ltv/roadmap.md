@@ -208,6 +208,14 @@ Total: ~19 PRs across 9 milestones.
   + windows in the manifest; bump `BUNDLE_SCHEMA_VERSION` 5 → 6 (D5); teach the
   task-split writer the continuous-target path. Extend `CLAUDE.md` hard
   constraints with the lifecycle snapshot-safety clause + the schemes/ layout.
+  - **Layering cleanup (carried debt, see `Known deferred cleanups` below):**
+    generalise `build_manifest` (drop the lead-scoring `world_graph` param) and
+    `apply_exposure` (stop hard-coding the lead-scoring hidden graph + latent
+    registry) so they are scheme-agnostic; with that done, remove the
+    `core.models` / `render.relational` **TYPE_CHECKING** back-references to
+    `leadforge.schemes.lead_scoring.*` introduced in `LTV-Pf.1` (a core→scheme
+    layering inversion), and lift the shared render orchestration out of each
+    scheme's `write_bundle` (the decomposition deferred in `LTV-Pe`).
   - Tests: dispatch, lead-scoring path unaffected, manifest fields, regression
     split writer, exposure filtering for new tables.
   - Labels: `type: feature`, `layer: api`, `layer: render`
@@ -247,6 +255,28 @@ Total: ~19 PRs across 9 milestones.
   + HF packaging (reuse Phase-5 packagers, scheme-aware), LLM critique, dataset
   card, release notes, tag. Publishes under the live `leadforge` Kaggle org.
   - Labels: `type: feature`, `layer: validation`
+
+---
+
+## Known deferred cleanups (tech debt carried by M2, paid down in M6)
+
+The peer-schemes reorg deliberately defers a few cleanups to keep each M2 PR
+byte-identical and reviewable. They are tracked here and discharged in
+**`LTV-Pn`** (M6), where the manifest/exposure generalization makes them clean:
+
+1. **Shared render orchestration** — `LTV-Pe` left each scheme owning its full
+   `write_bundle`; only `write_relational_tables` is shared. A shared bundle
+   orchestrator with scheme render hooks lands once there are two schemes.
+2. **`build_manifest` / `apply_exposure` are lead-scoring-coupled** —
+   `build_manifest` takes a `world_graph`; `apply_exposure` writes the
+   lead-scoring hidden graph + latent registry. Generalize both to be
+   scheme-agnostic.
+3. **core→scheme layering inversion** — `LTV-Pf.1` introduced
+   `TYPE_CHECKING`-only imports of `leadforge.schemes.lead_scoring.*` in
+   `core.models` (`WorldBundle.world_graph: WorldGraph | None`) and
+   `render.relational`. Harmless at runtime (no eager import), but `core`/shared
+   `render` should not reference a scheme. Remove once (2) makes
+   `WorldBundle` hold scheme-agnostic artifacts.
 
 ---
 
