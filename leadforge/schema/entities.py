@@ -38,7 +38,7 @@ class EntityRowProtocol(Protocol):
     def empty_dataframe(cls) -> pd.DataFrame: ...
 
 
-def _empty_df(dtype_map: dict[str, str]) -> pd.DataFrame:
+def make_empty_dataframe(dtype_map: dict[str, str]) -> pd.DataFrame:
     """Return a zero-row DataFrame with columns ordered as *dtype_map*."""
     return pd.DataFrame({col: pd.array([], dtype=dtype) for col, dtype in dtype_map.items()})
 
@@ -78,7 +78,7 @@ class AccountRow:
 
     @classmethod
     def empty_dataframe(cls) -> pd.DataFrame:
-        return _empty_df(cls.DTYPE_MAP)
+        return make_empty_dataframe(cls.DTYPE_MAP)
 
 
 # ---------------------------------------------------------------------------
@@ -116,7 +116,7 @@ class ContactRow:
 
     @classmethod
     def empty_dataframe(cls) -> pd.DataFrame:
-        return _empty_df(cls.DTYPE_MAP)
+        return make_empty_dataframe(cls.DTYPE_MAP)
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +176,7 @@ class LeadRow:
 
     @classmethod
     def empty_dataframe(cls) -> pd.DataFrame:
-        return _empty_df(cls.DTYPE_MAP)
+        return make_empty_dataframe(cls.DTYPE_MAP)
 
 
 # ---------------------------------------------------------------------------
@@ -212,7 +212,7 @@ class TouchRow:
 
     @classmethod
     def empty_dataframe(cls) -> pd.DataFrame:
-        return _empty_df(cls.DTYPE_MAP)
+        return make_empty_dataframe(cls.DTYPE_MAP)
 
 
 # ---------------------------------------------------------------------------
@@ -250,7 +250,7 @@ class SessionRow:
 
     @classmethod
     def empty_dataframe(cls) -> pd.DataFrame:
-        return _empty_df(cls.DTYPE_MAP)
+        return make_empty_dataframe(cls.DTYPE_MAP)
 
 
 # ---------------------------------------------------------------------------
@@ -284,7 +284,7 @@ class SalesActivityRow:
 
     @classmethod
     def empty_dataframe(cls) -> pd.DataFrame:
-        return _empty_df(cls.DTYPE_MAP)
+        return make_empty_dataframe(cls.DTYPE_MAP)
 
 
 # ---------------------------------------------------------------------------
@@ -320,7 +320,7 @@ class OpportunityRow:
 
     @classmethod
     def empty_dataframe(cls) -> pd.DataFrame:
-        return _empty_df(cls.DTYPE_MAP)
+        return make_empty_dataframe(cls.DTYPE_MAP)
 
 
 # ---------------------------------------------------------------------------
@@ -350,7 +350,7 @@ class CustomerRow:
 
     @classmethod
     def empty_dataframe(cls) -> pd.DataFrame:
-        return _empty_df(cls.DTYPE_MAP)
+        return make_empty_dataframe(cls.DTYPE_MAP)
 
 
 # ---------------------------------------------------------------------------
@@ -382,7 +382,7 @@ class SubscriptionRow:
 
     @classmethod
     def empty_dataframe(cls) -> pd.DataFrame:
-        return _empty_df(cls.DTYPE_MAP)
+        return make_empty_dataframe(cls.DTYPE_MAP)
 
 
 # ---------------------------------------------------------------------------

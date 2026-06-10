@@ -27,7 +27,7 @@ from typing import Any, ClassVar
 
 import pandas as pd
 
-from leadforge.schema.entities import AccountRow, EntityRowProtocol, _empty_df
+from leadforge.schema.entities import AccountRow, EntityRowProtocol, make_empty_dataframe
 
 
 @dataclass
@@ -68,7 +68,7 @@ class CustomerLifecycleRow:
 
     @classmethod
     def empty_dataframe(cls) -> pd.DataFrame:
-        return _empty_df(cls.DTYPE_MAP)
+        return make_empty_dataframe(cls.DTYPE_MAP)
 
 
 @dataclass
@@ -115,7 +115,7 @@ class SubscriptionLifecycleRow:
 
     @classmethod
     def empty_dataframe(cls) -> pd.DataFrame:
-        return _empty_df(cls.DTYPE_MAP)
+        return make_empty_dataframe(cls.DTYPE_MAP)
 
 
 @dataclass
@@ -148,7 +148,7 @@ class SubscriptionEventRow:
 
     @classmethod
     def empty_dataframe(cls) -> pd.DataFrame:
-        return _empty_df(cls.DTYPE_MAP)
+        return make_empty_dataframe(cls.DTYPE_MAP)
 
 
 @dataclass
@@ -179,7 +179,7 @@ class HealthSignalRow:
 
     @classmethod
     def empty_dataframe(cls) -> pd.DataFrame:
-        return _empty_df(cls.DTYPE_MAP)
+        return make_empty_dataframe(cls.DTYPE_MAP)
 
 
 @dataclass
@@ -206,7 +206,7 @@ class InvoiceRow:
 
     @classmethod
     def empty_dataframe(cls) -> pd.DataFrame:
-        return _empty_df(cls.DTYPE_MAP)
+        return make_empty_dataframe(cls.DTYPE_MAP)
 
 
 # ---------------------------------------------------------------------------
