@@ -1,6 +1,10 @@
 id: b2b_saas_procurement_v1
 title: "Mid-market B2B SaaS — Procurement & AP Automation"
 vertical: mid_market_b2b_saas
+# Generation scheme this recipe runs (see leadforge.schemes).  Lead scoring is
+# the default; declared explicitly here for clarity now that leadforge hosts
+# multiple peer schemes.
+scheme: lead_scoring
 description: >
   A mid-market B2B SaaS company selling procurement and AP workflow
   automation software to 200–2,000 employee firms in the US and UK,

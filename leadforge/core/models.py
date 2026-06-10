@@ -16,6 +16,13 @@ if TYPE_CHECKING:
     from leadforge.structure.graph import WorldGraph
 
 
+# Default generation scheme when a recipe/world does not declare one.  Kept here
+# (the shared core layer) because ``leadforge.core`` must not import
+# ``leadforge.schemes`` (the scheme package depends on core, not the reverse).
+# ``LeadScoringScheme.name`` must equal this value; a test guards the match.
+DEFAULT_SCHEME = "lead_scoring"
+
+
 @dataclass(frozen=True)
 class DifficultyParams:
     """Numeric parameters from a difficulty profile.
@@ -144,6 +151,9 @@ class WorldSpec:
 
     config: GenerationConfig = field(default_factory=GenerationConfig)
     narrative: NarrativeSpec | None = None
+    # Generation scheme this world runs (see leadforge.schemes).  Defaults to
+    # the lead-scoring pipeline so direct WorldSpec construction is unchanged.
+    scheme: str = DEFAULT_SCHEME
 
 
 @dataclass

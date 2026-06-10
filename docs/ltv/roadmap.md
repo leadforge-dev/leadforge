@@ -88,12 +88,13 @@ Total: ~18 PRs across 9 milestones.
 > keeps lead-scoring output byte-identical (hash-determinism) and the public
 > API stable.
 
-- [ ] **`LTV-Pd`** — `refactor(api): GenerationScheme protocol + registry`.
-  Add `schemes/base.py` (`GenerationScheme` protocol + `SCHEME_REGISTRY`). Wrap
-  the **existing** lead-scoring pipeline as `LeadScoringScheme` *in place* (no
-  file moves yet); route `Generator.generate()` through the registry; recipes
-  gain a `scheme:` field (defaulting to `lead_scoring`). Output byte-identical.
-  - Tests: registry lookup, dispatch, hash-determinism, full suite green.
+- [x] **`LTV-Pd`** — `refactor(api): GenerationScheme protocol + registry`
+  (**PR #107**). Added `schemes/base.py` (`GenerationScheme` protocol +
+  `SCHEME_REGISTRY`) and `schemes/lead_scoring/` wrapping the existing pipeline
+  *in place*; `Generator.generate()` routes through the registry; `Recipe` and
+  `WorldSpec` gain a `scheme` field (default `lead_scoring`). Verified
+  byte-identical (all 14 files of a pinned-timestamp bundle hash identically,
+  main vs branch).
   - Labels: `type: refactor`, `layer: api`, `layer: core`
 - [ ] **`LTV-Pe`** — `refactor: move lead-scoring pipeline to schemes/lead_scoring/`.
   Physically relocate the lead-scoring population/engine/state/mechanisms/

@@ -21,6 +21,7 @@ from typing import Any
 
 from leadforge.core.enums import DifficultyProfile, ExposureMode
 from leadforge.core.exceptions import InvalidRecipeError
+from leadforge.core.models import DEFAULT_SCHEME
 from leadforge.core.sentinels import _MISSING
 from leadforge.core.serialization import load_yaml
 
@@ -42,6 +43,9 @@ class Recipe:
     horizon_days: int
     label_window_days: int | None = None
     snapshot_day: int | None = None
+    # Which generation scheme this recipe runs (see leadforge.schemes).
+    # Defaults to the lead-scoring scheme so existing recipes need no change.
+    scheme: str = DEFAULT_SCHEME
 
     # ------------------------------------------------------------------ #
     # Construction
@@ -119,6 +123,10 @@ class Recipe:
                 )
             snapshot_day = raw_sd
 
+        scheme = data.get("scheme", DEFAULT_SCHEME)
+        if not isinstance(scheme, str) or not scheme:
+            raise InvalidRecipeError(f"'scheme' must be a non-empty string, got {scheme!r}")
+
         return cls(
             id=data["id"],
             title=data["title"],
@@ -131,6 +139,7 @@ class Recipe:
             horizon_days=horizon_days,
             label_window_days=label_window_days,
             snapshot_day=snapshot_day,
+            scheme=scheme,
         )
 
     # ------------------------------------------------------------------ #
