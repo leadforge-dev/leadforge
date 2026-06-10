@@ -11,24 +11,19 @@ import pandas as pd
 import pytest
 
 from leadforge.core.ids import ID_PREFIXES, make_id
-from leadforge.schema.entities import (
-    ALL_ROW_TYPES,
+from leadforge.schema.entities import ALL_ROW_TYPES, TABLE_NAMES, AccountRow
+from leadforge.schema.relationships import ALL_CONSTRAINTS, FKConstraint
+from leadforge.schema.tables import read_parquet, write_parquet
+from leadforge.schemes.lifecycle.entities import (
     LIFECYCLE_ROW_TYPES,
     LIFECYCLE_TABLE_NAMES,
-    TABLE_NAMES,
-    AccountRow,
     CustomerLifecycleRow,
     HealthSignalRow,
     InvoiceRow,
     SubscriptionEventRow,
     SubscriptionLifecycleRow,
 )
-from leadforge.schema.relationships import (
-    ALL_CONSTRAINTS,
-    LIFECYCLE_CONSTRAINTS,
-    FKConstraint,
-)
-from leadforge.schema.tables import read_parquet, write_parquet
+from leadforge.schemes.lifecycle.relationships import LIFECYCLE_CONSTRAINTS
 
 # ---------------------------------------------------------------------------
 # Row factories

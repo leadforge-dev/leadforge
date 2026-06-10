@@ -160,8 +160,10 @@ leadforge/
   schemes/        base.py (GenerationScheme protocol + SCHEME_REGISTRY);
                   lead_scoring/ — the lead-scoring scheme: __init__.py (build_world/
                   write_bundle) + simulation/, mechanisms/, structure/, render/
-                  (moved in LTV-Pf.1/Pf.2).  Lead-scoring schema specs migrate
-                  here in LTV-Pg.  See docs/ltv/design.md §2.5.
+                  (moved in LTV-Pf.1/Pf.2);
+                  lifecycle/ — the pLTV scheme (stub): entities.py, relationships.py
+                  (scaffolded in LTV-Pg.1).  Lead-scoring schema specs migrate
+                  under lead_scoring/ in LTV-Pg.2.  See docs/ltv/design.md §2.5.
   render/         relational_io.py (write_relational_tables — shared writer), manifests.py
                   # shared bundle-output envelope
   exposure/       modes.py, filters.py, redaction.py
@@ -244,14 +246,18 @@ leadforge/                    # Python package root
 │   └── dictionaries.py       # Feature dictionary CSV writer
 ├── schemes/                  # Generation schemes (peer pipelines) + registry
 │   ├── base.py               # GenerationScheme protocol + SCHEME_REGISTRY
-│   └── lead_scoring/         # The lead-scoring scheme (LeadScoringScheme)
-│       ├── __init__.py       # build_world() + write_bundle()
-│       ├── structure/        # Hidden world graph (WorldGraph, motifs, sampler)
-│       ├── mechanisms/       # Node/edge behavior (policies, hazards, scores, …)
-│       ├── simulation/       # World evolution (engine, population, state)
-│       └── render/           # Lead-scoring render: snapshots, relational
-│                             #   (to_dataframes), relational_snapshot_safe, tasks
-│   # NOTE (LTV-M2 reorg in progress): lead-scoring schema specs split in LTV-Pg.
+│   ├── lead_scoring/         # The lead-scoring scheme (LeadScoringScheme)
+│   │   ├── __init__.py       # build_world() + write_bundle()
+│   │   ├── structure/        # Hidden world graph (WorldGraph, motifs, sampler)
+│   │   ├── mechanisms/       # Node/edge behavior (policies, hazards, scores, …)
+│   │   ├── simulation/       # World evolution (engine, population, state)
+│   │   └── render/           # Lead-scoring render: snapshots, relational
+│   │                         #   (to_dataframes), relational_snapshot_safe, tasks
+│   └── lifecycle/            # The pLTV scheme (LifecycleScheme — stub until M3–M6)
+│       ├── __init__.py       # registers the stub scheme
+│       ├── entities.py       # lifecycle rows + LIFECYCLE_ROW_TYPES
+│       └── relationships.py  # LIFECYCLE_CONSTRAINTS
+│   # NOTE (LTV-M2 reorg in progress): lead-scoring schema specs split in LTV-Pg.2.
 │   # See docs/ltv/design.md §2.5 for the target layout.
 ├── render/                   # Shared bundle-output envelope
 │   ├── relational_io.py      # write_relational_tables() — shared table writer
