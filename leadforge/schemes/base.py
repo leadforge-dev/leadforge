@@ -74,10 +74,50 @@ class GenerationScheme(Protocol):
         """
         ...
 
+    def write_bundle(
+        self,
+        bundle: WorldBundle,
+        path: str,
+        generation_timestamp: str | None = None,
+    ) -> None:
+        """Serialise *bundle* to *path* (the render half of the pipeline).
 
-# Name → scheme instance.  Populated by importing ``leadforge.schemes`` (its
-# package ``__init__`` imports each built-in scheme module, which self-register).
+        Implementations own the bundle's full on-disk shape: which relational
+        tables are written, the task snapshot/splits, dataset card, feature
+        dictionary, exposure filtering, and manifest.  Today each scheme
+        orchestrates this itself; the only shared step is
+        :func:`leadforge.render.relational.write_relational_tables`.  A shared
+        orchestrator with scheme render hooks lands in ``LTV-M6`` once
+        ``build_manifest`` / ``apply_exposure`` are scheme-agnostic.
+        """
+        ...
+
+
+# Name → scheme instance.  Populated by importing the built-in scheme modules
+# (each self-registers on import).  ``_ensure_builtins`` triggers this lazily so
+# resolution works even if a caller reaches for ``base`` directly without first
+# importing the ``leadforge.schemes`` package.
 SCHEME_REGISTRY: dict[str, GenerationScheme] = {}
+
+_builtins_loaded = False
+
+
+def _ensure_builtins() -> None:
+    """Import built-in scheme modules once, so the registry is populated.
+
+    Importing the ``leadforge.schemes`` package runs its ``__init__``, which
+    imports each shipped scheme for its registration side effect.  Guarded by a
+    module flag and idempotent (``import_module`` returns the cached module), so
+    this is safe to call on every resolution and re-entrant during package
+    import.
+    """
+    global _builtins_loaded
+    if _builtins_loaded:
+        return
+    _builtins_loaded = True
+    import importlib
+
+    importlib.import_module("leadforge.schemes")
 
 
 def register_scheme(scheme: GenerationScheme) -> None:
@@ -99,6 +139,7 @@ def get_scheme(name: str) -> GenerationScheme:
     Raises:
         UnknownSchemeError: if no scheme is registered under *name*.
     """
+    _ensure_builtins()
     try:
         return SCHEME_REGISTRY[name]
     except KeyError:
@@ -109,4 +150,5 @@ def get_scheme(name: str) -> GenerationScheme:
 
 def available_schemes() -> tuple[str, ...]:
     """Return the names of all registered schemes, sorted."""
+    _ensure_builtins()
     return tuple(sorted(SCHEME_REGISTRY))
