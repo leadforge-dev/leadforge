@@ -11,9 +11,9 @@ from leadforge.version import __version__
 
 if TYPE_CHECKING:
     from leadforge.narrative.spec import NarrativeSpec
-    from leadforge.simulation.engine import SimulationResult
-    from leadforge.simulation.population import PopulationResult
-    from leadforge.structure.graph import WorldGraph
+    from leadforge.schemes.lead_scoring.simulation.engine import SimulationResult
+    from leadforge.schemes.lead_scoring.simulation.population import PopulationResult
+    from leadforge.schemes.lead_scoring.structure.graph import WorldGraph
 
 
 # Default generation scheme when a recipe/world does not declare one.  Kept here

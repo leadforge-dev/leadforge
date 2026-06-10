@@ -1,11 +1,11 @@
-"""Tests for leadforge.structure.rewiring — stochastic rewiring rules."""
+"""Tests for leadforge.schemes.lead_scoring.structure.rewiring — stochastic rewiring rules."""
 
 import numpy as np
 import pytest
 
-from leadforge.structure.graph import WorldGraph
-from leadforge.structure.motifs import ALL_MOTIF_FAMILIES, MotifFamily
-from leadforge.structure.rewiring import rewire
+from leadforge.schemes.lead_scoring.structure.graph import WorldGraph
+from leadforge.schemes.lead_scoring.structure.motifs import ALL_MOTIF_FAMILIES, MotifFamily
+from leadforge.schemes.lead_scoring.structure.rewiring import rewire
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -81,7 +81,7 @@ def test_rewire_is_deterministic(motif: MotifFamily) -> None:
 
 def test_different_seeds_produce_different_graphs() -> None:
     """At least some seeds should yield structurally different graphs."""
-    from leadforge.structure.motifs import FIT_DOMINANT
+    from leadforge.schemes.lead_scoring.structure.motifs import FIT_DOMINANT
 
     structures: set[tuple[str, ...]] = set()
     for seed in range(40):
@@ -98,7 +98,7 @@ def test_different_seeds_produce_different_graphs() -> None:
 
 def test_required_nodes_never_dropped() -> None:
     """Non-optional nodes must always be present after rewiring."""
-    from leadforge.structure.motifs import FIT_DOMINANT
+    from leadforge.schemes.lead_scoring.structure.motifs import FIT_DOMINANT
 
     required = {
         n.node_id

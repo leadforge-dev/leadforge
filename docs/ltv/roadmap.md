@@ -42,7 +42,7 @@ protocol + registry, with the package physically reorganized into
 |-----------|------------|-----|------------|
 | `LTV-M0` | Planning + design lock | `LTV-Pa` | #102, #103 (+ scheme reframe) |
 | `LTV-M1` | Lifecycle schema foundation | `LTV-Pb`, `LTV-Pc` | #104 (Pb) |
-| `LTV-M2` | Generation-scheme architecture + physical reorg | `LTV-Pd`, `LTV-Pe`, `LTV-Pf`, `LTV-Pg` | #107 (Pd), #108 (Pe) |
+| `LTV-M2` | Generation-scheme architecture + physical reorg | `LTV-Pd`, `LTV-Pe`, `LTV-Pf`, `LTV-Pg` | #107 (Pd), #108 (Pe), #109 (Pf.1) |
 | `LTV-M3` | Customer population + lifecycle world | `LTV-Ph`, `LTV-Pi` | |
 | `LTV-M4` | Lifecycle simulation engine | `LTV-Pj`, `LTV-Pk` | |
 | `LTV-M5` | Customer snapshots + pLTV targets (both regimes) | `LTV-Pl`, `LTV-Pm` | |
@@ -114,13 +114,23 @@ Total: ~19 PRs across 9 milestones.
     `save`, base-direct resolution (footgun guard), full suite green.
   - Labels: `type: refactor`, `layer: render`, `layer: api`
 - [ ] **`LTV-Pf`** — `refactor: move lead-scoring pipeline to schemes/lead_scoring/`.
-  Physically relocate the (now fully scheme-owned) lead-scoring population/
-  engine/state/mechanisms/structure/snapshot/relational/task modules + its
-  entity/feature/task specs under `schemes/lead_scoring/`; leave shared
-  primitives in `schema/`, `render/` envelope, etc. Add back-compat import
-  shims where `scripts/` or the sibling datasets repo reference internal paths.
-  - Tests: full suite + hash-determinism green; public API imports unchanged;
-    shim coverage.
+  Physically relocate the (now fully scheme-owned) lead-scoring modules under
+  `schemes/lead_scoring/`; leave shared primitives in `schema/` and the
+  `render/` envelope. **Hard break, no shims** (decision D12): old internal
+  import paths are removed and all in-repo callers updated; the
+  `leadforge-datasets-private` build scripts must update in lockstep (tracked
+  via a breakage issue there). Public API (`leadforge.api`, CLI) unchanged;
+  package stays `1.x` with a CHANGELOG "Moved" note. Split into two PRs to keep
+  each reviewable and byte-identical:
+  - [x] **`LTV-Pf.1`** — compute core: `simulation/` + `mechanisms/` +
+    `structure/` moved as whole directories (21 file renames, all callers
+    rewritten). Verified byte-identical; full suite green. (**PR #109**)
+  - [ ] **`LTV-Pf.2`** — render: relocate `render/{snapshots,relational,tasks}`
+    under the scheme, splitting `render/relational.py` so the shared
+    `write_relational_tables` stays in the envelope while the 9-table
+    `to_dataframes` moves. (The lead-scoring `schema` specs split lands with
+    `LTV-Pg`.)
+  - Tests: full suite + hash-determinism green; public API imports unchanged.
   - Labels: `type: refactor`, `layer: schema`, `layer: simulation`, `layer: render`
 - [ ] **`LTV-Pg`** — `refactor: scaffold schemes/lifecycle/ + relocate LTV-Pb/Pc specs`.
   Create `schemes/lifecycle/`; move the lifecycle entity rows (from #104) and
@@ -198,6 +208,14 @@ Total: ~19 PRs across 9 milestones.
   + windows in the manifest; bump `BUNDLE_SCHEMA_VERSION` 5 → 6 (D5); teach the
   task-split writer the continuous-target path. Extend `CLAUDE.md` hard
   constraints with the lifecycle snapshot-safety clause + the schemes/ layout.
+  - **Layering cleanup (carried debt, see `Known deferred cleanups` below):**
+    generalise `build_manifest` (drop the lead-scoring `world_graph` param) and
+    `apply_exposure` (stop hard-coding the lead-scoring hidden graph + latent
+    registry) so they are scheme-agnostic; with that done, remove the
+    `core.models` / `render.relational` **TYPE_CHECKING** back-references to
+    `leadforge.schemes.lead_scoring.*` introduced in `LTV-Pf.1` (a core→scheme
+    layering inversion), and lift the shared render orchestration out of each
+    scheme's `write_bundle` (the decomposition deferred in `LTV-Pe`).
   - Tests: dispatch, lead-scoring path unaffected, manifest fields, regression
     split writer, exposure filtering for new tables.
   - Labels: `type: feature`, `layer: api`, `layer: render`
@@ -237,6 +255,28 @@ Total: ~19 PRs across 9 milestones.
   + HF packaging (reuse Phase-5 packagers, scheme-aware), LLM critique, dataset
   card, release notes, tag. Publishes under the live `leadforge` Kaggle org.
   - Labels: `type: feature`, `layer: validation`
+
+---
+
+## Known deferred cleanups (tech debt carried by M2, paid down in M6)
+
+The peer-schemes reorg deliberately defers a few cleanups to keep each M2 PR
+byte-identical and reviewable. They are tracked here and discharged in
+**`LTV-Pn`** (M6), where the manifest/exposure generalization makes them clean:
+
+1. **Shared render orchestration** — `LTV-Pe` left each scheme owning its full
+   `write_bundle`; only `write_relational_tables` is shared. A shared bundle
+   orchestrator with scheme render hooks lands once there are two schemes.
+2. **`build_manifest` / `apply_exposure` are lead-scoring-coupled** —
+   `build_manifest` takes a `world_graph`; `apply_exposure` writes the
+   lead-scoring hidden graph + latent registry. Generalize both to be
+   scheme-agnostic.
+3. **core→scheme layering inversion** — `LTV-Pf.1` introduced
+   `TYPE_CHECKING`-only imports of `leadforge.schemes.lead_scoring.*` in
+   `core.models` (`WorldBundle.world_graph: WorldGraph | None`) and
+   `render.relational`. Harmless at runtime (no eager import), but `core`/shared
+   `render` should not reference a scheme. Remove once (2) makes
+   `WorldBundle` hold scheme-agnostic artifacts.
 
 ---
 

@@ -6,7 +6,7 @@ import pytest
 
 from leadforge.api.generator import Generator
 from leadforge.core.models import DifficultyParams, GenerationConfig
-from leadforge.mechanisms.policies import assign_mechanisms
+from leadforge.schemes.lead_scoring.mechanisms.policies import assign_mechanisms
 
 _MEDIUM = {"n_leads": 500, "n_accounts": 200, "n_contacts": 600}
 

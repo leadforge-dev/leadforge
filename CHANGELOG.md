@@ -7,6 +7,26 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/).
 
 ## Unreleased
 
+### Moved — lead-scoring internals under `schemes/lead_scoring/` (breaking: internal import paths)
+
+Part of the peer-generation-schemes architecture (`docs/ltv/design.md` §2.5).
+The lead-scoring compute core was physically relocated under the new
+`leadforge.schemes.lead_scoring` package.  **The documented public API
+(`leadforge.api`, the CLI) is unchanged**, and generated bundles are
+byte-identical; only direct imports of these *internal* modules break (no
+back-compat shims, by design):
+
+| old import path | new import path |
+|---|---|
+| `leadforge.simulation.*` | `leadforge.schemes.lead_scoring.simulation.*` |
+| `leadforge.mechanisms.*` | `leadforge.schemes.lead_scoring.mechanisms.*` |
+| `leadforge.structure.*` | `leadforge.schemes.lead_scoring.structure.*` |
+
+`render/{snapshots,relational,tasks}` and the lead-scoring `schema` specs
+relocate in follow-up PRs.  Consumers importing internals (e.g. the
+`leadforge-datasets-private` build scripts) must update to the new paths;
+the package stays on the `1.x` line (the public contract did not change).
+
 ### CLI surfaces v4 fields
 
 - `leadforge inspect` now prints `Primary task`, `Label window`,

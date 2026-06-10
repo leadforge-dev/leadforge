@@ -1,6 +1,6 @@
-"""Tests for leadforge.structure.node_types."""
+"""Tests for leadforge.schemes.lead_scoring.structure.node_types."""
 
-from leadforge.structure.node_types import (
+from leadforge.schemes.lead_scoring.structure.node_types import (
     LEAF_ONLY,
     REQUIRES_PARENT,
     ROOT_ELIGIBLE,

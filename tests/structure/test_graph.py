@@ -1,16 +1,16 @@
-"""Tests for leadforge.structure.graph — WorldGraph validation and exports."""
+"""Tests for leadforge.schemes.lead_scoring.structure.graph — WorldGraph validation and exports."""
 
 import json
 
 import pytest
 
-from leadforge.structure.graph import (
+from leadforge.schemes.lead_scoring.structure.graph import (
     EdgeSpec,
     GraphValidationError,
     NodeSpec,
     WorldGraph,
 )
-from leadforge.structure.node_types import NodeType
+from leadforge.schemes.lead_scoring.structure.node_types import NodeType
 
 # ---------------------------------------------------------------------------
 # Helpers

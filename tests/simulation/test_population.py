@@ -1,4 +1,4 @@
-"""Tests for leadforge.simulation.population — build_population."""
+"""Tests for leadforge.schemes.lead_scoring.simulation.population — build_population."""
 
 from __future__ import annotations
 
@@ -10,13 +10,13 @@ from leadforge.core.ids import ID_PREFIXES, make_id
 from leadforge.core.models import GenerationConfig
 from leadforge.core.rng import RNGRoot
 from leadforge.narrative.spec import NarrativeSpec
-from leadforge.simulation.population import (
+from leadforge.schemes.lead_scoring.simulation.population import (
     _N_REPS,
     PopulationResult,
     _channel_weights,
     build_population,
 )
-from leadforge.structure.sampler import sample_hidden_graph
+from leadforge.schemes.lead_scoring.structure.sampler import sample_hidden_graph
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -509,7 +509,9 @@ def test_lead_source_boost_not_stacked_per_contact() -> None:
     """
     import copy
 
-    from leadforge.simulation.population import _apply_category_latent_correlations
+    from leadforge.schemes.lead_scoring.simulation.population import (
+        _apply_category_latent_correlations,
+    )
 
     # Use enough leads relative to contacts to guarantee shared contacts.
     config = GenerationConfig(seed=42, n_accounts=30, n_contacts=90, n_leads=200)

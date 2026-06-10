@@ -24,12 +24,12 @@ from leadforge.schema.entities import (
     TouchRow,
 )
 from leadforge.schema.features import LEAD_SNAPSHOT_FEATURES
-from leadforge.simulation.population import REVENUE_BAND_MIDPOINTS
+from leadforge.schemes.lead_scoring.simulation.population import REVENUE_BAND_MIDPOINTS
 
 if TYPE_CHECKING:
     from leadforge.core.models import DifficultyParams
-    from leadforge.simulation.engine import SimulationResult
-    from leadforge.simulation.population import PopulationResult
+    from leadforge.schemes.lead_scoring.simulation.engine import SimulationResult
+    from leadforge.schemes.lead_scoring.simulation.population import PopulationResult
 
 # Ordered column list and dtypes derived from the canonical feature spec.
 _SNAPSHOT_COLUMNS = [f.name for f in LEAD_SNAPSHOT_FEATURES]
@@ -76,9 +76,9 @@ def build_snapshot(
     horizon).
 
     Args:
-        result: Output of :func:`~leadforge.simulation.engine.simulate_world`.
+        result: Output of :func:`~leadforge.schemes.lead_scoring.simulation.engine.simulate_world`.
         population: Output of
-            :func:`~leadforge.simulation.population.build_population`.
+            :func:`~leadforge.schemes.lead_scoring.simulation.population.build_population`.
         horizon_days: Simulation horizon length.  Defaults to 90.
         snapshot_day: Optional windowed snapshot day.  When set, only events
             with timestamps ``<= lead_created_at + timedelta(days=snapshot_day)``
