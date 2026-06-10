@@ -159,11 +159,11 @@ leadforge/
   schema/         entities.py, relationships.py, events.py, features.py, tasks.py, dictionaries.py
   schemes/        base.py (GenerationScheme protocol + SCHEME_REGISTRY);
                   lead_scoring/ — the lead-scoring scheme: __init__.py (build_world/
-                  write_bundle) + simulation/, mechanisms/, structure/ (moved in
-                  LTV-Pf.1).  render/ + lead-scoring schema specs migrate here in
-                  LTV-Pf.2 / LTV-Pg.  See docs/ltv/design.md §2.5.
-  render/         relational.py (+ write_relational_tables), snapshots.py, manifests.py, tasks.py
-                  # lead-scoring render still here pending LTV-Pf.2
+                  write_bundle) + simulation/, mechanisms/, structure/, render/
+                  (moved in LTV-Pf.1/Pf.2).  Lead-scoring schema specs migrate
+                  here in LTV-Pg.  See docs/ltv/design.md §2.5.
+  render/         relational_io.py (write_relational_tables — shared writer), manifests.py
+                  # shared bundle-output envelope
   exposure/       modes.py, filters.py, redaction.py
   validation/     invariants.py, artifact_checks.py, realism.py, difficulty.py, drift.py
   recipes/        registry.py, b2b_saas_procurement_v1/{recipe,narrative,schema,motifs,difficulty_profiles}.yaml
@@ -248,14 +248,13 @@ leadforge/                    # Python package root
 │       ├── __init__.py       # build_world() + write_bundle()
 │       ├── structure/        # Hidden world graph (WorldGraph, motifs, sampler)
 │       ├── mechanisms/       # Node/edge behavior (policies, hazards, scores, …)
-│       └── simulation/       # World evolution (engine, population, state)
-│   # NOTE (LTV-M2 reorg in progress): render/{snapshots,relational,tasks}
-│   # relocate under schemes/lead_scoring/ in a follow-up; schema specs split
-│   # in LTV-Pg.  See docs/ltv/design.md §2.5 for the target layout.
-├── render/                   # Bundle output (envelope + not-yet-moved lead-scoring render)
-│   ├── snapshots.py          # build_snapshot() — ML-ready lead table
-│   ├── relational.py         # to_dataframes() — 9-table dict
-│   ├── tasks.py              # write_task_splits() — train/valid/test Parquet
+│       ├── simulation/       # World evolution (engine, population, state)
+│       └── render/           # Lead-scoring render: snapshots, relational
+│                             #   (to_dataframes), relational_snapshot_safe, tasks
+│   # NOTE (LTV-M2 reorg in progress): lead-scoring schema specs split in LTV-Pg.
+│   # See docs/ltv/design.md §2.5 for the target layout.
+├── render/                   # Shared bundle-output envelope
+│   ├── relational_io.py      # write_relational_tables() — shared table writer
 │   └── manifests.py          # build_manifest(), write_manifest()
 ├── exposure/                 # Truth filtering
 │   ├── modes.py              # apply_exposure() dispatch

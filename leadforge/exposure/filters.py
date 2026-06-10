@@ -31,7 +31,7 @@ class BundleFilter:
         relational_snapshot_safe: Whether the relational ``tables/`` dict
             must be projected onto the snapshot-safe shape before being
             written.  When ``True``, the bundle writer routes through
-            :func:`leadforge.render.relational_snapshot_safe.to_dataframes_snapshot_safe`,
+            :func:`leadforge.schemes.lead_scoring.render.relational_snapshot_safe.to_dataframes_snapshot_safe`,
             which strips :data:`leadforge.validation.leakage_probes.BANNED_LEAD_COLUMNS`
             from ``leads``, :data:`~leadforge.validation.leakage_probes.BANNED_OPP_COLUMNS`
             from ``opportunities``, filters event tables per-lead by

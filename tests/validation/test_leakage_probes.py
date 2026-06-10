@@ -15,7 +15,7 @@ Covers every probe family in the unified leakage taxonomy:
 For the structural probes each is exercised against two configurations:
 
 * a *clean* bundle, produced by running the same source frames through
-  :func:`leadforge.render.relational_snapshot_safe.to_dataframes_snapshot_safe`,
+  :func:`leadforge.schemes.lead_scoring.render.relational_snapshot_safe.to_dataframes_snapshot_safe`,
   on which every probe must produce zero findings;
 * a *tampered* bundle, in which one leakage channel at a time is
   re-introduced, on which the matching probe must fire with a finding
@@ -30,7 +30,9 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from leadforge.render.relational_snapshot_safe import to_dataframes_snapshot_safe
+from leadforge.schemes.lead_scoring.render.relational_snapshot_safe import (
+    to_dataframes_snapshot_safe,
+)
 from leadforge.validation import leakage_probes
 from leadforge.validation.leakage_probes import (
     CHANNEL_BANNED_COLUMN,

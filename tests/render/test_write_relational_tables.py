@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from leadforge.render.relational import write_relational_tables
+from leadforge.render.relational_io import write_relational_tables
 from leadforge.schema.tables import read_parquet
 
 

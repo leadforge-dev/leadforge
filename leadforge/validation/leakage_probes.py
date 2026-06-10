@@ -64,7 +64,7 @@ from leadforge.core.exceptions import LeadforgeError
 
 # ---------------------------------------------------------------------------
 # Snapshot-safe contract — single source of truth for "what is leakage".
-# ``leadforge.render.relational_snapshot_safe`` (writer) and
+# ``leadforge.schemes.lead_scoring.render.relational_snapshot_safe`` (writer) and
 # ``leadforge.render.manifests`` (manifest's structural_redactions) import
 # from here so the writer and the validator share one definition.
 # ---------------------------------------------------------------------------

@@ -5,7 +5,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from leadforge.render.relational_snapshot_safe import (
+from leadforge.schemes.lead_scoring.render.relational_snapshot_safe import (
     BANNED_LEAD_COLUMNS,
     BANNED_OPP_COLUMNS,
     BANNED_TABLES,

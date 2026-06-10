@@ -172,7 +172,7 @@ class TestSnapshotDistortions:
         import pandas as pd
 
         from leadforge.core.models import DifficultyParams
-        from leadforge.render.snapshots import (
+        from leadforge.schemes.lead_scoring.render.snapshots import (
             _FLOAT_DISTORTION_COLS,
             _apply_difficulty_distortions,
         )

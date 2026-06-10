@@ -10,14 +10,23 @@ import importlib
 
 import pytest
 
-# (old flat path, new scheme-owned path) for the modules moved in LTV-Pf.1.
+# (old flat path, new scheme-owned path) for modules moved in LTV-Pf.1 (compute
+# core) and LTV-Pf.2 (lead-scoring render).
 _MOVED = [
+    # LTV-Pf.1 — compute core
     ("leadforge.simulation.engine", "leadforge.schemes.lead_scoring.simulation.engine"),
     ("leadforge.simulation.population", "leadforge.schemes.lead_scoring.simulation.population"),
     ("leadforge.simulation.state", "leadforge.schemes.lead_scoring.simulation.state"),
     ("leadforge.mechanisms.policies", "leadforge.schemes.lead_scoring.mechanisms.policies"),
     ("leadforge.structure.sampler", "leadforge.schemes.lead_scoring.structure.sampler"),
     ("leadforge.structure.graph", "leadforge.schemes.lead_scoring.structure.graph"),
+    # LTV-Pf.2 — lead-scoring render
+    ("leadforge.render.snapshots", "leadforge.schemes.lead_scoring.render.snapshots"),
+    (
+        "leadforge.render.relational_snapshot_safe",
+        "leadforge.schemes.lead_scoring.render.relational_snapshot_safe",
+    ),
+    ("leadforge.render.tasks", "leadforge.schemes.lead_scoring.render.tasks"),
 ]
 
 
@@ -37,6 +46,28 @@ def test_old_path_is_gone(old: str, _new: str) -> None:
 def test_old_top_level_package_is_gone(pkg: str) -> None:
     with pytest.raises(ModuleNotFoundError):
         importlib.import_module(f"leadforge.{pkg}")
+
+
+def test_render_envelope_package_stays() -> None:
+    # LTV-Pf.2 moved the lead-scoring render modules, but `leadforge.render`
+    # remains the shared envelope: manifests + the relational-table writer
+    # (renamed to relational_io to avoid a basename clash with the scheme's
+    # relational.py assembler).
+    import leadforge.render.manifests  # noqa: F401
+    import leadforge.render.relational_io as shared_writer
+
+    assert hasattr(shared_writer, "write_relational_tables")
+
+
+def test_relational_split_to_dataframes_moved_to_scheme() -> None:
+    # The 9-table assembler moved to the scheme; the shared writer did not.
+    import leadforge.render.relational_io as shared_writer
+    from leadforge.schemes.lead_scoring.render.relational import to_dataframes  # noqa: F401
+
+    assert not hasattr(shared_writer, "to_dataframes")
+    # The ambiguous flat `leadforge.render.relational` module is gone.
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("leadforge.render.relational")
 
 
 def test_public_api_unchanged_by_the_move() -> None:

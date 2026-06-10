@@ -11,7 +11,7 @@ import pytest
 
 from leadforge.core.models import GenerationConfig
 from leadforge.core.rng import RNGRoot
-from leadforge.render.snapshots import build_snapshot
+from leadforge.schemes.lead_scoring.render.snapshots import build_snapshot
 from leadforge.schemes.lead_scoring.simulation.engine import simulate_world
 from leadforge.schemes.lead_scoring.simulation.population import build_population
 from leadforge.schemes.lead_scoring.structure.sampler import sample_hidden_graph
