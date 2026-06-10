@@ -42,7 +42,7 @@ protocol + registry, with the package physically reorganized into
 |-----------|------------|-----|------------|
 | `LTV-M0` | Planning + design lock | `LTV-Pa` | #102, #103 (+ scheme reframe) |
 | `LTV-M1` | Lifecycle schema foundation | `LTV-Pb`, `LTV-Pc` | #104 (Pb) |
-| `LTV-M2` | Generation-scheme architecture + physical reorg | `LTV-Pd`, `LTV-Pe`, `LTV-Pf`, `LTV-Pg` | #107 (Pd), #108 (Pe) |
+| `LTV-M2` | Generation-scheme architecture + physical reorg | `LTV-Pd`, `LTV-Pe`, `LTV-Pf`, `LTV-Pg` | #107 (Pd), #108 (Pe), #109 (Pf.1) |
 | `LTV-M3` | Customer population + lifecycle world | `LTV-Ph`, `LTV-Pi` | |
 | `LTV-M4` | Lifecycle simulation engine | `LTV-Pj`, `LTV-Pk` | |
 | `LTV-M5` | Customer snapshots + pLTV targets (both regimes) | `LTV-Pl`, `LTV-Pm` | |
@@ -124,7 +124,7 @@ Total: ~19 PRs across 9 milestones.
   each reviewable and byte-identical:
   - [x] **`LTV-Pf.1`** — compute core: `simulation/` + `mechanisms/` +
     `structure/` moved as whole directories (21 file renames, all callers
-    rewritten). Verified byte-identical; full suite green. (**PR #NNN**)
+    rewritten). Verified byte-identical; full suite green. (**PR #109**)
   - [ ] **`LTV-Pf.2`** — render: relocate `render/{snapshots,relational,tasks}`
     under the scheme, splitting `render/relational.py` so the shared
     `write_relational_tables` stays in the envelope while the 9-table
