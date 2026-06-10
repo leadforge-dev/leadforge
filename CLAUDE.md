@@ -357,6 +357,7 @@ The current focus is producing a v4 lead scoring intro dataset. See `docs/v4/` f
 ---
 
 ## Reference Docs
+- **LTV workstream (next, active planning): `docs/ltv/design.md` + `docs/ltv/roadmap.md`**
 - Design decisions: `docs/leadforge_design_doc.md`
 - Architecture/spec: `docs/leadforge_architecture_spec.md`
 - Implementation roadmap: `docs/leadforge_implementation_plan.md`
