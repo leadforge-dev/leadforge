@@ -50,19 +50,24 @@ def test_old_top_level_package_is_gone(pkg: str) -> None:
 
 def test_render_envelope_package_stays() -> None:
     # LTV-Pf.2 moved the lead-scoring render modules, but `leadforge.render`
-    # remains the shared envelope (manifests + the relational-table writer).
+    # remains the shared envelope: manifests + the relational-table writer
+    # (renamed to relational_io to avoid a basename clash with the scheme's
+    # relational.py assembler).
     import leadforge.render.manifests  # noqa: F401
-    import leadforge.render.relational as shared_relational
+    import leadforge.render.relational_io as shared_writer
 
-    assert hasattr(shared_relational, "write_relational_tables")
+    assert hasattr(shared_writer, "write_relational_tables")
 
 
 def test_relational_split_to_dataframes_moved_to_scheme() -> None:
     # The 9-table assembler moved to the scheme; the shared writer did not.
-    import leadforge.render.relational as shared_relational
+    import leadforge.render.relational_io as shared_writer
     from leadforge.schemes.lead_scoring.render.relational import to_dataframes  # noqa: F401
 
-    assert not hasattr(shared_relational, "to_dataframes")
+    assert not hasattr(shared_writer, "to_dataframes")
+    # The ambiguous flat `leadforge.render.relational` module is gone.
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("leadforge.render.relational")
 
 
 def test_public_api_unchanged_by_the_move() -> None:

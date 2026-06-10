@@ -162,7 +162,7 @@ class LeadScoringScheme:
         from leadforge.exposure.modes import apply_exposure
         from leadforge.narrative.dataset_card import render_dataset_card
         from leadforge.render.manifests import build_manifest, write_manifest
-        from leadforge.render.relational import write_relational_tables
+        from leadforge.render.relational_io import write_relational_tables
         from leadforge.schema.dictionaries import write_feature_dictionary
         from leadforge.schema.features import LEAD_SNAPSHOT_FEATURES, redacted_columns_for
         from leadforge.schema.tasks import task_manifest_for_config

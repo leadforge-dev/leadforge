@@ -162,7 +162,7 @@ leadforge/
                   write_bundle) + simulation/, mechanisms/, structure/, render/
                   (moved in LTV-Pf.1/Pf.2).  Lead-scoring schema specs migrate
                   here in LTV-Pg.  See docs/ltv/design.md §2.5.
-  render/         relational.py (write_relational_tables — shared writer), manifests.py
+  render/         relational_io.py (write_relational_tables — shared writer), manifests.py
                   # shared bundle-output envelope
   exposure/       modes.py, filters.py, redaction.py
   validation/     invariants.py, artifact_checks.py, realism.py, difficulty.py, drift.py
@@ -254,7 +254,7 @@ leadforge/                    # Python package root
 │   # NOTE (LTV-M2 reorg in progress): lead-scoring schema specs split in LTV-Pg.
 │   # See docs/ltv/design.md §2.5 for the target layout.
 ├── render/                   # Shared bundle-output envelope
-│   ├── relational.py         # write_relational_tables() — shared table writer
+│   ├── relational_io.py      # write_relational_tables() — shared table writer
 │   └── manifests.py          # build_manifest(), write_manifest()
 ├── exposure/                 # Truth filtering
 │   ├── modes.py              # apply_exposure() dispatch
