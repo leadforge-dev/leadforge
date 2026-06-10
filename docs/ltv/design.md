@@ -14,19 +14,36 @@ expansion, churn, and lifetime value.
 
 ## 1. Goal
 
-Add a customer-lifecycle dataset family to leadforge that picks up where the
-lead-scoring dataset leaves off. The lead-scoring recipe ends at `closed_won`;
-the LTV recipe begins there and simulates the subscription lifecycle.
+Add a **predictive-lifetime-value (pLTV) regression** dataset family to
+leadforge that picks up where the lead-scoring dataset leaves off. The
+lead-scoring recipe ends at `closed_won`; the LTV recipe begins there and
+simulates the subscription lifecycle, then asks the canonical pLTV question:
 
-**Teaching goals (analogous to lead scoring):**
+> **Given what we know about a customer at an observation point, how much
+> monetary value will they generate over the next N days?**
 
-- Predict churn / lifetime value for active customers from a point-in-time
-  snapshot.
-- Teach **survival analysis** (right-censoring discipline), **cohort
-  analysis**, and **expansion-revenue modelling**.
+This is a **regression** task, not classification. It follows the framing in
+Google's [`lifetime_value`](https://github.com/google/lifetime_value) (the
+ZILN paper, [arXiv:1912.07753](https://arxiv.org/abs/1912.07753)) and the
+commercial pLTV framing used by [Voyantis](https://www.voyantis.ai/):
+continuous future-value prediction, optimised for value-based decisions
+(acquisition, bidding, retention prioritisation), often under **early /
+cold-start** conditions where a customer's true value isn't yet clear.
+
+**Teaching goals:**
+
+- Predict continuous future value for customers from a point-in-time snapshot —
+  a target that is **zero-inflated and heavy-tailed** by construction.
+- Teach the **ZILN** decomposition (`P(value>0) × E[value | value>0]`) and why
+  MSE is the wrong loss for heavy-tailed value.
+- Teach pLTV evaluation: **discrimination** (Spearman / normalized Gini /
+  decile lift) and **calibration** (decile charts, total-predicted-vs-actual) —
+  not AUC.
+- Teach **early / cold-start prediction**: predict long-horizon value from a
+  short observation window.
 - Reproduce realistic confusions: leakage traps around future expansion
-  events, right-censoring of still-active customers, and time-window
-  discipline on health-signal features.
+  events, right-censoring of still-active customers, and time-window discipline
+  on health-signal features.
 
 This is a **new recipe on the existing framework**, not a fork. The CLI,
 bundle format, RNG system, exposure modes, manifest schema, and validation
@@ -38,51 +55,107 @@ lifecycle`.
 
 ## 2. Locked design decisions
 
-These five questions were resolved by the maintainer on 2026-06-10. They are
-load-bearing for everything below.
+### 2.1 First pass — 2026-06-10 (workstream shape)
 
 | # | Question | Decision |
 |---|----------|----------|
-| D1 | Primary task for the first shipped recipe | **`churn_within_180_days`** (binary). `ltv_bucket_6m` ships as a secondary task in the same bundle. |
-| D2 | Simulation time resolution | **Weekly steps** — gives granular health-signal trend curves for teaching trend features. Billing/renewal events resolve to the enclosing week. |
-| D3 | Independent vs chained generation | **Independent for v1.** The customer population is generated self-contained, not chained from a lead-scoring bundle. Optional chaining is designed-for-later but not built now. |
-| D4 | Observation cohort | **Staggered start dates, fixed observation date.** Customers are acquired across an acquisition window; all are observed at one absolute calendar date, so tenure-at-observation varies (cold-start customers vs mature customers). |
-| D5 | Bundle schema version | **Bump** `BUNDLE_SCHEMA_VERSION` (currently `5` → `6`). The table inventory and the customers/subscriptions semantics change substantially. |
+| D2 | Simulation time resolution | **Weekly steps** — granular health-signal trend curves. Billing/renewal events resolve to the enclosing week. |
+| D3 | Independent vs chained generation | **Independent for v1.** Customer population is self-contained, not chained from a lead-scoring bundle. Chaining is designed-for-later. |
+| D4 | Observation cohort | **Staggered start dates, fixed observation date.** Customers acquired across an acquisition window; all observed at one absolute calendar date, so tenure-at-observation varies. |
+| D5 | Bundle schema version | **Bump** `BUNDLE_SCHEMA_VERSION` 5 → 6. |
 
-### 2.1 Consequence of D4 — absolute observation anchor
+### 2.2 Second pass — 2026-06-10 (target reframe to pLTV regression)
 
-This is the most important framework divergence. The lead-scoring path filters
-events by a **per-entity relative** cutoff (`lead_created_at + snapshot_day`).
-With staggered starts + a single fixed observation date (D4), the lifecycle
-path filters by an **absolute calendar** cutoff (`observation_date`, the same
-for every customer).
+The original D1 ("primary task = `churn_within_180_days`") was a
+mis-framing — it pattern-matched onto the lead-scoring binary classifier
+instead of the actual pLTV literature. Corrected:
 
-Therefore the lifecycle path does **not** reuse `snapshot_day`. It introduces
-an `observation_date` concept derived deterministically from the world
-calendar (acquisition-window end) and recorded in the manifest. The customer
-snapshot builder is a **separate function** (`build_customer_snapshot`) so it
-can apply absolute-cutoff filtering without touching the lead-scoring
-`build_snapshot` path.
+| # | Question | Decision |
+|---|----------|----------|
+| D1 | Primary task type | **Continuous pLTV regression.** Target = future gross revenue over a forward window. ZILN-shaped (zero mass + lognormal tail). The LTV-bucket multiclass idea is dropped. |
+| D6 | Target horizon(s) | **Multiple windows: 90 / 365 / 730 days.** Three regression targets per customer. Zero-inflation and tail-heaviness grow with the window, giving a built-in difficulty gradient. |
+| D7 | Value basis | **Gross revenue** = sum of paid invoice amounts (`payment_status ∈ {paid, recovered}`) inside the window. Matches the MRR mechanics directly. |
+| D8 | Early/cold-start emphasis | **First-class early-pLTV task variant.** A tenure-anchored observation regime (observe each customer at a fixed short tenure, predict long-horizon value) ships alongside the calendar-anchored standard regime. |
+| D9 | Churn task | **Kept as a secondary/auxiliary task** (`churn_within_180_days`), exposing the ZILN zero-inflation indicator. Not the headline. |
 
-### 2.2 Consequence of D1 — right-censoring is a property, not a label problem
+### 2.3 Consequence of D4 — absolute observation anchor
 
-Because the primary task is `churn_within_180_days`, every customer gets a
-**definite** binary label as long as the simulation runs through
-`observation_date + 180 days` for all customers. A customer still active at
-`observation_date + 180d` is a clean negative, not a censored row.
+The lead-scoring path filters events by a **per-entity relative** cutoff
+(`lead_created_at + snapshot_day`). With staggered starts + a single fixed
+observation date (D4), the **calendar-anchored** lifecycle path filters by an
+**absolute calendar** cutoff (`observation_date`, the same for every customer),
+derived deterministically from the world calendar and recorded in the manifest.
 
-Right-censoring is still taught — but as a property of the **relational
-tables** and the **secondary LTV task**: a customer still active at the end of
-the simulation horizon is right-censored for *total* lifetime value. The
-notebooks teach censoring discipline on the relational data and on
-`ltv_bucket_6m`, while the headline binary task stays clean. This is a cleaner
-split than making censoring a label-derivation hazard.
+The **tenure-anchored** early-pLTV regime (D8) does the opposite — a per-customer
+relative cutoff at `customer_start + early_tenure_weeks` — which is structurally
+the same relative-window logic the lead-scoring snapshot already uses. So both
+window types have precedent in the codebase; the customer snapshot builder
+supports both via an explicit cutoff argument.
+
+### 2.4 Consequence of D6 — fully-simulated windows, clean targets
+
+Because every target window is **fully simulated** (the engine runs each
+customer through `observation_date + 730d` for the longest standard window, and
+through `customer_start + early_tenure + 730d` for the early variant), all three
+regression targets are **complete, not right-censored**. A customer who churns
+mid-window simply has low/zero forward revenue — that *is* the zero-inflation,
+not censoring.
+
+Right-censoring is still taught, but as a property of *total* lifetime value on
+the **relational tables** (a customer still active at sim-end has censored total
+LTV) and in the notebooks — never as a hazard in the headline fixed-window
+targets.
 
 ---
 
-## 3. Entities and tables
+## 3. The pLTV target (ZILN)
 
-### 3.1 New entity rows (in `leadforge/schema/entities.py`)
+For each customer and each window `W ∈ {90, 365, 730}` days:
+
+```
+ltv_revenue_{W}d = Σ amount_usd  for invoices with
+    payment_status ∈ {paid, recovered}
+    AND  cutoff < invoice_date <= cutoff + W days
+```
+
+where `cutoff` is the observation anchor (absolute `observation_date` for the
+standard regime; `customer_start + early_tenure_weeks` for the early-pLTV
+regime).
+
+**Distribution shape (the whole point):**
+
+- **Zero / near-zero mass** — customers who churn early in the window generate
+  little/no forward revenue. Mass grows with `W` (more time to churn) and with
+  difficulty tier (higher churn rate).
+- **Lognormal tail** — retained + expanding customers compound MRR; top
+  accounts dominate total value.
+
+This is exactly the ZILN setting: model `P(value>0)` and the lognormal `(μ, σ)`
+of the positive part. The dataset is built so a ZILN/two-part model beats a
+plain MSE regressor — a live lesson, not a claim.
+
+Why three windows: `90d` is near-deterministic (almost everyone pays ~3
+invoices, low zero mass) → an easy warm-up. `365d` introduces a renewal
+decision and meaningful zero mass. `730d` is strongly ZILN (heavy zero mass +
+compounded expansion tail) → the hard target. Students can watch a model's
+discrimination/calibration degrade as the horizon lengthens.
+
+### 3.1 Two observation regimes
+
+| regime | cutoff | tenure at cutoff | use case |
+|--------|--------|------------------|----------|
+| **calendar-anchored** (standard) | absolute `observation_date` | varies (cold→mature) | "score my current book of business" |
+| **tenure-anchored** (early-pLTV) | `customer_start + early_tenure_weeks` (e.g. 4w) | fixed & short | "predict new-customer value early" (Voyantis acquisition framing) |
+
+Both regimes are emitted from the **same simulated world** — two snapshot
+tables + two task families. The early-pLTV regime is the genuine cold-start
+hard case: only a few weeks of health signal exist at the cutoff.
+
+---
+
+## 4. Entities and tables
+
+### 4.1 New entity rows (in `leadforge/schema/entities.py`)
 
 **`SubscriptionEventRow`** — the lifecycle backbone; one row per state change.
 
@@ -109,22 +182,22 @@ split than making censoring a label-derivation hazard.
 | `support_tickets` | Int64 | tickets opened that week |
 | `nps_score` | Int64 \| null | quarterly survey; null most weeks |
 
-**`InvoiceRow`** — monthly billing; drives the payment-failure mechanism.
+**`InvoiceRow`** — monthly billing; drives payment failure **and the pLTV target**.
 
 | column | dtype | notes |
 |--------|-------|-------|
 | `invoice_id` | string | opaque ID |
 | `customer_id` | string | FK → customers |
 | `invoice_date` | string | ISO-8601 |
-| `amount_usd` | Int64 | |
+| `amount_usd` | Int64 | the unit of pLTV value (§3) |
 | `payment_status` | string | `paid` / `failed` / `recovered` / `written_off` |
 
-### 3.2 Extended existing entity rows
+### 4.2 Extended existing entity rows
 
 The current `CustomerRow` (4 fields) and `SubscriptionRow` (5 fields,
 `subscription_status` hardcoded `"active"`) are shells. The lifecycle recipe
-fills them out. **The lead-scoring recipe keeps the thin versions** — the new
-fields are nullable/optional so the procurement recipe's output is unchanged.
+fills them out with **nullable** fields so the procurement recipe's output is
+unchanged.
 
 `CustomerRow` gains: `initial_mrr`, `initial_plan`, `contract_term_months`,
 `csm_rep_id`.
@@ -132,130 +205,121 @@ fields are nullable/optional so the procurement recipe's output is unchanged.
 `SubscriptionRow` gains: `current_mrr`, `subscription_end_at`, `churn_at`,
 `churn_reason`, `renewal_count`, `expansion_count`.
 
-### 3.3 Public lifecycle table inventory
+### 4.3 Public lifecycle table inventory
 
 | table | public (`student_public`) | instructor (`research_instructor`) |
 |-------|---------------------------|-------------------------------------|
 | accounts | ✓ | ✓ |
 | customers | ✓ (terminal fields redacted) | ✓ full |
 | subscriptions | ✓ (terminal fields redacted) | ✓ full |
-| subscription_events | ✓ (filtered to `<= observation_date`) | ✓ full horizon |
-| health_signals | ✓ (filtered to `<= observation_date`) | ✓ full horizon |
-| invoices | ✓ (filtered to `<= observation_date`) | ✓ full horizon |
+| subscription_events | ✓ (filtered to `<= cutoff`) | ✓ full horizon |
+| health_signals | ✓ (filtered to `<= cutoff`) | ✓ full horizon |
+| invoices | ✓ (filtered to `<= cutoff`) | ✓ full horizon |
 
-Contacts/leads/touches/etc. from the lead-scoring world are **not** part of
-the LTV bundle (independent generation, D3).
+Contacts/leads/touches/etc. from the lead-scoring world are **not** part of the
+LTV bundle (independent generation, D3).
 
 ---
 
-## 4. Snapshot-safety contract (lifecycle)
+## 5. Snapshot-safety contract (lifecycle)
 
-Analogous to the lead-scoring hard constraint in `CLAUDE.md`, but anchored on
-the **absolute** `observation_date`:
+Analogous to the lead-scoring hard constraint in `CLAUDE.md`, anchored on the
+relevant `cutoff` (absolute `observation_date`, or per-customer tenure cutoff
+for the early regime):
 
 - Every timestamp column in public event tables
   (`subscription_events.event_timestamp`, `health_signals.period_start`,
-  `invoices.invoice_date`) must satisfy `<= observation_date`.
+  `invoices.invoice_date`) must satisfy `<= cutoff`.
 - No terminal/outcome fields in public `customers` / `subscriptions`:
-  `churn_at`, `churn_reason`, `subscription_end_at`, and the derived
-  `churned_within_180_days` label are banned from the public relational
-  tables.
-- `subscription_events` rows with `event_type == "churn"` after
-  `observation_date` are excluded from public bundles (they encode the label).
-- No flat snapshot feature may use events after `observation_date`, **except**
-  the deliberately-retained leakage trap (§6).
+  `churn_at`, `churn_reason`, `subscription_end_at`.
+- No pLTV target column (`ltv_revenue_*`) or the secondary churn label may
+  appear in the public relational tables — they are forward-window aggregates
+  by construction.
+- No flat snapshot feature may use events after `cutoff`, **except** the
+  deliberately-retained leakage trap (§7).
 
-This contract is enforced by lifecycle-specific leakage probes (see roadmap
-`LTV-M6`) and recorded in the manifest. `CLAUDE.md`'s hard-constraints section
-gains a lifecycle clause when the recipe wiring lands (`LTV-M5`).
+Enforced by lifecycle-specific leakage probes (roadmap `LTV-M6`) and recorded
+in the manifest. `CLAUDE.md`'s hard-constraints section gains a lifecycle
+clause when the recipe wiring lands (`LTV-M5`).
 
 ---
 
-## 5. Simulation mechanisms
+## 6. Simulation mechanisms
 
 Three new mechanism types, none of which exist today. All reuse the existing
 `LatentScore` + per-step Bernoulli pattern from
 `leadforge/mechanisms/hazards.py`.
 
 **Churn hazard (post-conversion).** Weekly probability driven by health
-signals + latent traits, structurally different from the flat pre-conversion
-`_DAILY_CHURN_RATE`:
+signals + latent traits:
 
 - Weibull-shaped over tenure: elevated in weeks 1–12 (onboarding instability),
   low in the steady middle.
-- **Renewal-date spike**: at each contract anniversary the churn hazard is
-  ~10× the background rate (discrete renewal decision).
+- **Renewal-date spike**: ~10× background at each contract anniversary.
 - Drivers: `latent_product_fit` (background), `latent_champion_strength`
-  (renewal-date), `feature_depth_score` (leading indicator),
-  unrecovered payment failures (financial trigger).
+  (renewal-date), `feature_depth_score` (leading indicator), unrecovered
+  payment failures (financial trigger).
 
 **Expansion propensity.** Weekly probability of a plan upgrade / seat add:
 
 - Drivers: `latent_adoption_velocity`, `feature_depth_score`, active-user
   growth, `employee_band` (expansion ceiling).
-- Expansion MRR delta: `randint(0.25·mrr, 1.0·mrr)`.
+- Expansion MRR delta: `randint(0.25·mrr, 1.0·mrr)`. This is the heavy-tail
+  generator for the pLTV target.
 
 **Payment failure.** Monthly billing event with a failure probability:
 
 - Driver: `latent_budget_stability`.
-- Dunning: 3 months of `failed` before escalation to `recovered` or
-  `written_off`; unrecovered → forced churn.
+- Dunning: 3 months `failed` before escalation to `recovered` / `written_off`;
+  unrecovered → forced churn. Failed/written-off invoices do **not** count
+  toward gross-revenue pLTV (D7).
 
-### 5.1 Lifecycle motif families (new)
-
-The 5 lead-scoring motifs describe *buying*; the LTV world needs *retention*
-motifs:
+### 6.1 Lifecycle motif families (new)
 
 | family | retention driver |
 |--------|------------------|
 | `product_led_retention` | `latent_product_fit` dominant; health signals strongly predictive |
 | `relationship_led_retention` | `latent_champion_strength` dominant; health weaker |
-| `expansion_led_growth` | low churn, high upsell; LTV variance from expansion |
+| `expansion_led_growth` | low churn, high upsell; pLTV variance from the expansion tail |
 | `payment_fragile` | financially-triggered churn; `latent_budget_stability` dominant |
 | `churner_dominated` | high background churn; strong early-warning signals (teaching tier) |
 
-### 5.2 New customer latent traits
+### 6.2 New customer latent traits
 
 `latent_product_fit`, `latent_adoption_velocity`, `latent_budget_stability`,
 `latent_champion_strength`, `latent_organizational_stability`. Sampled from the
-same clipped-Gaussian `_sample_latent` helper, with motif-family mean biases
+clipped-Gaussian `_sample_latent` helper, with motif-family mean biases
 mirroring `_MOTIF_LATENT_BIAS`.
 
 ---
 
-## 6. Leakage trap
+## 7. Leakage trap
 
 **Primary trap: `mrr_change_full_period` vs `mrr_change_at_snapshot`.**
 
-- `mrr_change_at_snapshot` = `current_mrr − initial_mrr` measured at
-  `observation_date`. **Valid.**
+- `mrr_change_at_snapshot` = `current_mrr − initial_mrr` at the cutoff. **Valid.**
 - `mrr_change_full_period` = MRR delta from start to **end of simulation**.
-  **Leaks** — future expansions (which correlate with high LTV / low churn)
-  inflate it. Retained in all modes (`leakage_risk=True,
+  **Leaks** — future expansions (which directly drive the pLTV target) inflate
+  it. Even more natural against a value target than it was against the
+  lead-scoring label. Retained in all modes (`leakage_risk=True,
   redact_in_modes=frozenset()`), documented in the feature dictionary and
-  release notes, exactly like `total_touches_all`.
-
-Why it's a good trap: both columns are "MRR delta", differing only by window;
-standalone AUC is moderate (looks useful, not obviously inflated); tree models
-extract more from it than LR (reproduces the NB03 lesson); removing it causes a
-measurable-but-not-catastrophic drop.
+  release notes.
 
 **Secondary trap (advanced tier): `last_health_signal_post_obs`** — a
-health-signal reading from *after* `observation_date`, named to look like a
-current-state feature. More subtle because the column name doesn't reveal the
-time shift.
+health-signal reading from *after* the cutoff, named to look like a
+current-state feature.
 
 A trap-invariant test (analogous to `test_windowed_bundle_trap.py`) asserts
 `mrr_change_full_period` diverges from `mrr_change_at_snapshot` for a
-non-trivial fraction of customers and never contradicts it in sign for
-expansion-only customers.
+non-trivial fraction of customers.
 
 ---
 
-## 7. Customer snapshot features (at `observation_date`)
+## 8. Customer snapshot features (at `cutoff`)
 
 Grouped like `LEAD_SNAPSHOT_FEATURES`. New constant
-`CUSTOMER_SNAPSHOT_FEATURES` in `leadforge/schema/features.py`.
+`CUSTOMER_SNAPSHOT_FEATURES` in `leadforge/schema/features.py`. The same
+feature set serves both observation regimes (only the cutoff differs).
 
 **Account** (from `AccountRow`): `industry`, `region`, `employee_band`,
 `estimated_revenue_band`.
@@ -265,7 +329,7 @@ Grouped like `LEAD_SNAPSHOT_FEATURES`. New constant
 `expansion_count`, `downgrade_count`, `contract_term_months`,
 `weeks_to_next_renewal`.
 
-**Health (aggregated over last 12 weeks before `observation_date`):**
+**Health (aggregated over last 12 weeks before `cutoff`):**
 `avg_active_users_l12w`, `active_user_trend_l12w` (slope),
 `avg_feature_depth_l12w`, `support_ticket_count_l12w`, `last_nps_score`
 (nullable).
@@ -275,51 +339,36 @@ Grouped like `LEAD_SNAPSHOT_FEATURES`. New constant
 
 **Leakage trap (all modes):** `mrr_change_full_period`.
 
-**Target (primary, `churn_within_180_days`):** `churned_within_180_days`
-(boolean) — True iff a `churn` event falls in
-`[observation_date, observation_date + 180d]`.
+**Targets:**
 
-**Target (secondary, `ltv_bucket_6m`):** quartile (`low`/`medium`/`high`/`top`)
-of revenue collected (paid invoices) in the 6 months after `observation_date`.
+| column | type | task |
+|--------|------|------|
+| `ltv_revenue_90d` | Float64 | primary regression (warm-up horizon) |
+| `ltv_revenue_365d` | Float64 | primary regression (standard horizon) |
+| `ltv_revenue_730d` | Float64 | primary regression (hard horizon) |
+| `churned_within_180d` | boolean | secondary / ZILN zero-inflation indicator |
 
----
-
-## 8. Framework changes inventory
-
-### New files
-
-| file | purpose |
-|------|---------|
-| `leadforge/simulation/lifecycle.py` | `simulate_lifecycle()` — weekly-step subscription simulator |
-| `leadforge/simulation/customer_population.py` | `build_customer_population()` — customer entities + latents + staggered starts |
-| `leadforge/render/customer_snapshots.py` | `build_customer_snapshot()` — per-customer row at absolute `observation_date` |
-| `leadforge/mechanisms/lifecycle_hazards.py` | churn hazard, expansion propensity, payment failure |
-| `leadforge/recipes/b2b_saas_ltv_v1/{recipe,narrative,difficulty_profiles}.yaml` | new recipe |
-
-### Modified files
-
-| file | change |
-|------|--------|
-| `leadforge/schema/entities.py` | add 3 rows; extend `CustomerRow`/`SubscriptionRow` |
-| `leadforge/schema/features.py` | add `CUSTOMER_SNAPSHOT_FEATURES` |
-| `leadforge/schema/tasks.py` | add `CHURN_WITHIN_180_DAYS`, `LTV_BUCKET_6M` |
-| `leadforge/schema/relationships.py` | FK constraints for new tables |
-| `leadforge/core/models.py` | add `n_customers: int \| None`; lifecycle config fields |
-| `leadforge/api/recipes.py` | parse `recipe_type` + `lifecycle:` section |
-| `leadforge/api/generator.py` | dispatch on `recipe.recipe_type` |
-| `leadforge/render/manifests.py` | record `observation_date`, bump schema version to 6 |
-| `leadforge/validation/*` | lifecycle leakage probes + realism bands |
-| `CLAUDE.md` | lifecycle snapshot-safety hard-constraint clause; reference docs |
-
-### Unchanged (reused as-is)
-
-CLI commands/flags, `WorldBundle`/`WorldSpec`, RNG architecture, exposure-mode
-dispatch, `manifest.json` envelope (additive), determinism/monotonicity
-invariants.
+For the **early-pLTV** task family the same target columns are recomputed off
+the tenure-anchored cutoff and exported under a separate task directory.
 
 ---
 
-## 9. Difficulty profiles
+## 9. Evaluation & difficulty
+
+### 9.1 pLTV metrics (not AUC)
+
+Regression + ranking + calibration, following the ZILN paper:
+
+- **Discrimination:** Spearman rank correlation; **normalized Gini** (a.k.a.
+  the value-weighted lift / Lorenz curve); decile lift.
+- **Calibration:** decile chart (predicted vs actual mean per decile);
+  total-predicted-vs-total-actual ratio.
+- **Value capture:** top-K / top-decile share of realised value captured (reuses
+  the lead-scoring `expected_acv`-capture machinery in `release_quality.py`).
+- **Point error (reported, not optimised):** MAE / RMSE on `log1p(value)` —
+  raw-scale MSE is shown as the *anti-pattern*.
+
+### 9.2 Difficulty profiles
 
 | dimension | intro | intermediate | advanced |
 |-----------|-------|--------------|----------|
@@ -328,24 +377,62 @@ invariants.
 | `missing_rate` | 0.02 | 0.08 | 0.18 |
 | `annual_churn_rate_range` | [0.10, 0.20] | [0.20, 0.35] | [0.30, 0.50] |
 | `expansion_rate_range` | [0.15, 0.30] | [0.10, 0.20] | [0.05, 0.15] |
-| `still_active_fraction` (≈ right-censored for total LTV) | ~0.40 | ~0.60 | ~0.75 |
+| `still_active_fraction` (≈ censored total LTV) | ~0.40 | ~0.60 | ~0.75 |
 | secondary trap `last_health_signal_post_obs` | off | off | on |
 
-Primary task is `churn_within_180_days` on all three tiers; difficulty is a
-prevalence + noise + calibration axis (matching the v1 reframe — *not* a flat
-AUC-vs-tier promise).
+Two orthogonal difficulty axes: the **tier** (signal/noise/prevalence) and the
+**horizon** (90 < 365 < 730 → growing zero-mass + tail). Per-tier calibration
+bands are fit on the regression metrics, not AUC.
 
 ---
 
-## 10. Open items deferred past planning
+## 10. Framework changes inventory
 
-- **Chained generation** (D3 later): an interface to seed the customer
-  population from a lead-scoring bundle's converted leads. Designed-for but not
-  built; the customer-population builder will keep its acquisition logic behind
-  a seam so a "from converted leads" source can be slotted in.
-- **Continuous-time engine**: weekly steps are sufficient for v1; not coupled
-  to this dataset.
-- **LTV regression label** (vs bucket): bucket is the secondary v1 task; a
-  continuous LTV regression target is a later addition.
+### New files
+
+| file | purpose |
+|------|---------|
+| `leadforge/simulation/lifecycle.py` | `simulate_lifecycle()` — weekly-step subscription simulator |
+| `leadforge/simulation/customer_population.py` | `build_customer_population()` — customer entities + latents + staggered starts |
+| `leadforge/render/customer_snapshots.py` | `build_customer_snapshot(cutoff=…)` — per-customer row at a cutoff; serves both regimes |
+| `leadforge/mechanisms/lifecycle_hazards.py` | churn hazard, expansion propensity, payment failure |
+| `leadforge/recipes/b2b_saas_ltv_v1/{recipe,narrative,difficulty_profiles}.yaml` | new recipe |
+
+### Modified files
+
+| file | change |
+|------|--------|
+| `leadforge/schema/entities.py` | add 3 rows; extend `CustomerRow`/`SubscriptionRow` |
+| `leadforge/schema/features.py` | add `CUSTOMER_SNAPSHOT_FEATURES` (3 regression targets + secondary churn) |
+| `leadforge/schema/tasks.py` | add `LTV_REVENUE_{90,365,730}D` regression task specs + `CHURN_WITHIN_180D` |
+| `leadforge/schema/relationships.py` | FK constraints for new tables |
+| `leadforge/core/models.py` | add `n_customers`; lifecycle config (windows, early-tenure, observation anchor) |
+| `leadforge/api/recipes.py` | parse `recipe_type` + `lifecycle:` section |
+| `leadforge/api/generator.py` | dispatch on `recipe.recipe_type` |
+| `leadforge/render/manifests.py` | record `observation_date` + windows; bump schema version to 6 |
+| `leadforge/render/tasks.py` | regression task splits (continuous target) + early-pLTV task dir |
+| `leadforge/validation/*` | lifecycle leakage probes + **regression** realism/metric bands |
+| `CLAUDE.md` | lifecycle snapshot-safety hard-constraint clause; reference docs |
+
+### Unchanged (reused as-is)
+
+CLI commands/flags surface, `WorldBundle`/`WorldSpec`, RNG architecture,
+exposure-mode dispatch, `manifest.json` envelope (additive),
+determinism/monotonicity invariants. The task-split writer needs a continuous
+target path (today it assumes a classification label).
+
+---
+
+## 11. Open items deferred past planning
+
+- **Chained generation** (D3 later): seed the customer population from a
+  lead-scoring bundle's converted leads. The population builder keeps a seam
+  for a "from converted leads" source.
+- **Continuous-time engine**: weekly steps suffice for v1.
+- **Explicit ZILN baseline model** shipped in the package: notebooks
+  demonstrate ZILN; a first-class `leadforge`-side ZILN baseline is a later
+  addition.
+- **Contribution-margin value basis** (vs gross revenue, D7): would add a cost
+  model; deferred.
 - **CLAUDE.md hard-constraint edit**: the lifecycle snapshot-safety clause is
-  added when `LTV-M5` wiring lands, not in the planning PR.
+  added when `LTV-M5` wiring lands, not in a planning PR.
