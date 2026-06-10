@@ -106,6 +106,106 @@ the **relational tables** (a customer still active at sim-end has censored total
 LTV) and in the notebooks — never as a hazard in the headline fixed-window
 targets.
 
+### 2.5 Third pass — 2026-06-10 (peer generation schemes)
+
+The framing shifted from "lead-scoring is the framework; LTV is a recipe behind
+a dispatch hook" to: **leadforge hosts two parallel, peer generation schemes.**
+When LTV ships, the package is a platform with ≥2 first-class generation
+pipelines, not one generator with a bolt-on.
+
+| # | Question | Decision |
+|---|----------|----------|
+| D10 | When to extract the scheme abstraction | **Early, against the known-good lead-scoring path.** A dedicated step defines the `GenerationScheme` protocol + registry and wraps the existing pipeline as `LeadScoringScheme` (output byte-identical, guarded by hash-determinism) before lifecycle plugs in. |
+| D11 | Physical package layout | **Reorganize now** into `leadforge/schemes/{lead_scoring,lifecycle}/`. The shared envelope stays at the top level; each scheme owns its pipeline internals. |
+
+#### Hierarchy: scheme → recipe → bundle
+
+- **Scheme** — a generation *pipeline shape*. `lead_scoring`: population → 90-day
+  daily sim → lead snapshot → 9-table relational. `lifecycle`: customer
+  population → weekly sim → customer snapshot (2 regimes) → 6-table relational.
+- **Recipe** — a vertical instantiation of a scheme. `b2b_saas_procurement_v1`
+  runs `lead_scoring`; `b2b_saas_ltv_v1` runs `lifecycle`. A scheme may host
+  many verticals later.
+- **Bundle** — declares the scheme that produced it (`manifest.generation_scheme`).
+
+The recipe YAML declares `scheme:` (this supersedes the earlier `recipe_type:`
+name). `Generator.generate()` looks the scheme up in a registry and runs its
+pipeline; it no longer contains scheme-specific branching.
+
+#### `GenerationScheme` protocol (shape)
+
+Each scheme is a registered object exposing its pipeline + registries:
+
+```
+class GenerationScheme(Protocol):
+    name: str                       # "lead_scoring" | "lifecycle"
+    row_types: tuple[...]           # entity registry (was ALL_ROW_TYPES / LIFECYCLE_ROW_TYPES)
+    constraints: tuple[...]         # FK set
+    feature_specs / task_specs      # snapshot features + task definitions
+    def build_population(config, narrative, world_graph, ...) -> PopulationLike
+    def simulate(config, population, world_graph, ...) -> SimResultLike
+    def to_dataframes(result, population) -> dict[str, DataFrame]
+    def build_task_tables(...) -> dict[task_name, DataFrame]   # snapshots + splits
+    # plus: exposure filters, leakage probes, realism/metric bands
+```
+
+#### Shared envelope vs scheme-specific
+
+| Shared (top level, scheme-agnostic) | Per-scheme (under `schemes/<name>/`) |
+|---|---|
+| `core/` (rng, ids, models, enums, hashing, serialization) | population / simulation engine / state |
+| `api/` (Generator dispatch, recipe resolution, bundle orchestrator) | mechanisms + structure (motifs) |
+| `render/` envelope (manifest, bundle writer, graph export) | snapshot + relational + task-split builders |
+| `exposure/` mode dispatch | entity rows, feature specs, task specs, FK set |
+| `validation/` probe framework + taxonomy | leakage probes + realism/metric bands |
+| `cli/`, `narrative/` base | scheme-specific narrative bits, dataset-card prose |
+| `schema/` primitives (`FeatureSpec`, `FKConstraint`, `validate_fk`, parquet IO, dictionaries) | — |
+
+Spots that **silently assume lead-scoring today** and must become scheme-
+parameterized: `render/relational.py`'s hardcoded 9-table `_TABLE_SOURCES`,
+`build_snapshot`'s lead orientation, lead-keyed validation probes, and
+`inspect`'s output.
+
+#### Target package layout
+
+```
+leadforge/
+  core/  api/  narrative/  exposure/  cli/        # shared envelope
+  render/        # shared envelope: manifests, bundle writer, graph_export
+  validation/    # shared probe framework + per-scheme bands
+  schema/        # shared primitives only (FeatureSpec, FKConstraint, tables IO)
+  schemes/
+    base.py                  # GenerationScheme protocol + SCHEME_REGISTRY
+    lead_scoring/            # the existing pipeline, wrapped (output byte-identical)
+      population.py  engine.py  state.py
+      mechanisms/  structure/
+      entities.py  features.py  tasks.py
+      snapshots.py  relational.py  tasks_render.py
+    lifecycle/               # the new pLTV pipeline
+      population.py  engine.py
+      mechanisms.py
+      entities.py  features.py  tasks.py
+      snapshots.py  relational.py  tasks_render.py
+  recipes/
+    b2b_saas_procurement_v1/   # scheme: lead_scoring
+    b2b_saas_ltv_v1/           # scheme: lifecycle
+```
+
+**Safety rails for the reorg** (published 1.x package): the public API
+(`leadforge.api.*`, `leadforge.__version__`, CLI commands) stays stable;
+internal module moves keep back-compat shims where the sibling
+`leadforge-datasets-private` scripts or this repo's `scripts/` import internal
+paths; every step keeps `verify_hash_determinism` and the full suite green so
+the published lead-scoring bundles remain byte-identical.
+
+#### Effect on the already-merged LTV-Pb (#104)
+
+Aligned, not invalidated. #104 deliberately used a *separate*
+`LIFECYCLE_ROW_TYPES` registry instead of polluting `ALL_ROW_TYPES` — exactly
+the per-scheme-registry model. The reorg relocates those rows from
+`schema/entities.py` into `schemes/lifecycle/entities.py` (and the lead-scoring
+rows into `schemes/lead_scoring/entities.py`); no contract changes.
+
 ---
 
 ## 3. The pLTV target (ZILN)
@@ -404,15 +504,22 @@ bands are fit on the regression metrics, not AUC.
 
 ## 10. Framework changes inventory
 
-### New files
+> **Note (peer-schemes reorg, §2.5):** the lifecycle modules below live under
+> `leadforge/schemes/lifecycle/`, not the flat `simulation/`/`render/`/
+> `mechanisms/` paths. The flat paths in this table are the *logical* roles;
+> the physical home is the scheme package. `LTV-M2` performs the reorg (moving
+> the existing lead-scoring pipeline into `schemes/lead_scoring/` too).
+
+### New files (logical role → lives under `schemes/lifecycle/`)
 
 | file | purpose |
 |------|---------|
-| `leadforge/simulation/lifecycle.py` | `simulate_lifecycle()` — weekly-step subscription simulator |
-| `leadforge/simulation/customer_population.py` | `build_customer_population()` — customer entities + latents + staggered starts |
-| `leadforge/render/customer_snapshots.py` | `build_customer_snapshot(cutoff=…)` — per-customer row at a cutoff; serves both regimes |
-| `leadforge/mechanisms/lifecycle_hazards.py` | churn hazard, expansion propensity, payment failure |
-| `leadforge/recipes/b2b_saas_ltv_v1/{recipe,narrative,difficulty_profiles}.yaml` | new recipe |
+| `schemes/lifecycle/engine.py` | `simulate_lifecycle()` — weekly-step subscription simulator |
+| `schemes/lifecycle/population.py` | `build_customer_population()` — customer entities + latents + staggered starts |
+| `schemes/lifecycle/snapshots.py` | `build_customer_snapshot(cutoff=…)` — per-customer row at a cutoff; serves both regimes |
+| `schemes/lifecycle/mechanisms.py` | churn hazard, expansion propensity, payment failure |
+| `schemes/base.py` | `GenerationScheme` protocol + `SCHEME_REGISTRY` (shared) |
+| `leadforge/recipes/b2b_saas_ltv_v1/{recipe,narrative,difficulty_profiles}.yaml` | new recipe (`scheme: lifecycle`) |
 
 ### Modified files
 
