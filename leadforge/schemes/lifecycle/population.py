@@ -20,10 +20,12 @@ within that window, so tenure-at-observation naturally varies from near-zero
 RNG substreams
 --------------
 All randomness derives from two named :class:`~leadforge.core.rng.RNGRoot`
-substreams so population and latent draws are independently stable:
+substreams.  Each substream handles both entity creation and latent draws for
+its entity type, so the two generation steps are independently stable — changes
+to account generation do not affect customer IDs or latents, and vice versa:
 
-- ``lifecycle_population_accounts`` — account entity generation.
-- ``lifecycle_population_customers`` — customer entity + latent generation.
+- ``lifecycle_population_accounts`` — account entity rows **and** account latents.
+- ``lifecycle_population_customers`` — customer entity rows **and** customer latents.
 """
 
 from __future__ import annotations
@@ -187,10 +189,12 @@ def build_customer_population(
             account, reflecting enterprise B2B upsell / multi-product.
         observation_date: ISO-8601 date at which the snapshot and labels are
             anchored (the "as-of" date for the pLTV model).  Defaults to
-            ``_WORLD_BASE_DATE + 1 year``.
+            ``_WORLD_BASE_DATE + (acquisition_window_weeks +
+            _OBS_DATE_BUFFER_WEEKS) weeks`` — with the built-in defaults that
+            is 56 weeks (≈ 13 months) after the world base date.
         acquisition_window_weeks: Width of the customer acquisition window
-            (weeks before ``observation_date``).  Customer start dates are
-            sampled uniformly within this window, producing the tenure
+            (weeks before ``observation_date``).  Must be ≥ 1.  Customer start
+            dates are sampled uniformly within this window, producing the tenure
             variation needed for a realistic cold-start subpopulation.
 
     Returns:
@@ -198,8 +202,24 @@ def build_customer_population(
         customer list, and latent state.
 
     Raises:
-        ValueError: if ``motif_family`` is not one of the registered families.
+        ValueError: if ``motif_family`` is not one of the registered families,
+            or if ``n_customers``, ``n_accounts`` (when provided), or
+            ``acquisition_window_weeks`` are not positive integers.
     """
+    if not isinstance(n_customers, int) or isinstance(n_customers, bool) or n_customers < 1:
+        raise ValueError(f"n_customers must be a positive int, got {n_customers!r}")
+    if n_accounts is not None and (
+        not isinstance(n_accounts, int) or isinstance(n_accounts, bool) or n_accounts < 1
+    ):
+        raise ValueError(f"n_accounts must be a positive int or None, got {n_accounts!r}")
+    if (
+        not isinstance(acquisition_window_weeks, int)
+        or isinstance(acquisition_window_weeks, bool)
+        or acquisition_window_weeks < 1
+    ):
+        raise ValueError(
+            f"acquisition_window_weeks must be a positive int, got {acquisition_window_weeks!r}"
+        )
     if motif_family not in _MOTIF_LATENT_BIAS:
         raise ValueError(
             f"Unknown lifecycle motif family {motif_family!r}. "

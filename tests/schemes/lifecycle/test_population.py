@@ -265,6 +265,33 @@ def test_unknown_motif_family_raises() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Input validation (COPILOT-3)
+# ---------------------------------------------------------------------------
+
+
+def test_zero_n_customers_raises() -> None:
+    with pytest.raises(ValueError, match="n_customers"):
+        build_customer_population(0, _SEED)
+
+
+def test_negative_n_customers_raises() -> None:
+    with pytest.raises(ValueError, match="n_customers"):
+        build_customer_population(-1, _SEED)
+
+
+def test_zero_n_accounts_explicit_raises() -> None:
+    with pytest.raises(ValueError, match="n_accounts"):
+        build_customer_population(10, _SEED, n_accounts=0)
+
+
+def test_zero_acquisition_window_raises() -> None:
+    # acquisition_window_weeks=0 would make every start == obs_date,
+    # violating the < obs_date boundary invariant.
+    with pytest.raises(ValueError, match="acquisition_window_weeks"):
+        build_customer_population(10, _SEED, acquisition_window_weeks=0)
+
+
+# ---------------------------------------------------------------------------
 # Entity field values
 # ---------------------------------------------------------------------------
 
