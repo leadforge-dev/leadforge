@@ -68,8 +68,11 @@ class CustomerPopulationResult:
 # Internal constants
 # ---------------------------------------------------------------------------
 
-# Shared with the lead-scoring account generator so account firmographics are
-# drawn from the same distribution (accounts are the same entity in both worlds).
+# Mirrors the lead-scoring account firmographic distribution (accounts are the
+# same entity in both worlds).  The code is intentionally parallel rather than
+# shared — the lifecycle simulation path is distinct and a cross-scheme import
+# would create an awkward dependency.  Latent trait *names* differ: the lifecycle
+# account generator emits lifecycle-specific keys, not lead-scoring keys.
 _EMPLOYEE_BANDS = ("200-499", "500-999", "1000-1999", "2000+")
 _EMPLOYEE_BAND_WEIGHTS = (0.35, 0.35, 0.20, 0.10)
 
@@ -119,6 +122,11 @@ _WORLD_BASE_DATE = date(2024, 1, 1)
 # Default acquisition window in weeks before the observation date.
 _DEFAULT_ACQUISITION_WINDOW_WEEKS = 52
 
+# Extra buffer weeks between the end of the acquisition window and the
+# observation date.  Gives the earliest-acquired customers a small amount of
+# subscription history before the snapshot, avoiding a hard edge at day 0.
+_OBS_DATE_BUFFER_WEEKS = 4
+
 # Motif-family-specific additive bias on the 0.50 latent mean.
 # Five retention motif families (see docs/ltv/design.md §6.1).
 _MOTIF_LATENT_BIAS: dict[str, dict[str, float]] = {
@@ -155,8 +163,8 @@ LIFECYCLE_MOTIF_FAMILIES: tuple[str, ...] = tuple(_MOTIF_LATENT_BIAS.keys())
 def build_customer_population(
     n_customers: int,
     seed: int,
-    motif_family: str = "product_led_retention",
     *,
+    motif_family: str = "product_led_retention",
     n_accounts: int | None = None,
     observation_date: str | None = None,
     acquisition_window_weeks: int = _DEFAULT_ACQUISITION_WINDOW_WEEKS,
@@ -203,7 +211,9 @@ def build_customer_population(
 
     obs_date: date
     if observation_date is None:
-        obs_date = _WORLD_BASE_DATE + timedelta(weeks=acquisition_window_weeks + 4)
+        obs_date = _WORLD_BASE_DATE + timedelta(
+            weeks=acquisition_window_weeks + _OBS_DATE_BUFFER_WEEKS
+        )
     else:
         obs_date = date.fromisoformat(observation_date)
 
@@ -248,7 +258,15 @@ def _generate_accounts(
     bias: dict[str, float],
     rng: random.Random,
 ) -> tuple[list[AccountRow], dict[str, dict[str, float]]]:
-    """Generate *n* account entities with latent traits."""
+    """Generate *n* account entities with lifecycle-relevant latent traits.
+
+    Account firmographics mirror the lead-scoring distribution (same ICP
+    industries, employee bands, etc.) for future cohort-linking coherence.
+    The latent trait names are lifecycle-specific — the simulation engine
+    queries ``latent_budget_stability`` and ``latent_organizational_stability``
+    at the account level; lead-scoring names (``latent_account_fit``,
+    ``latent_budget_readiness``) are not emitted here.
+    """
     rows: list[AccountRow] = []
     latents: dict[str, dict[str, float]] = {}
 
@@ -276,13 +294,20 @@ def _generate_accounts(
                 created_at=created_at,
             )
         )
+        # Account-level lifecycle latents.  latent_budget_stability is correlated
+        # with revenue band (larger revenue → more stable budgets on average) but
+        # the motif-family bias can shift the distribution for the whole world.
+        # latent_process_maturity seeds organisational-stability — higher process
+        # maturity → more stable accounts.
         latents[acct_id] = {
-            "latent_account_fit": _sample_latent(rng, 0.50 + bias.get("latent_account_fit", 0.0)),
-            "latent_budget_readiness": _sample_latent(
-                rng, 0.50 + bias.get("latent_budget_readiness", 0.0)
+            "latent_budget_stability": _sample_latent(
+                rng, 0.50 + bias.get("latent_budget_stability", 0.0)
             ),
-            "latent_process_maturity": _sample_latent(
-                rng, _PROCESS_MATURITY_MEANS[maturity_band], std=0.15
+            "latent_organizational_stability": _sample_latent(
+                rng,
+                _PROCESS_MATURITY_MEANS[maturity_band]
+                + bias.get("latent_organizational_stability", 0.0),
+                std=0.15,
             ),
         }
 
@@ -310,7 +335,7 @@ def _generate_customers(
     future chained generation from a lead-scoring bundle.
     """
     acq_span_days = (obs_date - acq_start).days
-    csm_ids = [make_id("rep", i) for i in range(1, _N_CSMS + 1)]
+    csm_ids = [make_id(ID_PREFIXES["rep"], i) for i in range(1, _N_CSMS + 1)]
 
     rows: list[CustomerLifecycleRow] = []
     latents: dict[str, dict[str, float]] = {}

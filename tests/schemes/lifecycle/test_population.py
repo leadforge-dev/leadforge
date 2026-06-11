@@ -191,6 +191,37 @@ def test_account_latents_in_unit_interval() -> None:
             assert 0.0 <= val <= 1.0, f"account {acct_id} trait {trait}={val} outside [0,1]"
 
 
+def test_account_latents_use_lifecycle_not_lead_scoring_keys() -> None:
+    # Regression: account latents must use lifecycle trait names (queried by the
+    # lifecycle simulation engine), NOT lead-scoring names (latent_account_fit,
+    # latent_budget_readiness, latent_process_maturity) which the engine never reads.
+    expected = {"latent_budget_stability", "latent_organizational_stability"}
+    lead_scoring_names = {
+        "latent_account_fit",
+        "latent_budget_readiness",
+        "latent_process_maturity",
+    }
+    result = build_customer_population(_N_CUSTOMERS, _SEED)
+    for acct_id, traits in result.latent_state.account_latents.items():
+        assert set(traits.keys()) == expected, (
+            f"account {acct_id} has wrong latent keys: {set(traits.keys())}"
+        )
+        assert not (set(traits.keys()) & lead_scoring_names), (
+            f"account {acct_id} contains lead-scoring trait names: "
+            f"{set(traits.keys()) & lead_scoring_names}"
+        )
+
+
+def test_motif_family_must_be_keyword_only() -> None:
+    import inspect
+
+    sig = inspect.signature(build_customer_population)
+    p = sig.parameters["motif_family"]
+    assert p.kind == inspect.Parameter.KEYWORD_ONLY, (
+        "motif_family must be keyword-only to prevent silent positional misuse"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Motif families
 # ---------------------------------------------------------------------------
