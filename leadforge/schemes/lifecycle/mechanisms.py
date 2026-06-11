@@ -39,11 +39,22 @@ is consistent with the population biases sampled in
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any
 
 # ---------------------------------------------------------------------------
 # Mechanism assignment dataclasses
 # ---------------------------------------------------------------------------
+
+
+__all__ = [
+    "ChurnHazardParams",
+    "ExpansionPropensityParams",
+    "LifecycleMechanismAssignment",
+    "PaymentFailureParams",
+    "assign_lifecycle_mechanisms",
+    "mechanism_params_for_motif",
+]
 
 
 @dataclass(frozen=True)
@@ -53,20 +64,19 @@ class ChurnHazardParams:
     Attributes:
         base_weekly_rate: Unconditional weekly churn probability before
             latent-score modulation.
-        latent_weights: ``{trait: weight}`` — positive weights increase churn,
-            negative weights decrease it.  Applied as a sigmoid-adjusted scalar
-            on top of ``base_weekly_rate``.
+        latent_weights: Read-only ``{trait: weight}`` mapping — positive weights
+            increase churn, negative decrease it.  Wrapped in ``MappingProxyType``
+            so the simulation engine cannot accidentally mutate the shared table.
         renewal_hazard_multiplier: Factor by which the hazard is amplified at a
             contract-anniversary week (e.g. ``10.0`` → 10× background).
         renewal_latent_weights: Trait weights used *only* at the renewal spike to
-            model the champion fighting-for-renewal effect (typically only
-            ``latent_champion_strength``).
+            model the champion fighting-for-renewal effect.  Also read-only.
     """
 
     base_weekly_rate: float
-    latent_weights: dict[str, float]
+    latent_weights: MappingProxyType  # type: ignore[type-arg]
     renewal_hazard_multiplier: float
-    renewal_latent_weights: dict[str, float]
+    renewal_latent_weights: MappingProxyType  # type: ignore[type-arg]
 
 
 @dataclass(frozen=True)
@@ -75,13 +85,13 @@ class ExpansionPropensityParams:
 
     Attributes:
         base_weekly_rate: Unconditional weekly probability of an expansion event.
-        latent_weights: Trait weights that scale the base rate.
+        latent_weights: Read-only trait-weight mapping.
         expansion_mrr_frac_range: ``(lo, hi)`` — expansion MRR delta drawn
             uniformly from ``[lo * current_mrr, hi * current_mrr]``.
     """
 
     base_weekly_rate: float
-    latent_weights: dict[str, float]
+    latent_weights: MappingProxyType  # type: ignore[type-arg]
     expansion_mrr_frac_range: tuple[float, float]
 
 
@@ -91,8 +101,8 @@ class PaymentFailureParams:
 
     Attributes:
         base_monthly_rate: Unconditional monthly probability of a payment failure.
-        latent_weights: Trait weights (negative ``latent_budget_stability``
-            increases failure probability).
+        latent_weights: Read-only trait-weight mapping (negative
+            ``latent_budget_stability`` increases failure probability).
         dunning_weeks: Weeks before a failed invoice is escalated — either
             recovered (``payment_recovered``) or written off and triggers churn.
         recovery_rate: Probability a failed invoice is recovered within the
@@ -100,7 +110,7 @@ class PaymentFailureParams:
     """
 
     base_monthly_rate: float
-    latent_weights: dict[str, float]
+    latent_weights: MappingProxyType  # type: ignore[type-arg]
     dunning_weeks: int
     recovery_rate: float
 
@@ -129,11 +139,12 @@ class LifecycleMechanismAssignment:
 # These base rates target the intermediate tier; difficulty scaling is applied
 # by the engine on top of them.
 _CHURN_BASE_WEEKLY: dict[str, float] = {
-    "product_led_retention": 0.0042,  # ~20% annual
-    "relationship_led_retention": 0.0055,  # ~25% annual
-    "expansion_led_growth": 0.0028,  # ~14% annual (lowest — high-fit customers)
-    "payment_fragile": 0.0060,  # ~27% annual (high base; mostly payment-driven)
-    "churner_dominated": 0.0090,  # ~38% annual
+    # Exact annual equivalent: 1 - (1-r)^52.
+    "product_led_retention": 0.0042,  # 19.7% annual
+    "relationship_led_retention": 0.0055,  # 24.9% annual
+    "expansion_led_growth": 0.0028,  # 13.6% annual (lowest — high-fit customers)
+    "payment_fragile": 0.0060,  # 26.9% annual (high base; mostly payment-driven)
+    "churner_dominated": 0.0090,  # 37.5% annual
 }
 
 # Latent-trait weights for the background churn hazard.
@@ -340,18 +351,20 @@ def assign_lifecycle_mechanisms(motif_family: str) -> LifecycleMechanismAssignme
     """
     churn = ChurnHazardParams(
         base_weekly_rate=_CHURN_BASE_WEEKLY.get(motif_family, _DEFAULT_CHURN_BASE_WEEKLY),
-        latent_weights=dict(_CHURN_LATENT_WEIGHTS.get(motif_family, _DEFAULT_CHURN_LATENT_WEIGHTS)),
+        latent_weights=MappingProxyType(
+            _CHURN_LATENT_WEIGHTS.get(motif_family, _DEFAULT_CHURN_LATENT_WEIGHTS)
+        ),
         renewal_hazard_multiplier=_RENEWAL_HAZARD_MULTIPLIER.get(
             motif_family, _DEFAULT_RENEWAL_MULTIPLIER
         ),
-        renewal_latent_weights=dict(
+        renewal_latent_weights=MappingProxyType(
             _RENEWAL_LATENT_WEIGHTS.get(motif_family, _DEFAULT_RENEWAL_LATENT_WEIGHTS)
         ),
     )
 
     expansion = ExpansionPropensityParams(
         base_weekly_rate=_EXPANSION_BASE_WEEKLY.get(motif_family, _DEFAULT_EXPANSION_BASE_WEEKLY),
-        latent_weights=dict(
+        latent_weights=MappingProxyType(
             _EXPANSION_LATENT_WEIGHTS.get(motif_family, _DEFAULT_EXPANSION_LATENT_WEIGHTS)
         ),
         expansion_mrr_frac_range=_EXPANSION_MRR_FRAC.get(motif_family, _DEFAULT_EXPANSION_MRR_FRAC),
@@ -361,7 +374,7 @@ def assign_lifecycle_mechanisms(motif_family: str) -> LifecycleMechanismAssignme
         base_monthly_rate=_PAYMENT_FAILURE_BASE_MONTHLY.get(
             motif_family, _DEFAULT_PAYMENT_FAILURE_BASE_MONTHLY
         ),
-        latent_weights=dict(
+        latent_weights=MappingProxyType(
             _PAYMENT_FAILURE_LATENT_WEIGHTS.get(
                 motif_family, _DEFAULT_PAYMENT_FAILURE_LATENT_WEIGHTS
             )
@@ -382,34 +395,21 @@ def mechanism_params_for_motif(motif_family: str) -> dict[str, Any]:
     """Return a plain dict of the mechanism parameter tables for *motif_family*.
 
     Useful for inspection and testing without constructing mechanism objects.
+    Derives directly from :func:`assign_lifecycle_mechanisms` so it is always
+    consistent with the actual assignment — no duplicated lookup logic.
     """
+    a = assign_lifecycle_mechanisms(motif_family)
     return {
-        "motif_family": motif_family,
-        "churn_base_weekly_rate": _CHURN_BASE_WEEKLY.get(motif_family, _DEFAULT_CHURN_BASE_WEEKLY),
-        "churn_latent_weights": _CHURN_LATENT_WEIGHTS.get(
-            motif_family, _DEFAULT_CHURN_LATENT_WEIGHTS
-        ),
-        "renewal_hazard_multiplier": _RENEWAL_HAZARD_MULTIPLIER.get(
-            motif_family, _DEFAULT_RENEWAL_MULTIPLIER
-        ),
-        "renewal_latent_weights": _RENEWAL_LATENT_WEIGHTS.get(
-            motif_family, _DEFAULT_RENEWAL_LATENT_WEIGHTS
-        ),
-        "expansion_base_weekly_rate": _EXPANSION_BASE_WEEKLY.get(
-            motif_family, _DEFAULT_EXPANSION_BASE_WEEKLY
-        ),
-        "expansion_latent_weights": _EXPANSION_LATENT_WEIGHTS.get(
-            motif_family, _DEFAULT_EXPANSION_LATENT_WEIGHTS
-        ),
-        "expansion_mrr_frac_range": _EXPANSION_MRR_FRAC.get(
-            motif_family, _DEFAULT_EXPANSION_MRR_FRAC
-        ),
-        "payment_failure_base_monthly_rate": _PAYMENT_FAILURE_BASE_MONTHLY.get(
-            motif_family, _DEFAULT_PAYMENT_FAILURE_BASE_MONTHLY
-        ),
-        "payment_failure_latent_weights": _PAYMENT_FAILURE_LATENT_WEIGHTS.get(
-            motif_family, _DEFAULT_PAYMENT_FAILURE_LATENT_WEIGHTS
-        ),
-        "dunning_weeks": _DUNNING_WEEKS.get(motif_family, _DEFAULT_DUNNING_WEEKS),
-        "recovery_rate": _RECOVERY_RATE.get(motif_family, _DEFAULT_RECOVERY_RATE),
+        "motif_family": a.motif_family,
+        "churn_base_weekly_rate": a.churn_hazard.base_weekly_rate,
+        "churn_latent_weights": dict(a.churn_hazard.latent_weights),
+        "renewal_hazard_multiplier": a.churn_hazard.renewal_hazard_multiplier,
+        "renewal_latent_weights": dict(a.churn_hazard.renewal_latent_weights),
+        "expansion_base_weekly_rate": a.expansion_propensity.base_weekly_rate,
+        "expansion_latent_weights": dict(a.expansion_propensity.latent_weights),
+        "expansion_mrr_frac_range": a.expansion_propensity.expansion_mrr_frac_range,
+        "payment_failure_base_monthly_rate": a.payment_failure.base_monthly_rate,
+        "payment_failure_latent_weights": dict(a.payment_failure.latent_weights),
+        "dunning_weeks": a.payment_failure.dunning_weeks,
+        "recovery_rate": a.payment_failure.recovery_rate,
     }

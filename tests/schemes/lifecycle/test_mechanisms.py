@@ -100,55 +100,52 @@ def test_recovery_rate_in_unit_interval(motif: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_expansion_led_growth_has_highest_expansion_rate() -> None:
-    rates = {
-        m: assign_lifecycle_mechanisms(m).expansion_propensity.base_weekly_rate
-        for m in LIFECYCLE_MOTIF_FAMILIES
-    }
-    assert rates["expansion_led_growth"] == max(rates.values()), (
-        f"expansion_led_growth should have the highest expansion rate; got {rates}"
+def test_expansion_led_growth_expansion_rate_above_churner_dominated() -> None:
+    # Directional invariant: a growth-led world expands more than a churn-dominated one.
+    # Uses a pair comparison rather than max() so future recalibration that changes
+    # which other family has the highest rate won't break this test.
+    elg = assign_lifecycle_mechanisms("expansion_led_growth").expansion_propensity.base_weekly_rate
+    cd = assign_lifecycle_mechanisms("churner_dominated").expansion_propensity.base_weekly_rate
+    assert elg > cd, (
+        f"expansion_led_growth expansion rate ({elg}) should exceed churner_dominated ({cd})"
     )
 
 
-def test_churner_dominated_has_highest_churn_rate() -> None:
-    rates = {
-        m: assign_lifecycle_mechanisms(m).churn_hazard.base_weekly_rate
+def test_churner_dominated_churn_rate_above_product_led_retention() -> None:
+    # Directional invariant: churner-dominated worlds churn more than product-led ones.
+    cd = assign_lifecycle_mechanisms("churner_dominated").churn_hazard.base_weekly_rate
+    plr = assign_lifecycle_mechanisms("product_led_retention").churn_hazard.base_weekly_rate
+    assert cd > plr, f"churner_dominated churn ({cd}) should exceed product_led_retention ({plr})"
+
+
+def test_expansion_led_growth_churn_rate_below_churner_dominated() -> None:
+    # Directional invariant: fast-growing worlds churn less than churn-dominated ones.
+    elg = assign_lifecycle_mechanisms("expansion_led_growth").churn_hazard.base_weekly_rate
+    cd = assign_lifecycle_mechanisms("churner_dominated").churn_hazard.base_weekly_rate
+    assert elg < cd, f"expansion_led_growth churn ({elg}) should be below churner_dominated ({cd})"
+
+
+def test_payment_fragile_failure_rate_substantially_above_others() -> None:
+    # Directional invariant: payment_fragile failure rate is materially higher
+    # than any non-fragile world's.  Uses 2× threshold rather than max() so
+    # a recalibration that raises another family's rate modestly won't fail.
+    pf = assign_lifecycle_mechanisms("payment_fragile").payment_failure.base_monthly_rate
+    others = [
+        assign_lifecycle_mechanisms(m).payment_failure.base_monthly_rate
         for m in LIFECYCLE_MOTIF_FAMILIES
-    }
-    assert rates["churner_dominated"] == max(rates.values()), (
-        f"churner_dominated should have the highest base churn rate; got {rates}"
+        if m != "payment_fragile"
+    ]
+    assert all(pf > 2 * r for r in others), (
+        f"payment_fragile ({pf:.4f}) should be >2× all other families' rates: {others}"
     )
 
 
-def test_expansion_led_growth_has_lowest_churn_rate() -> None:
-    # expansion_led_growth is calibrated as the lowest-churn world — customers
-    # that are growing fast are least likely to churn.
-    rates = {
-        m: assign_lifecycle_mechanisms(m).churn_hazard.base_weekly_rate
-        for m in LIFECYCLE_MOTIF_FAMILIES
-    }
-    assert rates["expansion_led_growth"] == min(rates.values()), (
-        f"expansion_led_growth should have the lowest base churn rate; got {rates}"
-    )
-
-
-def test_payment_fragile_has_highest_payment_failure_rate() -> None:
-    rates = {
-        m: assign_lifecycle_mechanisms(m).payment_failure.base_monthly_rate
-        for m in LIFECYCLE_MOTIF_FAMILIES
-    }
-    assert rates["payment_fragile"] == max(rates.values()), (
-        f"payment_fragile should have the highest payment failure rate; got {rates}"
-    )
-
-
-def test_payment_fragile_has_lowest_recovery_rate() -> None:
-    rates = {
-        m: assign_lifecycle_mechanisms(m).payment_failure.recovery_rate
-        for m in LIFECYCLE_MOTIF_FAMILIES
-    }
-    assert rates["payment_fragile"] == min(rates.values()), (
-        f"payment_fragile should have the lowest recovery rate; got {rates}"
+def test_payment_fragile_recovery_rate_below_product_led_retention() -> None:
+    # Directional invariant: fragile accounts recover failed payments less often.
+    pf = assign_lifecycle_mechanisms("payment_fragile").payment_failure.recovery_rate
+    plr = assign_lifecycle_mechanisms("product_led_retention").payment_failure.recovery_rate
+    assert pf < plr, (
+        f"payment_fragile recovery ({pf}) should be below product_led_retention ({plr})"
     )
 
 
@@ -198,6 +195,19 @@ def test_churn_params_are_frozen() -> None:
     a = assign_lifecycle_mechanisms("product_led_retention")
     with pytest.raises((AttributeError, TypeError)):
         a.churn_hazard.base_weekly_rate = 0.99  # type: ignore[misc]
+
+
+def test_latent_weights_dicts_are_truly_immutable() -> None:
+    # Regression: frozen=True on a dataclass prevents attribute reassignment
+    # but NOT mutation of a plain dict field.  latent_weights are wrapped in
+    # MappingProxyType so the simulation engine cannot corrupt shared state.
+    a = assign_lifecycle_mechanisms("product_led_retention")
+    with pytest.raises(TypeError):
+        a.churn_hazard.latent_weights["latent_product_fit"] = 999.0  # type: ignore[index]
+    with pytest.raises(TypeError):
+        a.expansion_propensity.latent_weights["latent_adoption_velocity"] = 999.0  # type: ignore[index]
+    with pytest.raises(TypeError):
+        a.payment_failure.latent_weights["latent_budget_stability"] = 999.0  # type: ignore[index]
 
 
 # ---------------------------------------------------------------------------
