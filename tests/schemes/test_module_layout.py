@@ -27,7 +27,6 @@ _MOVED = [
         "leadforge.schemes.lead_scoring.render.relational_snapshot_safe",
     ),
     ("leadforge.render.tasks", "leadforge.schemes.lead_scoring.render.tasks"),
-
 ]
 
 
