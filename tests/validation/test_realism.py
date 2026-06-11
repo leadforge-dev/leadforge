@@ -91,7 +91,7 @@ class TestRealism:
         # Pick the first non-target boolean column at test time so this
         # test self-heals when feature names change.  Falls back gracefully
         # if the spec ever has zero non-target booleans (currently impossible).
-        from leadforge.schema.features import LEAD_SNAPSHOT_FEATURES
+        from leadforge.schemes.lead_scoring.features import LEAD_SNAPSHOT_FEATURES
 
         bool_col = next(
             f.name

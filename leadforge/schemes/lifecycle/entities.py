@@ -6,8 +6,8 @@ from the lead-scoring catalog, so the lead-scoring bundle's table inventory and
 column schemas are unaffected.
 
 The lifecycle bundle's ``customers`` and ``subscriptions`` tables are richer
-than the thin lead-scoring :class:`~leadforge.schema.entities.CustomerRow` /
-:class:`~leadforge.schema.entities.SubscriptionRow` (which exist only to record
+than the thin lead-scoring :class:`~leadforge.schemes.lead_scoring.entities.CustomerRow` /
+:class:`~leadforge.schemes.lead_scoring.entities.SubscriptionRow` (which exist only to record
 conversion in the procurement world).  Rather than extend those classes in
 place — which would change the lead-scoring instructor bundle's parquet schema,
 since ``to_dict()`` emits every field — the lifecycle bundle uses the dedicated

@@ -13,7 +13,7 @@ from typing import Any
 import pandas as pd
 import pyarrow.parquet as pq
 
-from leadforge.schema.features import LEAD_SNAPSHOT_FEATURES
+from leadforge.schemes.lead_scoring.features import LEAD_SNAPSHOT_FEATURES
 
 # Derive check lists from the canonical schema to avoid silent drift.
 _COUNT_FEATURES = [f.name for f in LEAD_SNAPSHOT_FEATURES if f.dtype == "Int64"]
@@ -49,7 +49,7 @@ def _first_task_train_path(root: Path, manifest: dict[str, Any]) -> Path | None:
 
 
 # The label column in the snapshot is always ``converted_within_90_days``
-# (mirroring :class:`~leadforge.schema.entities.LeadRow`).  The task *directory*
+# (mirroring :class:`~leadforge.schemes.lead_scoring.entities.LeadRow`).  The task *directory*
 # may vary via ``config.primary_task``, but the column inside does not.
 _LABEL_COLUMN = "converted_within_90_days"
 

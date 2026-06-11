@@ -357,7 +357,7 @@ class TestComputePostSnapshotTouches:
 
     def test_counts_post_snapshot_touches_correctly(self):
         """Touches after snapshot_day should be counted; on or before should not."""
-        from leadforge.schema.entities import TouchRow
+        from leadforge.schemes.lead_scoring.entities import TouchRow
 
         snapshot = pd.DataFrame({"lead_id": ["lead_000001", "lead_000002"]})
         lead_dates = {"lead_000001": "2024-01-01", "lead_000002": "2024-01-01"}
@@ -378,7 +378,7 @@ class TestComputePostSnapshotTouches:
 
     def test_boundary_day_excluded(self):
         """Touch on exactly snapshot_day must be excluded."""
-        from leadforge.schema.entities import TouchRow
+        from leadforge.schemes.lead_scoring.entities import TouchRow
 
         snapshot = pd.DataFrame({"lead_id": ["lead_000001"]})
         lead_dates = {"lead_000001": "2024-01-01"}
@@ -390,7 +390,7 @@ class TestComputePostSnapshotTouches:
 
     def test_horizon_boundary_included(self):
         """Touch on exactly horizon_day should be included."""
-        from leadforge.schema.entities import TouchRow
+        from leadforge.schemes.lead_scoring.entities import TouchRow
 
         snapshot = pd.DataFrame({"lead_id": ["lead_000001"]})
         lead_dates = {"lead_000001": "2024-01-01"}
@@ -407,7 +407,7 @@ class TestComputePostSnapshotTouches:
 
     def test_lead_with_no_touches_gets_zero(self):
         """Lead absent from touch list should get 0."""
-        from leadforge.schema.entities import TouchRow
+        from leadforge.schemes.lead_scoring.entities import TouchRow
 
         snapshot = pd.DataFrame({"lead_id": ["lead_000001", "lead_000002"]})
         lead_dates = {"lead_000001": "2024-01-01", "lead_000002": "2024-01-01"}
@@ -420,7 +420,7 @@ class TestComputePostSnapshotTouches:
 
     def test_no_label_injection_behavioral(self):
         """Two datasets with different labels must produce identical trap values."""
-        from leadforge.schema.entities import TouchRow
+        from leadforge.schemes.lead_scoring.entities import TouchRow
 
         snapshot_a = pd.DataFrame(
             {

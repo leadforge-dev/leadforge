@@ -5,11 +5,11 @@ import dataclasses
 import pytest
 
 from leadforge.schema.relationships import (
-    ALL_CONSTRAINTS,
     FKConstraint,
     FKViolationError,
     validate_fk,
 )
+from leadforge.schemes.lead_scoring.relationships import ALL_CONSTRAINTS
 
 
 def test_all_constraints_count() -> None:

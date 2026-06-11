@@ -11,9 +11,9 @@ import pandas as pd
 import pytest
 
 from leadforge.core.ids import ID_PREFIXES, make_id
-from leadforge.schema.entities import ALL_ROW_TYPES, TABLE_NAMES, AccountRow
-from leadforge.schema.relationships import ALL_CONSTRAINTS, FKConstraint
 from leadforge.schema.tables import read_parquet, write_parquet
+from leadforge.schemes.lead_scoring.entities import ALL_ROW_TYPES, TABLE_NAMES, AccountRow
+from leadforge.schemes.lead_scoring.relationships import ALL_CONSTRAINTS, FKConstraint
 from leadforge.schemes.lifecycle.entities import (
     LIFECYCLE_ROW_TYPES,
     LIFECYCLE_TABLE_NAMES,

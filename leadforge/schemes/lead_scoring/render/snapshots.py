@@ -17,13 +17,13 @@ import numpy as np
 import pandas as pd
 
 from leadforge.core.rng import RNGRoot
-from leadforge.schema.entities import (
+from leadforge.schemes.lead_scoring.entities import (
     OpportunityRow,
     SalesActivityRow,
     SessionRow,
     TouchRow,
 )
-from leadforge.schema.features import LEAD_SNAPSHOT_FEATURES
+from leadforge.schemes.lead_scoring.features import LEAD_SNAPSHOT_FEATURES
 from leadforge.schemes.lead_scoring.simulation.population import REVENUE_BAND_MIDPOINTS
 
 if TYPE_CHECKING:

@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Literal, NamedTuple
 
 import pandas as pd
 
-from leadforge.schema.entities import (
+from leadforge.schemes.lead_scoring.entities import (
     AccountRow,
     ContactRow,
     CustomerRow,

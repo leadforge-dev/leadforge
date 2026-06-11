@@ -3,7 +3,8 @@
 from leadforge.api.generator import Generator
 from leadforge.core.models import GenerationConfig, WorldSpec
 from leadforge.narrative.dataset_card import render_dataset_card
-from leadforge.schema.tasks import SplitSpec, TaskManifest, task_manifest_for_config
+from leadforge.schema.tasks import SplitSpec, TaskManifest
+from leadforge.schemes.lead_scoring.tasks import task_manifest_for_config
 
 
 def _make_world_spec(**kwargs: object) -> WorldSpec:

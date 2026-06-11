@@ -42,7 +42,7 @@ import numpy as np
 import pandas as pd
 
 from leadforge.core.serialization import load_json
-from leadforge.schema.features import LEAD_SNAPSHOT_FEATURES
+from leadforge.schemes.lead_scoring.features import LEAD_SNAPSHOT_FEATURES
 
 # ---------------------------------------------------------------------------
 # Constants

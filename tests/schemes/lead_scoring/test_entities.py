@@ -5,7 +5,8 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from leadforge.schema.entities import (
+from leadforge.schema.tables import read_parquet, write_parquet
+from leadforge.schemes.lead_scoring.entities import (
     ALL_ROW_TYPES,
     TABLE_NAMES,
     AccountRow,
@@ -14,7 +15,6 @@ from leadforge.schema.entities import (
     SessionRow,
     TouchRow,
 )
-from leadforge.schema.tables import read_parquet, write_parquet
 
 # ---------------------------------------------------------------------------
 # Helpers

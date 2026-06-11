@@ -4,7 +4,7 @@ import dataclasses
 
 import pytest
 
-from leadforge.schema.tasks import CONVERTED_WITHIN_90_DAYS, SplitSpec
+from leadforge.schemes.lead_scoring.tasks import CONVERTED_WITHIN_90_DAYS, SplitSpec
 
 # ---------------------------------------------------------------------------
 # SplitSpec

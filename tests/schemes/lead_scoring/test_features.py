@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 from leadforge.schema.dictionaries import feature_dictionary_df, write_feature_dictionary
-from leadforge.schema.features import LEAD_SNAPSHOT_FEATURES, FeatureSpec
+from leadforge.schemes.lead_scoring.features import LEAD_SNAPSHOT_FEATURES, FeatureSpec
 
 # ---------------------------------------------------------------------------
 # FeatureSpec
@@ -95,7 +95,7 @@ def test_total_touches_all_kept_as_pedagogical_trap() -> None:
 
 def test_redacted_columns_for_student_public() -> None:
     from leadforge.core.enums import ExposureMode
-    from leadforge.schema.features import redacted_columns_for
+    from leadforge.schemes.lead_scoring.features import redacted_columns_for
 
     redacted = redacted_columns_for(ExposureMode.student_public)
     assert "current_stage" in redacted
@@ -105,7 +105,7 @@ def test_redacted_columns_for_student_public() -> None:
 
 def test_redacted_columns_for_research_instructor_is_empty() -> None:
     from leadforge.core.enums import ExposureMode
-    from leadforge.schema.features import redacted_columns_for
+    from leadforge.schemes.lead_scoring.features import redacted_columns_for
 
     assert redacted_columns_for(ExposureMode.research_instructor) == frozenset()
 
@@ -113,7 +113,8 @@ def test_redacted_columns_for_research_instructor_is_empty() -> None:
 def test_redacted_columns_for_accepts_custom_features() -> None:
     """The function is parameterizable — future per-recipe feature sets work."""
     from leadforge.core.enums import ExposureMode
-    from leadforge.schema.features import FeatureSpec, redacted_columns_for
+    from leadforge.schema.features import FeatureSpec
+    from leadforge.schemes.lead_scoring.features import redacted_columns_for
 
     custom = (
         FeatureSpec(

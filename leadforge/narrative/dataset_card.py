@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import TYPE_CHECKING
 
-from leadforge.schema.features import LEAD_SNAPSHOT_FEATURES, FeatureSpec
+from leadforge.schemes.lead_scoring.features import LEAD_SNAPSHOT_FEATURES, FeatureSpec
 
 if TYPE_CHECKING:
     from leadforge.core.models import WorldSpec

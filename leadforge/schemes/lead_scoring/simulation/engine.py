@@ -38,10 +38,10 @@ the simulation logic changes:
 
 Post-simulation entity creation
 --------------------------------
-- An :class:`~leadforge.schema.entities.OpportunityRow` is created for every
+- An :class:`~leadforge.schemes.lead_scoring.entities.OpportunityRow` is created for every
   lead that reached ``sql`` or any deeper stage.
-- :class:`~leadforge.schema.entities.CustomerRow` and
-  :class:`~leadforge.schema.entities.SubscriptionRow` are created only for
+- :class:`~leadforge.schemes.lead_scoring.entities.CustomerRow` and
+  :class:`~leadforge.schemes.lead_scoring.entities.SubscriptionRow` are created only for
   converted leads (``closed_won``).
 """
 
@@ -54,7 +54,7 @@ from datetime import date, timedelta
 from leadforge.core.ids import ID_PREFIXES, make_id
 from leadforge.core.models import GenerationConfig
 from leadforge.core.rng import RNGRoot
-from leadforge.schema.entities import (
+from leadforge.schemes.lead_scoring.entities import (
     CustomerRow,
     LeadRow,
     OpportunityRow,
@@ -147,7 +147,7 @@ class SimulationResult:
     ascending lead-index across leads).
 
     Args:
-        leads: Updated :class:`~leadforge.schema.entities.LeadRow` list
+        leads: Updated :class:`~leadforge.schemes.lead_scoring.entities.LeadRow` list
             with simulation outcomes filled in.
     """
 
