@@ -6,7 +6,7 @@
 
 The per-feature redaction policy lives separately on
 :attr:`leadforge.schema.features.FeatureSpec.redact_in_modes` and is queried
-via :func:`leadforge.schema.features.redacted_columns_for`.  ``BundleFilter``
+via :func:`leadforge.schemes.lead_scoring.features.redacted_columns_for`.  ``BundleFilter``
 deliberately does *not* duplicate that information so that the writer and
 the validator both consult the same source of truth.
 

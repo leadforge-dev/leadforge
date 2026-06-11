@@ -11,23 +11,6 @@ from __future__ import annotations
 from leadforge.core.enums import ExposureMode
 from leadforge.schema.features import FeatureSpec
 
-
-def redacted_columns_for(
-    mode: ExposureMode,
-    features: tuple[FeatureSpec, ...] | None = None,
-) -> frozenset[str]:
-    """Return the set of column names that must be stripped from *mode* exports.
-
-    Args:
-        mode: The exposure mode being published.
-        features: Feature spec tuple to consult.  Defaults to the canonical
-            :data:`LEAD_SNAPSHOT_FEATURES` list.
-    """
-    if features is None:
-        features = LEAD_SNAPSHOT_FEATURES
-    return frozenset(f.name for f in features if mode in f.redact_in_modes)
-
-
 # ---------------------------------------------------------------------------
 # Canonical feature list — lead snapshot
 # ---------------------------------------------------------------------------
@@ -269,3 +252,17 @@ LEAD_SNAPSHOT_FEATURES: tuple[FeatureSpec, ...] = (
         is_target=True,
     ),
 )
+
+
+def redacted_columns_for(
+    mode: ExposureMode,
+    features: tuple[FeatureSpec, ...] = LEAD_SNAPSHOT_FEATURES,
+) -> frozenset[str]:
+    """Return the set of column names that must be stripped from *mode* exports.
+
+    Args:
+        mode: The exposure mode being published.
+        features: Feature spec tuple to consult.  Defaults to the canonical
+            :data:`LEAD_SNAPSHOT_FEATURES` list.
+    """
+    return frozenset(f.name for f in features if mode in f.redact_in_modes)
