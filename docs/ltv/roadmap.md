@@ -163,7 +163,7 @@ Total: ~19 PRs across 9 milestones.
   - Tests: determinism, latent distributions, staggered-start spread, FK
     integrity, acquisition-window boundary.
   - Labels: `type: feature`, `layer: simulation`
-- [ ] **`LTV-Pi`** — `feat(lifecycle): motif families + mechanism policies` (**PR #NNN**). 5
+- [ ] **`LTV-Pi`** — `feat(lifecycle): motif families + mechanism policies` (**PR #116**). 5
   retention motif families; `assign_lifecycle_mechanisms()` mapping motif →
   churn/expansion/payment params.
   - Tests: per-motif param tables, dispatch, determinism.
