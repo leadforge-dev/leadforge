@@ -43,7 +43,7 @@ protocol + registry, with the package physically reorganized into
 | `LTV-M0` | Planning + design lock | `LTV-Pa` | #102, #103 (+ scheme reframe) |
 | `LTV-M1` | Lifecycle schema foundation | `LTV-Pb`, `LTV-Pc` | #104 (Pb) |
 | `LTV-M2` | Generation-scheme architecture + physical reorg | `LTV-Pd`, `LTV-Pe`, `LTV-Pf`, `LTV-Pg` | #107 (Pd), #108 (Pe), #109 (Pf.1), #110 (Pf.2), #111 (Pg.1), #112 (Pg.2) |
-| `LTV-M3` | Customer population + lifecycle world | `LTV-Ph`, `LTV-Pi` | |
+| `LTV-M3` | Customer population + lifecycle world | `LTV-Ph`, `LTV-Pi` | #NNN (Ph) |
 | `LTV-M4` | Lifecycle simulation engine | `LTV-Pj`, `LTV-Pk` | |
 | `LTV-M5` | Customer snapshots + pLTV targets (both regimes) | `LTV-Pl`, `LTV-Pm` | |
 | `LTV-M6` | Register LifecycleScheme + recipe + manifest/version | `LTV-Pn`, `LTV-Po` | |
@@ -157,7 +157,7 @@ Total: ~19 PRs across 9 milestones.
 
 > Built directly under `schemes/lifecycle/`.
 
-- [ ] **`LTV-Ph`** — `feat(lifecycle): customer population builder`. Customer
+- [ ] **`LTV-Ph`** — `feat(lifecycle): customer population builder` (**PR #NNN**). Customer
   entities, 5 new latent traits, **staggered start dates** ending at the
   absolute `observation_date` (D4); seam for future chained generation (D3).
   - Tests: determinism, latent distributions, staggered-start spread, FK
