@@ -19,10 +19,7 @@ import pytest
 
 from leadforge.api.generator import Generator
 from leadforge.core.enums import ExposureMode
-from leadforge.schema.features import (
-    LEAD_SNAPSHOT_FEATURES,
-    redacted_columns_for,
-)
+from leadforge.schemes.lead_scoring.features import LEAD_SNAPSHOT_FEATURES, redacted_columns_for
 from leadforge.validation.bundle_checks import validate_bundle
 
 _SMALL = {"n_leads": 30, "n_accounts": 15, "n_contacts": 45}

@@ -156,7 +156,9 @@ leadforge/
   cli/            main.py, commands/{generate,list_recipes,inspect,validate}.py
   core/           rng.py, ids.py, time.py, enums.py, models.py, exceptions.py, ...
   narrative/      spec.py, company.py, product.py, personas.py, market.py, funnel.py, dataset_card.py
-  schema/         entities.py, relationships.py, events.py, features.py, tasks.py, dictionaries.py
+  schema/         entities.py (EntityRowProtocol, make_empty_dataframe, AccountRow — shared primitives),
+                  features.py (FeatureSpec), relationships.py (FKConstraint, validate_fk),
+                  tasks.py (SplitSpec, TaskManifest), dictionaries.py, tables.py
   schemes/        base.py (GenerationScheme protocol + SCHEME_REGISTRY);
                   lead_scoring/ — the lead-scoring scheme: __init__.py (build_world/
                   write_bundle) + simulation/, mechanisms/, structure/, render/

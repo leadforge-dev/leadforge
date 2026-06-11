@@ -6,7 +6,7 @@ import pytest
 
 from leadforge.core.models import GenerationConfig
 from leadforge.core.rng import RNGRoot
-from leadforge.schema.entities import (
+from leadforge.schemes.lead_scoring.entities import (
     CustomerRow,
     LeadRow,
     OpportunityRow,

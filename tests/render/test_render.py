@@ -9,7 +9,7 @@ import pytest
 
 from leadforge.core.models import GenerationConfig
 from leadforge.core.rng import RNGRoot
-from leadforge.schema.features import LEAD_SNAPSHOT_FEATURES
+from leadforge.schemes.lead_scoring.features import LEAD_SNAPSHOT_FEATURES
 from leadforge.schemes.lead_scoring.simulation.engine import simulate_world
 from leadforge.schemes.lead_scoring.simulation.population import build_population
 from leadforge.schemes.lead_scoring.structure.sampler import sample_hidden_graph
@@ -100,7 +100,7 @@ class TestToDataframes:
     def test_empty_tables_have_schema(self, sim_outputs):
         """Tables with zero rows must still expose the correct column names."""
         _, population, result, _ = sim_outputs
-        from leadforge.schema.entities import CustomerRow
+        from leadforge.schemes.lead_scoring.entities import CustomerRow
         from leadforge.schemes.lead_scoring.render.relational import to_dataframes
 
         dfs = to_dataframes(result, population)
@@ -109,7 +109,8 @@ class TestToDataframes:
     def test_fk_integrity(self, sim_outputs):
         """All FK constraints must hold on the produced DataFrames."""
         _, population, result, _ = sim_outputs
-        from leadforge.schema.relationships import ALL_CONSTRAINTS, validate_fk
+        from leadforge.schema.relationships import validate_fk
+        from leadforge.schemes.lead_scoring.relationships import ALL_CONSTRAINTS
         from leadforge.schemes.lead_scoring.render.relational import to_dataframes
 
         dfs = to_dataframes(result, population)

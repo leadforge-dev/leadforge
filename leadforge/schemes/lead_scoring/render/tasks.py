@@ -14,7 +14,7 @@ from pathlib import Path
 import pandas as pd
 
 from leadforge.core.rng import RNGRoot
-from leadforge.schema.tasks import CONVERTED_WITHIN_90_DAYS, TaskManifest
+from leadforge.schemes.lead_scoring.tasks import CONVERTED_WITHIN_90_DAYS, TaskManifest
 
 
 def write_task_splits(

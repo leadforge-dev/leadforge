@@ -1,8 +1,15 @@
-"""Foreign-key relationship definitions and validation helpers.
+"""Shared FK-constraint primitives.
 
-Describes the canonical FK graph for the v1 relational model and provides
-:func:`validate_fk` to assert referential integrity on a collection of rows
-before they are written to Parquet.
+:class:`FKConstraint`, :class:`FKViolationError`, and :func:`validate_fk`
+are scheme-agnostic utilities; both the lead-scoring and lifecycle schemes
+build their FK catalogs (``ALL_CONSTRAINTS``, ``LIFECYCLE_CONSTRAINTS``) with
+them.
+
+Lead-scoring ``ALL_CONSTRAINTS`` lives in
+:mod:`leadforge.schemes.lead_scoring.relationships`.
+
+Lifecycle ``LIFECYCLE_CONSTRAINTS`` lives in
+:mod:`leadforge.schemes.lifecycle.relationships`.
 """
 
 from __future__ import annotations
@@ -24,26 +31,6 @@ class FKConstraint:
     child_column: str
     parent_table: str
     parent_column: str
-
-
-# All v1 FK constraints, derived from §9.2 of the architecture spec.
-ALL_CONSTRAINTS: tuple[FKConstraint, ...] = (
-    FKConstraint("contacts", "account_id", "accounts", "account_id"),
-    FKConstraint("leads", "account_id", "accounts", "account_id"),
-    FKConstraint("leads", "contact_id", "contacts", "contact_id"),
-    FKConstraint("touches", "lead_id", "leads", "lead_id"),
-    FKConstraint("sessions", "lead_id", "leads", "lead_id"),
-    FKConstraint("sales_activities", "lead_id", "leads", "lead_id"),
-    FKConstraint("opportunities", "lead_id", "leads", "lead_id"),
-    FKConstraint("customers", "opportunity_id", "opportunities", "opportunity_id"),
-    FKConstraint("customers", "account_id", "accounts", "account_id"),
-    FKConstraint("subscriptions", "customer_id", "customers", "customer_id"),
-)
-
-
-# Lifecycle (b2b_saas_ltv_v1) FK constraints (LIFECYCLE_CONSTRAINTS) now live in
-# ``leadforge.schemes.lifecycle.relationships`` (moved in LTV-Pg).  They reuse
-# the shared FKConstraint primitive above.
 
 
 def validate_fk(

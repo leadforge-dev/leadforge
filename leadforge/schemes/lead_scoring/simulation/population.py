@@ -32,7 +32,7 @@ from leadforge.core.exceptions import InvalidConfigError
 from leadforge.core.ids import ID_PREFIXES, make_id
 from leadforge.core.models import GenerationConfig
 from leadforge.core.rng import RNGRoot
-from leadforge.schema.entities import AccountRow, ContactRow, LeadRow
+from leadforge.schemes.lead_scoring.entities import AccountRow, ContactRow, LeadRow
 
 if TYPE_CHECKING:
     from leadforge.narrative.spec import NarrativeSpec

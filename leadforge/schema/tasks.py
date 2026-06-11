@@ -1,13 +1,15 @@
-"""Task manifest definition for the primary v1 classification task.
+"""Shared task-manifest primitives.
 
-A :class:`TaskManifest` describes everything needed to reconstruct the task
-from the output bundle: the label column, the time window, the split ratios,
-and the table it lives in.
+:class:`SplitSpec` and :class:`TaskManifest` are scheme-agnostic types used by
+every scheme's task definition.  The lead-scoring task definition
+(:data:`~leadforge.schemes.lead_scoring.tasks.CONVERTED_WITHIN_90_DAYS`,
+:func:`~leadforge.schemes.lead_scoring.tasks.task_manifest_for_config`) lives
+in :mod:`leadforge.schemes.lead_scoring.tasks`.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
@@ -86,60 +88,3 @@ class TaskManifest:
             },
             "description": self.description,
         }
-
-
-# ---------------------------------------------------------------------------
-# v1 task definition
-# ---------------------------------------------------------------------------
-
-CONVERTED_WITHIN_90_DAYS: TaskManifest = TaskManifest(
-    task_id="converted_within_90_days",
-    label_column="converted_within_90_days",
-    label_window_days=90,
-    primary_table="leads",
-    split=SplitSpec(train=0.7, valid=0.15, test=0.15),
-    task_type="binary_classification",
-    description=(
-        "A lead is considered converted if a `closed_won` event is recorded "
-        "within 90 days of the lead's snapshot anchor date. The label is "
-        "event-derived — never sampled directly. All features are pre-anchor "
-        "(leakage-free by construction)."
-    ),
-)
-
-
-def task_manifest_for_config(
-    primary_task: str = CONVERTED_WITHIN_90_DAYS.task_id,
-    label_window_days: int = CONVERTED_WITHIN_90_DAYS.label_window_days,
-) -> TaskManifest:
-    """Build a :class:`TaskManifest` from generation config fields.
-
-    Derives from :data:`CONVERTED_WITHIN_90_DAYS` via ``dataclasses.replace``,
-    overriding only the fields that vary.  When *primary_task* and
-    *label_window_days* match the defaults, this returns an equivalent manifest.
-
-    Args:
-        primary_task: Task identifier — used as the task directory name and
-            manifest key.
-        label_window_days: Label observation window in days.
-    """
-    if primary_task == CONVERTED_WITHIN_90_DAYS.task_id:
-        description = (
-            f"A lead is considered converted if a `closed_won` event is recorded "
-            f"within {label_window_days} days of the lead's snapshot anchor date. "
-            f"The label is event-derived — never sampled directly. All features "
-            f"are pre-anchor (leakage-free by construction)."
-        )
-    else:
-        description = (
-            f"Binary label `{primary_task}` evaluated over a "
-            f"{label_window_days}-day window from the snapshot anchor date. "
-            f"The label is event-derived — never sampled directly. All features "
-            f"are pre-anchor (leakage-free by construction)."
-        )
-    return replace(
-        CONVERTED_WITHIN_90_DAYS,
-        task_id=primary_task,
-        label_window_days=label_window_days,
-        description=description,
-    )

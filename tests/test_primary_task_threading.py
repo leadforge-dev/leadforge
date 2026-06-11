@@ -17,7 +17,7 @@ from leadforge.api.generator import Generator
 from leadforge.core.serialization import load_json
 from leadforge.pipelines.build_v5 import rename_and_select as v5_rename
 from leadforge.pipelines.build_v6 import rename_and_select as v6_rename
-from leadforge.schema.tasks import CONVERTED_WITHIN_90_DAYS, task_manifest_for_config
+from leadforge.schemes.lead_scoring.tasks import CONVERTED_WITHIN_90_DAYS, task_manifest_for_config
 from leadforge.validation.drift import check_cross_seed_stability
 from leadforge.validation.realism import check_realism
 

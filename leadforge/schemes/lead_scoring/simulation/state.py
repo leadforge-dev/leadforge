@@ -3,7 +3,7 @@
 :class:`LeadSimState` is the only mutable object touched by
 :func:`~leadforge.schemes.lead_scoring.simulation.engine.simulate_world`.  After the simulation
 loop completes, the final state of each instance is used to populate the
-:class:`~leadforge.schema.entities.LeadRow` and any post-conversion entity
+:class:`~leadforge.schemes.lead_scoring.entities.LeadRow` and any post-conversion entity
 rows (opportunity, customer, subscription).
 """
 

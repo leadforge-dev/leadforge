@@ -18,8 +18,8 @@ from leadforge.core.enums import ExposureMode
 from leadforge.core.exceptions import LeadforgeError
 from leadforge.core.hashing import file_sha256
 from leadforge.core.serialization import load_json
-from leadforge.schema.features import LEAD_SNAPSHOT_FEATURES, redacted_columns_for
-from leadforge.schema.relationships import ALL_CONSTRAINTS
+from leadforge.schemes.lead_scoring.features import LEAD_SNAPSHOT_FEATURES, redacted_columns_for
+from leadforge.schemes.lead_scoring.relationships import ALL_CONSTRAINTS
 from leadforge.validation.difficulty import check_difficulty
 from leadforge.validation.leakage_probes import (
     BANNED_TABLES,

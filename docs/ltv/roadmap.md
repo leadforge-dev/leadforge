@@ -142,7 +142,7 @@ Total: ~19 PRs across 9 milestones.
     Shared primitives (`EntityRowProtocol`, `_empty_df`, `AccountRow`,
     `FKConstraint`) stay in `schema/` and are imported. Byte-identical;
     full suite green. (**PR #111**)
-  - [ ] **`LTV-Pg.2`** — split the **lead-scoring** schema: move the
+  - [x] **`LTV-Pg.2`** — split the **lead-scoring** schema (**PR #NNN**): move the
     lead-scoring entity rows / `ALL_ROW_TYPES` / `ALL_CONSTRAINTS` /
     `LEAD_SNAPSHOT_FEATURES` / task specs into `schemes/lead_scoring/`, leaving
     only genuinely shared primitives in `schema/`. (The lifecycle `LTV-Pc`

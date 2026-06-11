@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from leadforge.schema.features import LEAD_SNAPSHOT_FEATURES, FeatureSpec
+from leadforge.schemes.lead_scoring.features import LEAD_SNAPSHOT_FEATURES, FeatureSpec
 
 _COLUMNS = ("name", "dtype", "description", "category", "is_target", "leakage_risk")
 
