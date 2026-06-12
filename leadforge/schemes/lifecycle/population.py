@@ -64,6 +64,10 @@ class CustomerPopulationResult:
     latent_state: CustomerLatentState
     # ISO-8601 date at which snapshots and labels are anchored.
     observation_date: str = ""
+    # Retention motif family this population was built for.  Recorded so the
+    # simulation engine fetches the *same* family's mechanism params — passing
+    # the motif separately to the engine would invite silent drift.
+    motif_family: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -265,6 +269,7 @@ def build_customer_population(
             customer_latents=cust_latents,
         ),
         observation_date=obs_date.isoformat(),
+        motif_family=motif_family,
     )
 
 
