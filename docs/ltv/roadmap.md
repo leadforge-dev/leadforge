@@ -44,7 +44,7 @@ protocol + registry, with the package physically reorganized into
 | `LTV-M1` | Lifecycle schema foundation | `LTV-Pb`, `LTV-Pc` | #104 (Pb) |
 | `LTV-M2` | Generation-scheme architecture + physical reorg | `LTV-Pd`, `LTV-Pe`, `LTV-Pf`, `LTV-Pg` | #107 (Pd), #108 (Pe), #109 (Pf.1), #110 (Pf.2), #111 (Pg.1), #112 (Pg.2) |
 | `LTV-M3` | Customer population + lifecycle world | `LTV-Ph`, `LTV-Pi` | #113 (Ph) |
-| `LTV-M4` | Lifecycle simulation engine | `LTV-Pj`, `LTV-Pk` | #117 (Pj), #NNN (Pk) |
+| `LTV-M4` | Lifecycle simulation engine | `LTV-Pj`, `LTV-Pk` | #117 (Pj), #118 (Pk) |
 | `LTV-M5` | Customer snapshots + pLTV targets (both regimes) | `LTV-Pl`, `LTV-Pm` | |
 | `LTV-M6` | Register LifecycleScheme + recipe + manifest/version | `LTV-Pn`, `LTV-Po` | |
 | `LTV-M7` | Validation + regression-metric calibration | `LTV-Pp` | |
@@ -179,7 +179,7 @@ Total: ~19 PRs across 9 milestones.
   - Tests: hazard shape over tenure, renewal spike, dunning escalation,
     expansion MRR-delta bounds.
   - Labels: `type: feature`, `layer: mechanisms`
-- [ ] **`LTV-Pk`** — `feat(lifecycle): weekly simulation engine` (**PR #NNN**).
+- [ ] **`LTV-Pk`** — `feat(lifecycle): weekly simulation engine` (**PR #118**).
   `simulate_lifecycle()`: weekly loop per customer through `observation_date +
   730d (+ early-regime buffer)` so all three windows are fully simulated (D6);
   emits `subscription_events`, `health_signals`, `invoices`; updates terminal
