@@ -9,6 +9,7 @@ from leadforge.schemes.lifecycle.hazards import (
     churn_probability,
     expansion_probability,
     is_renewal_week,
+    next_renewal_week,
     payment_failure_probability,
 )
 from leadforge.schemes.lifecycle.mechanisms import (
@@ -91,6 +92,45 @@ def test_renewal_week_rejects_negative_tenure() -> None:
 def test_renewal_week_rejects_bad_term() -> None:
     with pytest.raises(ValueError, match="contract_term_months"):
         is_renewal_week(10, 0)
+
+
+# ---------------------------------------------------------------------------
+# next_renewal_week
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("week", "term", "expected"),
+    [
+        (0, 12, 52),
+        (51, 12, 52),
+        (52, 12, 104),
+        (0, 24, 104),
+        (104, 24, 208),
+        (0, 13, 56),
+        (56, 13, 113),
+    ],
+)
+def test_next_renewal_week_known_anniversaries(week: int, term: int, expected: int) -> None:
+    assert next_renewal_week(week, term) == expected
+
+
+@pytest.mark.parametrize("term", [12, 13, 24])
+def test_next_renewal_week_agrees_with_is_renewal_week(term: int) -> None:
+    """The returned week is the FIRST week after the input that satisfies
+    is_renewal_week — the two functions share one anniversary boundary."""
+    for week in range(0, 160):
+        nxt = next_renewal_week(week, term)
+        assert nxt > week
+        assert is_renewal_week(nxt, term)
+        assert not any(is_renewal_week(w, term) for w in range(week + 1, nxt))
+
+
+def test_next_renewal_week_rejects_bad_inputs() -> None:
+    with pytest.raises(ValueError, match="week_of_tenure"):
+        next_renewal_week(-1, 12)
+    with pytest.raises(ValueError, match="contract_term_months"):
+        next_renewal_week(10, 0)
 
 
 # ---------------------------------------------------------------------------

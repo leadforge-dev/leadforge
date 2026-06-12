@@ -58,6 +58,7 @@ __all__ = [
     "churn_probability",
     "expansion_probability",
     "is_renewal_week",
+    "next_renewal_week",
     "payment_failure_probability",
 ]
 
@@ -137,6 +138,29 @@ def is_renewal_week(week_of_tenure: int, contract_term_months: int) -> bool:
     # Banker's rounding is provably safe here: term_weeks = 13m/3, so the
     # fractional part of k*term_weeks is always in {0, 1/3, 2/3} — never .5.
     return k >= 1 and round(k * term_weeks) == week_of_tenure
+
+
+def next_renewal_week(week_of_tenure: int, contract_term_months: int) -> int:
+    """Return the first contract-anniversary week strictly after *week_of_tenure*.
+
+    Single source of the anniversary boundary for downstream consumers (the
+    snapshot builder's ``weeks_to_next_renewal`` feature): the returned week
+    always satisfies :func:`is_renewal_week`, so the published feature and the
+    hazard spike can never drift apart.
+
+    Raises:
+        ValueError: if *week_of_tenure* is negative or *contract_term_months*
+            is not a positive integer.
+    """
+    if week_of_tenure < 0:
+        raise ValueError(f"week_of_tenure must be >= 0, got {week_of_tenure}")
+    if contract_term_months < 1:
+        raise ValueError(f"contract_term_months must be >= 1, got {contract_term_months}")
+    term_weeks = contract_term_months * _WEEKS_PER_MONTH
+    k = max(1, int(week_of_tenure / term_weeks))
+    while round(k * term_weeks) <= week_of_tenure:
+        k += 1
+    return round(k * term_weeks)
 
 
 def churn_probability(

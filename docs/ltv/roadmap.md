@@ -45,7 +45,7 @@ protocol + registry, with the package physically reorganized into
 | `LTV-M2` | Generation-scheme architecture + physical reorg | `LTV-Pd`, `LTV-Pe`, `LTV-Pf`, `LTV-Pg` | #107 (Pd), #108 (Pe), #109 (Pf.1), #110 (Pf.2), #111 (Pg.1), #112 (Pg.2) |
 | `LTV-M3` | Customer population + lifecycle world | `LTV-Ph`, `LTV-Pi` | #113 (Ph) |
 | `LTV-M4` | Lifecycle simulation engine | `LTV-Pj`, `LTV-Pk` | #117 (Pj), #118 (Pk) |
-| `LTV-M5` | Customer snapshots + pLTV targets (both regimes) | `LTV-Pl`, `LTV-Pm` | |
+| `LTV-M5` | Customer snapshots + pLTV targets (both regimes) | `LTV-Pl`, `LTV-Pm` | #119 (Pl) |
 | `LTV-M6` | Register LifecycleScheme + recipe + manifest/version | `LTV-Pn`, `LTV-Po` | |
 | `LTV-M7` | Validation + regression-metric calibration | `LTV-Pp` | |
 | `LTV-M8` | CLI, notebooks, publish | `LTV-Pq`, `LTV-Pr`, `LTV-Ps` | |
@@ -72,11 +72,16 @@ Total: ~19 PRs across 9 milestones.
   Lead-scoring catalog untouched. (These rows relocate into
   `schemes/lifecycle/` during `LTV-M2`.)
   - Labels: `type: feature`, `layer: schema`
-- [ ] **`LTV-Pc`** — `feat(schema): pLTV feature spec + regression task specs`.
+- [~] **`LTV-Pc`** — `feat(schema): pLTV feature spec + regression task specs`.
+  **Feature-catalog half discharged in `LTV-Pl` (#119):**
   `CUSTOMER_SNAPSHOT_FEATURES` (three `ltv_revenue_{90,365,730}d` targets, the
-  secondary `churned_within_180d`, the `mrr_change_full_period` trap); regression
-  task specs + a `task_type` (`regression` | `classification`) on the task model.
-  - Tests: feature-spec invariants, regression task-spec shape.
+  secondary `churned_within_180d`, the `mrr_change_full_period` trap) is
+  authored in `schemes/lifecycle/features.py` (post-reorg home, per the
+  `LTV-M2` note above) because the snapshot builder needs it.  **Remaining
+  scope (folds into `LTV-Pn`):** regression task specs + a `task_type`
+  (`regression` | `classification`) on the task model — they belong with the
+  task-split writer's continuous-target path.
+  - Tests: feature-spec invariants ✓ (#119); regression task-spec shape → `LTV-Pn`.
   - Labels: `type: feature`, `layer: schema`
 
 ---
@@ -192,13 +197,40 @@ Total: ~19 PRs across 9 milestones.
 
 ## `LTV-M5` — Customer snapshots + pLTV targets (both regimes)
 
-- [ ] **`LTV-Pl`** — `feat(lifecycle): calendar-anchored customer snapshot`.
-  `build_customer_snapshot(cutoff=observation_date)`: last-12-week health
-  aggregates; `mrr_change_at_snapshot` (valid) + `mrr_change_full_period`
-  (trap); the three `ltv_revenue_{90,365,730}d` gross-revenue targets +
-  `churned_within_180d`; difficulty distortions.
-  - Tests: no post-cutoff data in windowed columns; ZILN target shape; trap
-    invariant; target derivation; trap exempt from distortion.
+- [x] **`LTV-Pl`** — `feat(lifecycle): calendar-anchored customer snapshot`
+  (**PR #119**). `schemes/lifecycle/snapshots.py`:
+  `build_customer_snapshot(cutoff=…)` — one row per active-at-cutoff customer;
+  at-cutoff subscription state reconstructed from the event chain (not the
+  terminal row); last-12-week health aggregates + whole-history `last_nps_score`;
+  `mrr_change_at_snapshot` (valid) + `mrr_change_full_period` (trap, all modes,
+  distortion-exempt); `ltv_revenue_{90,365,730}d` (gross = paid + recovered
+  invoices, attributed by issuance date) + `churned_within_180d`.
+  `CUSTOMER_SNAPSHOT_FEATURES` catalog in `schemes/lifecycle/features.py`
+  (discharges the `LTV-Pc` catalog half).  Difficulty distortions extracted to
+  the scheme-agnostic `render/distortions.py` (lead-scoring delegates;
+  verified byte-identical).  **Deliberately omitted from the catalog:**
+  `current_plan` (no plan-change mechanism → exact duplicate of
+  `initial_plan`) and `downgrade_count` (no downgrade mechanism →
+  zero-variance); re-add only with the mechanism.
+  - Tests (43): censoring-based leakage probe (features identical when all
+    post-cutoff events are deleted); target derivation vs the invoice table;
+    failed/written-off exclusion (D7); ZILN target shape; trap-divergence
+    invariant; trap + targets exempt from distortion; weeks_to_next_renewal
+    agrees with `is_renewal_week`.
+  - Self-review hardening: `LifecycleSimulationResult` records its
+    `forward_window_days`/`early_tenure_weeks` and the builder rejects sims
+    whose horizon cannot cover the 730d/180d target windows (silent-censoring
+    guard); anniversary boundary single-sourced via public
+    `hazards.next_renewal_week`; population/sim mismatch raises a real error.
+  - **Deferred to `LTV-Pn` (difficulty wiring):** the design.md §7 secondary
+    advanced-tier trap `last_health_signal_post_obs` — it is tier-conditional,
+    so it belongs with the difficulty-profile plumbing, not the builder.
+  - **Deferred to `LTV-Pn` (bundle writer):** an opt-in dtype-preserving
+    missingness mode for `render/distortions.py` (`pd.NA` into nullable
+    `Int64` instead of the Float64 conversion) — the lead-scoring default is
+    byte-identity-locked, but the lifecycle scheme has no shipped bundles yet
+    and can pick the cleaner semantics when its parquet schemas are fixed
+    (Copilot review suggestion on #119).
   - Labels: `type: feature`, `layer: render`
 - [ ] **`LTV-Pm`** — `feat(lifecycle): early-pLTV (tenure-anchored) task family`.
   Reuse the snapshot builder with a per-customer relative cutoff

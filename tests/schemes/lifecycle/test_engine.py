@@ -53,6 +53,14 @@ def test_rejects_population_without_motif(population) -> None:
         simulate_lifecycle(broken, _SIM_SEED)
 
 
+def test_result_records_simulation_horizon(population, sim) -> None:
+    # Downstream builders verify target-window coverage off these fields.
+    assert sim.forward_window_days == 730
+    assert sim.early_tenure_weeks == 4
+    custom = simulate_lifecycle(population, _SIM_SEED, forward_window_days=90)
+    assert custom.forward_window_days == 90
+
+
 def test_rejects_bad_windows(population) -> None:
     with pytest.raises(ValueError, match="forward_window_days"):
         simulate_lifecycle(population, _SIM_SEED, forward_window_days=0)
