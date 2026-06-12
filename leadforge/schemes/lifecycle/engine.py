@@ -26,6 +26,11 @@ Simulation contract
 - **Churn reasons** are causal, not sampled: ``payment_failure`` when a
   written-off invoice forces the churn, ``non_renewal`` when the (spiked) churn
   draw fires on a contract-anniversary week, ``voluntary`` otherwise.
+- **Dangling ``failed`` invoices are censoring, not bugs** — an invoice keeps
+  terminal status ``failed`` only when the customer churned for another reason
+  mid-dunning or the simulation window ended before the dunning period elapsed.
+  Within a week, dunning resolution runs *before* invoice issuance, so a
+  pending failure always resolves before the next invoice can fail.
 
 Deliberately out of scope (tracked):
 - ``downgrade`` events — no downgrade mechanism params exist in
@@ -191,11 +196,10 @@ def simulate_lifecycle(
     counters = {"subscription_event": 0, "health_signal": 0, "invoice": 0}
 
     for idx, customer in enumerate(population.customers, start=1):
-        # Merged latents: account-level traits first, customer-level overrides
-        # win on (deliberate) key collisions such as latent_budget_stability.
-        latents: dict[str, float] = {}
-        latents.update(acct_latents.get(customer.account_id, {}))
-        latents.update(cust_latents.get(customer.customer_id, {}))
+        latents = _merge_latents(
+            acct_latents.get(customer.account_id, {}),
+            cust_latents.get(customer.customer_id, {}),
+        )
 
         rng = root.child(f"lifecycle_sim::{customer.customer_id}")
         sub_id = make_id(ID_PREFIXES["subscription"], idx)
@@ -241,6 +245,27 @@ def simulate_lifecycle(
     return result
 
 
+def _merge_latents(
+    account_latents: dict[str, float], customer_latents: dict[str, float]
+) -> dict[str, float]:
+    """Merge account- and customer-level latents into one effective trait dict.
+
+    Traits present at **both** levels (``latent_budget_stability``,
+    ``latent_organizational_stability``) are blended 50/50 rather than letting
+    one level shadow the other: the account component is a shared random effect
+    across all customers of the same account, so within-account churn and
+    payment behaviour are *correlated* — the mixed-effects structure a B2B
+    dataset should have.  Account-only or customer-only traits pass through.
+    """
+    merged = dict(customer_latents)
+    for trait, account_value in account_latents.items():
+        if trait in merged:
+            merged[trait] = 0.5 * (account_value + merged[trait])
+        else:
+            merged[trait] = account_value
+    return merged
+
+
 # ---------------------------------------------------------------------------
 # Per-customer weekly loop
 # ---------------------------------------------------------------------------
@@ -283,33 +308,10 @@ def _simulate_customer(
             result=result,
         )
 
-        # -- 2. Invoice on month boundary + dunning resolution --------------
-        month_index = int(week / _WEEKS_PER_MONTH)
-        if month_index > last_month_index:
-            last_month_index = month_index
-            counters["invoice"] += 1
-            failed = rng.random() < payment_failure_probability(payment_p, latents)
-            invoice = InvoiceRow(
-                invoice_id=make_id(ID_PREFIXES["invoice"], counters["invoice"]),
-                customer_id=customer.customer_id,
-                invoice_date=week_date.isoformat(),
-                amount_usd=state.current_mrr,
-                payment_status="failed" if failed else "paid",
-            )
-            result.invoices.append(invoice)
-            if failed and state.pending_failure is None:
-                state.pending_failure = (invoice, week)
-                _emit_event(
-                    result,
-                    counters,
-                    subscription_id=subscription_id,
-                    customer_id=customer.customer_id,
-                    week_date=week_date,
-                    event_type="payment_failure",
-                    mrr_before=state.current_mrr,
-                    mrr_after=state.current_mrr,
-                )
-
+        # -- 2. Dunning resolution, then invoice on month boundary ----------
+        # Resolution runs FIRST so a write-off churn cannot be preceded by a
+        # fresh same-week invoice, and a newly failed invoice can always enter
+        # dunning (pending slot is free by issuance time).
         if state.pending_failure is not None:
             pending_invoice, fail_week = state.pending_failure
             if week - fail_week >= payment_p.dunning_weeks:
@@ -340,6 +342,32 @@ def _simulate_customer(
                         mrr_after=0,
                     )
                     break
+
+        month_index = int(week / _WEEKS_PER_MONTH)
+        if month_index > last_month_index:
+            last_month_index = month_index
+            counters["invoice"] += 1
+            failed = rng.random() < payment_failure_probability(payment_p, latents)
+            invoice = InvoiceRow(
+                invoice_id=make_id(ID_PREFIXES["invoice"], counters["invoice"]),
+                customer_id=customer.customer_id,
+                invoice_date=week_date.isoformat(),
+                amount_usd=state.current_mrr,
+                payment_status="failed" if failed else "paid",
+            )
+            result.invoices.append(invoice)
+            if failed and state.pending_failure is None:
+                state.pending_failure = (invoice, week)
+                _emit_event(
+                    result,
+                    counters,
+                    subscription_id=subscription_id,
+                    customer_id=customer.customer_id,
+                    week_date=week_date,
+                    event_type="payment_failure",
+                    mrr_before=state.current_mrr,
+                    mrr_after=state.current_mrr,
+                )
 
         # -- 3. Churn draw ---------------------------------------------------
         renewal_week = is_renewal_week(week, state.contract_term_months)
@@ -470,6 +498,10 @@ def _emit_health_signal(
         raw = 10.0 * (0.20 + 0.50 * fit + 0.30 * champion) + rng.gauss(0.0, 1.0)
         nps = max(0, min(10, round(raw)))
 
+    # The recorded observable and the value fed to the expansion hazard must
+    # be the SAME number — the data must fully explain the behaviour.
+    depth = round(depth, 4)
+
     counters["health_signal"] += 1
     result.health_signals.append(
         HealthSignalRow(
@@ -477,7 +509,7 @@ def _emit_health_signal(
             customer_id=customer.customer_id,
             period_start=week_date.isoformat(),
             active_users=active_users,
-            feature_depth_score=round(depth, 4),
+            feature_depth_score=depth,
             support_tickets=tickets,
             nps_score=nps,
         )

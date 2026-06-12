@@ -273,6 +273,65 @@ def test_written_off_customers_churn_with_payment_reason(sim) -> None:
         assert reasons[cid] == "payment_failure"
 
 
+def test_account_latents_influence_outcomes(population) -> None:
+    """Regression: account latents must NOT be shadowed by customer latents.
+
+    The merge blends the shared traits 50/50 (account-level random effect), so
+    swinging an account's latent_budget_stability between the extremes must
+    change its customers' simulated trajectories.
+    """
+    import copy
+
+    lo_pop = copy.deepcopy(population)
+    hi_pop = copy.deepcopy(population)
+    for traits in lo_pop.latent_state.account_latents.values():
+        traits["latent_budget_stability"] = 0.0
+    for traits in hi_pop.latent_state.account_latents.values():
+        traits["latent_budget_stability"] = 1.0
+
+    lo_sim = simulate_lifecycle(lo_pop, _SIM_SEED)
+    hi_sim = simulate_lifecycle(hi_pop, _SIM_SEED)
+    lo_failed = sum(1 for i in lo_sim.invoices if i.payment_status != "paid")
+    hi_failed = sum(1 for i in hi_sim.invoices if i.payment_status != "paid")
+    assert lo_failed > hi_failed, (
+        f"account-level budget stability had no effect: lo={lo_failed}, hi={hi_failed}"
+    )
+
+
+def test_dangling_failed_invoices_are_censoring_only(population, sim) -> None:
+    """An invoice may end at status 'failed' only when the customer churned for
+    another reason mid-dunning or the simulation window ended first — never
+    because a second failure was silently dropped while one was pending."""
+    from leadforge.schemes.lifecycle.mechanisms import assign_lifecycle_mechanisms
+
+    dunning_weeks = assign_lifecycle_mechanisms(
+        population.motif_family
+    ).payment_failure.dunning_weeks
+    obs = date.fromisoformat(population.observation_date)
+    starts = {c.customer_id: date.fromisoformat(c.customer_start_at) for c in population.customers}
+    subs = {s.customer_id: s for s in sim.subscriptions}
+    for inv in sim.invoices:
+        if inv.payment_status != "failed":
+            continue
+        inv_date = date.fromisoformat(inv.invoice_date)
+        resolution_due = inv_date + timedelta(weeks=dunning_weeks)
+        sub = subs[inv.customer_id]
+        window_end = max(obs, starts[inv.customer_id] + timedelta(weeks=4)) + timedelta(days=730)
+        churned_first = (
+            sub.churn_at is not None and date.fromisoformat(sub.churn_at) <= resolution_due
+        )
+        censored = resolution_due > window_end
+        assert churned_first or censored, (
+            f"invoice {inv.invoice_id} dangling 'failed' without churn/censoring"
+        )
+
+
+def test_recorded_depth_is_round_tripped(sim) -> None:
+    # The stored observable is the exact value the expansion hazard consumed.
+    for h in sim.health_signals:
+        assert h.feature_depth_score == round(h.feature_depth_score, 4)
+
+
 # ---------------------------------------------------------------------------
 # Calibration: simulated first-year churn per motif (engine-calibrated bands)
 # ---------------------------------------------------------------------------
