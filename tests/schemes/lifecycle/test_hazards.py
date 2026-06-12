@@ -5,7 +5,7 @@ import math
 import pytest
 
 from leadforge.schemes.lifecycle.hazards import (
-    _MAX_PROBABILITY,
+    MAX_PROBABILITY,
     churn_probability,
     expansion_probability,
     is_renewal_week,
@@ -61,6 +61,12 @@ def test_renewal_week_24mo_first_anniversary() -> None:
     assert is_renewal_week(104, 24)
 
 
+def test_week_52_is_not_renewal_for_24mo_term() -> None:
+    # A 24-month contract has no anniversary at week 52 — the spike (and the
+    # engine's renewal event) must not fire mid-contract.
+    assert not is_renewal_week(52, 24)
+
+
 def test_adjacent_weeks_are_not_renewal() -> None:
     assert not is_renewal_week(51, 12)
     assert not is_renewal_week(53, 12)
@@ -100,7 +106,7 @@ def test_churn_in_unit_interval_at_extremes(motif: str) -> None:
     for latents in (lo, hi, _NEUTRAL):
         for week in (0, 1, _STEADY_WEEK, 52):
             p = churn_probability(params, latents, week, _TERM_12MO)
-            assert 0.0 < p <= _MAX_PROBABILITY, f"{motif} week={week}: p={p}"
+            assert 0.0 < p <= MAX_PROBABILITY, f"{motif} week={week}: p={p}"
 
 
 def test_churn_neutral_latents_steady_state_near_base_rate() -> None:
@@ -166,7 +172,7 @@ def test_churn_probability_is_capped() -> None:
         renewal_latent_weights=_churn().renewal_latent_weights,
     )
     p = churn_probability(params, _NEUTRAL, 52, _TERM_12MO)
-    assert p == _MAX_PROBABILITY
+    assert p == MAX_PROBABILITY
 
 
 def test_churn_is_deterministic() -> None:
@@ -187,7 +193,7 @@ def test_expansion_in_unit_interval_at_extremes(motif: str) -> None:
     for latents in (dict.fromkeys(_NEUTRAL, 0.0), dict.fromkeys(_NEUTRAL, 1.0), _NEUTRAL):
         for depth in (None, 0.0, 0.5, 1.0):
             p = expansion_probability(params, latents, depth)
-            assert 0.0 < p <= _MAX_PROBABILITY
+            assert 0.0 < p <= MAX_PROBABILITY
 
 
 def test_expansion_increases_with_adoption_velocity() -> None:
@@ -230,7 +236,7 @@ def test_payment_failure_in_unit_interval_at_extremes(motif: str) -> None:
     params = _payment(motif)
     for latents in (dict.fromkeys(_NEUTRAL, 0.0), dict.fromkeys(_NEUTRAL, 1.0), _NEUTRAL):
         p = payment_failure_probability(params, latents)
-        assert 0.0 < p <= _MAX_PROBABILITY
+        assert 0.0 < p <= MAX_PROBABILITY
 
 
 def test_payment_failure_decreases_with_budget_stability() -> None:

@@ -54,6 +54,7 @@ if TYPE_CHECKING:
     )
 
 __all__ = [
+    "MAX_PROBABILITY",
     "churn_probability",
     "expansion_probability",
     "is_renewal_week",
@@ -63,14 +64,30 @@ __all__ = [
 # Probabilities are capped below 1.0 so extreme latent combinations never make
 # an event *certain* — the simulation stays stochastic at the tails, and a
 # mis-calibrated base rate degrades visibly instead of saturating silently.
-_MAX_PROBABILITY = 0.95
+# Public: the cap is part of the hazard contract (every function documents it)
+# and the engine/tests may reference it.
+MAX_PROBABILITY = 0.95
 
 # Neutral latent value: traits absent from the latent dict contribute nothing.
+# NOTE: latents are *not* range-validated in these hot-path functions — the
+# population builder clamps all traits to [0, 1], and MAX_PROBABILITY bounds
+# the damage of any out-of-range value.  Validating per call would cost real
+# time at ~customers x weeks call volume in the engine loop.
 _NEUTRAL_LATENT = 0.5
+
+# Floor of the feature-depth expansion multiplier: depth d maps to a factor of
+# (_DEPTH_MULTIPLIER_FLOOR + d), i.e. x0.5 at zero depth, x1.0 at the neutral
+# depth 0.5, x1.5 at full depth.  Coincidentally equal to _NEUTRAL_LATENT but
+# semantically unrelated — kept as its own constant so recentring latents can
+# never silently change the health modulation.
+_DEPTH_MULTIPLIER_FLOOR = 0.5
 
 # Onboarding churn elevation: hazard starts at peak × base in week 0 and decays
 # exponentially toward 1× with this time-constant.  At week 12 the residual
-# elevation is < 8% — effectively steady-state.
+# elevation is < 8% — effectively steady-state.  Deliberately uniform across
+# motif families (like the lead-scoring follow-up ramp): onboarding instability
+# is a customer-success process constant; per-motif differentiation comes from
+# the latent weights and base rates, not the tenure shape.
 _ONBOARDING_PEAK_MULTIPLIER = 2.5
 _ONBOARDING_DECAY_WEEKS = 4.0
 
@@ -117,6 +134,8 @@ def is_renewal_week(week_of_tenure: int, contract_term_months: int) -> bool:
         return False
     term_weeks = contract_term_months * _WEEKS_PER_MONTH
     k = round(week_of_tenure / term_weeks)
+    # Banker's rounding is provably safe here: term_weeks = 13m/3, so the
+    # fractional part of k*term_weeks is always in {0, 1/3, 2/3} — never .5.
     return k >= 1 and round(k * term_weeks) == week_of_tenure
 
 
@@ -131,7 +150,7 @@ def churn_probability(
     Composition: ``base_weekly_rate × latent multiplier × onboarding
     elevation``, and on a renewal week additionally ``×
     renewal_hazard_multiplier × renewal latent multiplier``.  Capped at
-    ``_MAX_PROBABILITY``.
+    ``MAX_PROBABILITY``.
 
     Args:
         params: Motif-family churn parameters from
@@ -152,7 +171,7 @@ def churn_probability(
     if is_renewal_week(week_of_tenure, contract_term_months):
         p *= params.renewal_hazard_multiplier
         p *= _latent_multiplier(latents, params.renewal_latent_weights)
-    return min(p, _MAX_PROBABILITY)
+    return min(p, MAX_PROBABILITY)
 
 
 def expansion_probability(
@@ -165,7 +184,7 @@ def expansion_probability(
     Composition: ``base_weekly_rate × latent multiplier``, optionally
     ``× (0.5 + feature_depth_score)`` when the current health signal is
     supplied — depth 0.5 is neutral (×1.0), full depth 1.0 raises the
-    propensity by half, zero depth halves it.  Capped at ``_MAX_PROBABILITY``.
+    propensity by half, zero depth halves it.  Capped at ``MAX_PROBABILITY``.
 
     Args:
         params: Motif-family expansion parameters.
@@ -178,8 +197,8 @@ def expansion_probability(
     if feature_depth_score is not None:
         if not 0.0 <= feature_depth_score <= 1.0:
             raise ValueError(f"feature_depth_score must be in [0, 1], got {feature_depth_score}")
-        p *= _NEUTRAL_LATENT + feature_depth_score
-    return min(p, _MAX_PROBABILITY)
+        p *= _DEPTH_MULTIPLIER_FLOOR + feature_depth_score
+    return min(p, MAX_PROBABILITY)
 
 
 def payment_failure_probability(
@@ -190,11 +209,11 @@ def payment_failure_probability(
 
     Composition: ``base_monthly_rate × latent multiplier`` (the dominant weight
     is on ``latent_budget_stability``, negative — stable budgets fail less).
-    Capped at ``_MAX_PROBABILITY``.
+    Capped at ``MAX_PROBABILITY``.
 
     Args:
         params: Motif-family payment-failure parameters.
         latents: Merged latent traits; missing traits are neutral.
     """
     p = params.base_monthly_rate * _latent_multiplier(latents, params.latent_weights)
-    return min(p, _MAX_PROBABILITY)
+    return min(p, MAX_PROBABILITY)
