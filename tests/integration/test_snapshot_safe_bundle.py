@@ -1,4 +1,4 @@
-"""Integration tests for the snapshot-safe bundle write path (bundle schema v5).
+"""Integration tests for the snapshot-safe bundle write path (bundle schema v6).
 
 Covers the contract turned on in PR 2.2: ``student_public`` bundles
 route ``tables/`` through
