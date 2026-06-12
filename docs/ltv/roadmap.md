@@ -249,10 +249,15 @@ Total: ~19 PRs across 9 milestones.
     cutoff vs the invoice table; cold-start sparsity (NPS all-null at 4w);
     anchor-validation (`>= 1`, `<= sim.early_tenure_weeks`), short-window /
     mismatch / missing-obs guards; distortions leave targets + trap intact.
-  - **Known property (deferred to `LTV-Pp` validation):** `tenure_weeks` is
-    constant (= `early_tenure_weeks`) across the early table by design — the
-    published-bundle no-zero-variance check must exempt it for this task
-    family.
+  - **Known degenerate columns at a short anchor (deferred to `LTV-Pp`
+    validation):** by cadence math, several catalog columns are structurally
+    dead in the early table — `tenure_weeks` (constant = anchor),
+    `renewal_count` (0 for anchor < 52w), `last_nps_score` (all-null for
+    anchor < 13w), and near-degenerate `weeks_since_last_payment_failure`.
+    The catalog is shared with the calendar regime by design, so the
+    no-zero-variance / no-all-null checks must exempt these for the early task
+    family; whether to drop them from the early feature set instead is open for
+    `LTV-Pn`.
   - **Deferred to `LTV-Pn` (bundle/task writer):** the actual early-pLTV
     *task directory* + train/valid/test split export (`render/tasks.py`,
     design.md §536) — this PR delivers the snapshot + recomputed targets only,

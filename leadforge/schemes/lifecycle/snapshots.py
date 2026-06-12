@@ -180,11 +180,27 @@ def build_early_pltv_snapshot(
     signal exist at the cutoff, and ``last_nps_score`` is null for the whole
     cohort when ``early_tenure_weeks`` precedes the first quarterly survey.
 
-    Because the cutoff is constant *in tenure*, ``tenure_weeks`` is constant
-    across the whole table (= ``early_tenure_weeks``).  That is the defining
-    property of the regime, not a feature — the published-bundle
-    no-zero-variance check must exempt ``tenure_weeks`` for this task family
-    (handled in the validation harness, LTV-Pp).
+    Degenerate columns at a short anchor.  Several catalog columns are
+    structurally constant/empty when ``early_tenure_weeks`` is short, because
+    the events that would vary them have not happened yet (the cadence math,
+    not the seed, makes them dead):
+
+    - ``tenure_weeks`` — constant ``= early_tenure_weeks`` (the defining
+      property of the regime, not a feature).
+    - ``renewal_count`` — constant ``0`` for any anchor ``< 52`` weeks (the
+      first contract anniversary is at week 52).
+    - ``last_nps_score`` — entirely null for any anchor ``< 13`` weeks (the
+      first quarterly survey lands at week 13).
+    - ``weeks_since_last_payment_failure`` — near-degenerate (at most one
+      distinct value, often all-null): only the week-0 invoice precedes a
+      sub-month cutoff, so any failure shares the same recency.
+
+    The catalog is shared with the calendar regime by design (design.md §8),
+    so these columns are kept rather than dropped; the published-bundle
+    no-zero-variance / no-all-null checks must **exempt them for this task
+    family** (handled in the validation harness, LTV-Pp).  Whether to instead
+    drop them from the early task's feature set is an open question for the
+    bundle/task writer (LTV-Pn).
 
     Eligibility does **not** require the cutoff to fall on or before
     ``observation_date``: each customer's forward windows are fully simulated

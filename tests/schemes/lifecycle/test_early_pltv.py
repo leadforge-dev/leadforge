@@ -66,6 +66,24 @@ def test_tenure_is_constant_at_anchor(early) -> None:
     assert set(early["tenure_weeks"].unique()) == {_ET}
 
 
+@pytest.mark.parametrize("pop_seed", [1, 7, 42])
+def test_structurally_degenerate_columns_at_short_anchor(pop_seed: int) -> None:
+    """Pin the columns that are dead by *construction* at a sub-13-week anchor,
+    so the LTV-Pp validation harness has a tracked exemption list and a future
+    change that revives one of them forces a conscious update here.
+
+    These are cadence consequences, not seed accidents: first renewal at week
+    52, first NPS at week 13, tenure fixed at the anchor.
+    """
+    pop = build_customer_population(250, pop_seed, motif_family="payment_fragile")
+    sim = simulate_lifecycle(pop, pop_seed * 2 + 1)
+    snap = build_early_pltv_snapshot(pop, sim, early_tenure_weeks=_ET)
+
+    assert snap["tenure_weeks"].nunique(dropna=True) == 1  # constant = anchor
+    assert set(snap["renewal_count"].unique()) == {0}  # first renewal at week 52
+    assert snap["last_nps_score"].isna().all()  # first NPS at week 13
+
+
 def test_deterministic(population, sim, early) -> None:
     again = build_early_pltv_snapshot(population, sim, early_tenure_weeks=_ET)
     pd.testing.assert_frame_equal(early, again)
@@ -211,6 +229,17 @@ def test_targets_are_right_skewed(early) -> None:
         col = early[f"ltv_revenue_{window}d"]
         assert (col >= 0).all()
         assert col.mean() > col.median()
+
+
+def test_trap_diverges_strongly_in_early_regime(early) -> None:
+    """The mrr_change_full_period trap is *more* leaky here than in the calendar
+    regime: at a 4-week anchor almost no expansion has happened, so the valid
+    mrr_change_at_snapshot is ~0 while the trap captures the whole future
+    expansion path that drives the targets."""
+    valid_zero = (early["mrr_change_at_snapshot"] == 0).mean()
+    diverges = (early["mrr_change_full_period"] != early["mrr_change_at_snapshot"]).mean()
+    assert valid_zero > 0.8  # cold start: little expansion yet
+    assert diverges > 0.10
 
 
 # ---------------------------------------------------------------------------
