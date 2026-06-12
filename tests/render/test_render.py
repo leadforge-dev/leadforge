@@ -435,12 +435,15 @@ class TestWriteBundle:
         config, population, result, world_graph = sim_outputs
         from leadforge.api.bundle import write_bundle
         from leadforge.core.models import WorldBundle, WorldSpec
+        from leadforge.schemes.lead_scoring.artifacts import LeadScoringArtifacts
 
         bundle = WorldBundle(
             spec=WorldSpec(config=config),
-            population=population,
-            simulation_result=result,
-            world_graph=world_graph,
+            artifacts=LeadScoringArtifacts(
+                population=population,
+                simulation_result=result,
+                world_graph=world_graph,
+            ),
         )
         write_bundle(bundle, str(tmp_path))
 
@@ -454,12 +457,15 @@ class TestWriteBundle:
         config, population, result, world_graph = sim_outputs
         from leadforge.api.bundle import write_bundle
         from leadforge.core.models import WorldBundle, WorldSpec
+        from leadforge.schemes.lead_scoring.artifacts import LeadScoringArtifacts
 
         bundle = WorldBundle(
             spec=WorldSpec(config=config),
-            population=population,
-            simulation_result=result,
-            world_graph=world_graph,
+            artifacts=LeadScoringArtifacts(
+                population=population,
+                simulation_result=result,
+                world_graph=world_graph,
+            ),
         )
         write_bundle(bundle, str(tmp_path))
 
@@ -470,7 +476,7 @@ class TestWriteBundle:
         from leadforge.api.bundle import write_bundle
         from leadforge.core.models import WorldBundle
 
-        with pytest.raises(RuntimeError, match="not fully populated"):
+        with pytest.raises(RuntimeError, match="not populated with lead-scoring artifacts"):
             write_bundle(WorldBundle(), str(tmp_path))
 
     def test_generator_generate_and_save(self, tmp_path):

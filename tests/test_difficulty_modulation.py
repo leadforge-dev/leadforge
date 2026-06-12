@@ -121,7 +121,7 @@ class TestConversionRateModulation:
             difficulty=difficulty,
         )
         bundle = gen.generate(**_MEDIUM)
-        leads = bundle.simulation_result.leads
+        leads = bundle.artifacts.simulation_result.leads
         rate = sum(1 for lead in leads if lead.current_stage == "closed_won") / len(leads)
         # Allow 8% tolerance for small-sample variance.
         tolerance = 0.08
@@ -138,7 +138,7 @@ class TestConversionRateModulation:
                 difficulty=difficulty,
             )
             bundle = gen.generate(**_MEDIUM)
-            leads = bundle.simulation_result.leads
+            leads = bundle.artifacts.simulation_result.leads
             rates[difficulty] = sum(
                 1 for lead in leads if lead.current_stage == "closed_won"
             ) / len(leads)
@@ -158,7 +158,7 @@ class TestDeterminism:
                 difficulty="intermediate",
             )
             bundle = gen.generate(n_leads=100, n_accounts=50, n_contacts=150)
-            leads = bundle.simulation_result.leads
+            leads = bundle.artifacts.simulation_result.leads
             stages = [lead.current_stage for lead in leads]
             results.append(stages)
         assert results[0] == results[1]

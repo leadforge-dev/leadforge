@@ -20,6 +20,8 @@ from typing import TYPE_CHECKING, Any
 from leadforge.schemes.base import register_scheme
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from leadforge.core.models import GenerationConfig, WorldBundle
     from leadforge.narrative.spec import NarrativeSpec
 
@@ -67,12 +69,16 @@ class LeadScoringScheme:
             latent_touch_intensity=latent_touch_intensity,
         )
 
+        from leadforge.schemes.lead_scoring.artifacts import LeadScoringArtifacts
+
         spec = WorldSpec(config=config, narrative=narrative, scheme=self.name)
         return WorldBundle(
             spec=spec,
-            population=population,
-            simulation_result=result,
-            world_graph=world_graph,
+            artifacts=LeadScoringArtifacts(
+                population=population,
+                simulation_result=result,
+                world_graph=world_graph,
+            ),
         )
 
     @staticmethod
@@ -164,6 +170,7 @@ class LeadScoringScheme:
         from leadforge.render.manifests import build_manifest, write_manifest
         from leadforge.render.relational_io import write_relational_tables
         from leadforge.schema.dictionaries import write_feature_dictionary
+        from leadforge.schemes.lead_scoring.artifacts import LeadScoringArtifacts
         from leadforge.schemes.lead_scoring.features import (
             LEAD_SNAPSHOT_FEATURES,
             redacted_columns_for,
@@ -176,22 +183,20 @@ class LeadScoringScheme:
         from leadforge.schemes.lead_scoring.render.tasks import write_task_splits
         from leadforge.schemes.lead_scoring.tasks import task_manifest_for_config
 
-        if (
-            bundle.simulation_result is None
-            or bundle.population is None
-            or bundle.world_graph is None
-        ):
+        artifacts = bundle.artifacts
+        if not isinstance(artifacts, LeadScoringArtifacts):
             raise RuntimeError(
-                "WorldBundle is not fully populated. Call Generator.generate() first."
+                "WorldBundle is not populated with lead-scoring artifacts. "
+                "Call Generator.generate() first."
             )
 
         root = Path(path)
         root.mkdir(parents=True, exist_ok=True)
 
         config = bundle.spec.config
-        result = bundle.simulation_result
-        population = bundle.population
-        world_graph = bundle.world_graph
+        result = artifacts.simulation_result
+        population = artifacts.population
+        world_graph = artifacts.world_graph
 
         # The redaction set comes from the canonical feature spec — the same
         # source of truth the validator uses.  It is applied uniformly to
@@ -275,6 +280,47 @@ class LeadScoringScheme:
             relational_snapshot_safe=bundle_filter.relational_snapshot_safe,
         )
         write_manifest(manifest, root)
+
+    def write_metadata(self, bundle: WorldBundle, meta_dir: Path) -> None:
+        """Write the lead-scoring hidden-truth files into *meta_dir*.
+
+        Called by :func:`leadforge.exposure.modes.apply_exposure` for
+        ``research_instructor`` mode (after the shared, scheme-agnostic
+        ``world_spec.json`` is written).  Emits the hidden world graph
+        (``graph.json`` / ``graph.graphml``), the per-entity latent registry
+        (``latent_registry.json``), and the mechanism-assignment summary
+        (``mechanism_summary.json``).
+        """
+        import json
+
+        from leadforge.core.rng import RNGRoot
+        from leadforge.schemes.lead_scoring.artifacts import LeadScoringArtifacts
+        from leadforge.schemes.lead_scoring.mechanisms.policies import assign_mechanisms
+
+        artifacts = bundle.artifacts
+        if not isinstance(artifacts, LeadScoringArtifacts):
+            raise RuntimeError("WorldBundle is not populated with lead-scoring artifacts.")
+        world_graph = artifacts.world_graph
+
+        (meta_dir / "graph.json").write_text(world_graph.to_json())
+        (meta_dir / "graph.graphml").write_text(world_graph.to_graphml())
+
+        ls = artifacts.population.latent_state
+        latent_registry: dict[str, object] = {
+            "account_latents": ls.account_latents,
+            "contact_latents": ls.contact_latents,
+            "lead_latents": ls.lead_latents,
+        }
+        (meta_dir / "latent_registry.json").write_text(json.dumps(latent_registry, indent=2))
+
+        # Reconstruct the mechanism assignment with the same RNG substream used
+        # during simulation — produces the identical parameter values.
+        motif_family = world_graph.motif_family
+        mech_rng = RNGRoot(bundle.spec.config.seed).child("mechanisms")
+        assignment = assign_mechanisms(motif_family, mech_rng)
+        (meta_dir / "mechanism_summary.json").write_text(
+            json.dumps(assignment.summary().to_dict(), indent=2)
+        )
 
 
 LEAD_SCORING_SCHEME = LeadScoringScheme()

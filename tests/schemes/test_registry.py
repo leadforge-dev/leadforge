@@ -143,9 +143,9 @@ def test_from_recipe_sets_scheme_on_world_spec() -> None:
 def test_generate_runs_through_registered_scheme() -> None:
     gen = Generator.from_recipe("b2b_saas_procurement_v1", seed=42)
     bundle = gen.generate(**_SMALL)
-    assert bundle.population is not None
-    assert bundle.simulation_result is not None
-    assert len(bundle.population.leads) == 60
+    assert bundle.artifacts.population is not None
+    assert bundle.artifacts.simulation_result is not None
+    assert len(bundle.artifacts.population.leads) == 60
 
 
 def test_generate_records_scheme_on_bundle_spec() -> None:
@@ -162,16 +162,16 @@ def test_generate_is_deterministic_through_scheme() -> None:
     # given (recipe, config, seed).
     a = Generator.from_recipe("b2b_saas_procurement_v1", seed=42).generate(**_SMALL)
     b = Generator.from_recipe("b2b_saas_procurement_v1", seed=42).generate(**_SMALL)
-    assert a.simulation_result is not None
-    assert b.simulation_result is not None
+    assert a.artifacts.simulation_result is not None
+    assert b.artifacts.simulation_result is not None
     lead_outcomes_a = {
-        lead.lead_id: lead.converted_within_90_days for lead in a.simulation_result.leads
+        lead.lead_id: lead.converted_within_90_days for lead in a.artifacts.simulation_result.leads
     }
     lead_outcomes_b = {
-        lead.lead_id: lead.converted_within_90_days for lead in b.simulation_result.leads
+        lead.lead_id: lead.converted_within_90_days for lead in b.artifacts.simulation_result.leads
     }
     assert lead_outcomes_a == lead_outcomes_b
-    assert len(a.simulation_result.touches) == len(b.simulation_result.touches)
+    assert len(a.artifacts.simulation_result.touches) == len(b.artifacts.simulation_result.touches)
 
 
 def test_generate_unknown_scheme_raises() -> None:
