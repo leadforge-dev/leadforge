@@ -22,7 +22,6 @@ from leadforge.validation.leakage_probes import (
 
 if TYPE_CHECKING:
     from leadforge.core.models import GenerationConfig
-    from leadforge.schemes.lead_scoring.structure.graph import WorldGraph
 
 # Bump this whenever the bundle layout or manifest schema changes.
 # History:
@@ -53,7 +52,16 @@ if TYPE_CHECKING:
 #         consumers / validators can tell from the bundle alone whether
 #         the tables are snapshot-safe.  ``research_instructor`` bundles
 #         keep the full-horizon export (``relational_snapshot_safe = false``).
-BUNDLE_SCHEMA_VERSION = "5"
+#   "6" — LTV-Pn.1: every manifest now records ``generation_scheme`` (which
+#         peer generation scheme produced the bundle — ``lead_scoring`` or
+#         ``lifecycle``).  ``build_manifest`` is scheme-agnostic: it takes a
+#         ``motif_family`` string (or ``None``) instead of the lead-scoring
+#         ``world_graph``, and an ``extra_fields`` mapping for scheme-specific
+#         keys (the lifecycle scheme adds ``observation_date`` / forward
+#         windows in a later PR).  Data files (tables/, tasks/) are unchanged
+#         from v5 for the lead-scoring path; only ``manifest.json`` gains the
+#         ``generation_scheme`` field.
+BUNDLE_SCHEMA_VERSION = "6"
 
 # Manifest fields whose value is non-deterministic by design (wall-clock,
 # host metadata, etc.).  Determinism checks must ignore these fields when
@@ -63,13 +71,15 @@ NON_DETERMINISTIC_MANIFEST_FIELDS: tuple[str, ...] = ("generation_timestamp",)
 
 def build_manifest(
     config: GenerationConfig,
-    world_graph: WorldGraph,
+    generation_scheme: str,
     table_row_counts: dict[str, int],
     task_row_counts: dict[str, dict[str, int]],
     bundle_root: Path,
     generation_timestamp: str | None = None,
     redacted_columns: list[str] | None = None,
     relational_snapshot_safe: bool = False,
+    motif_family: str | None = None,
+    extra_fields: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the bundle manifest dict.
 
@@ -79,7 +89,10 @@ def build_manifest(
 
     Args:
         config: The resolved generation configuration.
-        world_graph: The sampled hidden world graph (provides motif_family).
+        generation_scheme: Name of the peer generation scheme that produced
+            the bundle (``lead_scoring`` / ``lifecycle``).  Recorded so a
+            consumer can tell which pipeline shape a bundle came from without
+            inspecting its tables.
         table_row_counts: Mapping of table name → row count.
         task_row_counts: Mapping of task_id → {split_name → row count}.
         bundle_root: Root directory of the written bundle.
@@ -96,6 +109,13 @@ def build_manifest(
             reading a v5+ bundle can tell from the manifest alone whether
             ``tables/`` is the snapshot-safe (public) shape or the
             full-horizon (instructor) shape.  Defaults to ``False``.
+        motif_family: The hidden-world motif family, when the scheme has one
+            (lead-scoring passes ``world_graph.motif_family``).  ``None`` for
+            schemes without a single named motif.  Recorded as
+            ``manifest.motif_family``.
+        extra_fields: Optional scheme-specific top-level manifest keys merged
+            into the result (e.g. the lifecycle scheme's ``observation_date``
+            and forward windows).  Must not collide with a core manifest key.
 
     Returns:
         A JSON-serialisable dict ready to be written as ``manifest.json``.
@@ -125,9 +145,10 @@ def build_manifest(
             entry[f"{split_name}_sha256"] = sha
         tasks[task_id] = entry
 
-    return {
+    manifest: dict[str, Any] = {
         "bundle_schema_version": BUNDLE_SCHEMA_VERSION,
         "package_version": config.package_version,
+        "generation_scheme": generation_scheme,
         "recipe_id": config.recipe_id,
         "seed": config.seed,
         "generation_timestamp": generation_timestamp,
@@ -140,13 +161,21 @@ def build_manifest(
         "primary_task": config.primary_task,
         "label_window_days": config.label_window_days,
         "snapshot_day": config.snapshot_day,
-        "motif_family": world_graph.motif_family,
+        "motif_family": motif_family,
         "redacted_columns": redacted_columns_list,
         "relational_snapshot_safe": bool(relational_snapshot_safe),
         "structural_redactions": _build_structural_redactions(bool(relational_snapshot_safe)),
         "tables": tables,
         "tasks": tasks,
     }
+    if extra_fields:
+        collisions = set(extra_fields) & set(manifest)
+        if collisions:
+            raise ValueError(
+                f"extra_fields would overwrite core manifest keys: {sorted(collisions)}"
+            )
+        manifest.update(extra_fields)
+    return manifest
 
 
 def _build_structural_redactions(relational_snapshot_safe: bool) -> dict[str, Any]:

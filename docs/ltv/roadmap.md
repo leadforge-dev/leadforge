@@ -46,7 +46,7 @@ protocol + registry, with the package physically reorganized into
 | `LTV-M3` | Customer population + lifecycle world | `LTV-Ph`, `LTV-Pi` | #113 (Ph) |
 | `LTV-M4` | Lifecycle simulation engine | `LTV-Pj`, `LTV-Pk` | #117 (Pj), #118 (Pk) |
 | `LTV-M5` | Customer snapshots + pLTV targets (both regimes) | `LTV-Pl`, `LTV-Pm` | #119 (Pl), #120 (Pm) |
-| `LTV-M6` | Register LifecycleScheme + recipe + manifest/version | `LTV-Pn`, `LTV-Po` | |
+| `LTV-M6` | Register LifecycleScheme + recipe + manifest/version | `LTV-Pn.1…4`, `LTV-Po` | #121 (Pn.1) |
 | `LTV-M7` | Validation + regression-metric calibration | `LTV-Pp` | |
 | `LTV-M8` | CLI, notebooks, publish | `LTV-Pq`, `LTV-Pr`, `LTV-Ps` | |
 
@@ -268,23 +268,43 @@ Total: ~19 PRs across 9 milestones.
 
 ## `LTV-M6` — Register LifecycleScheme + recipe + manifest/version
 
-- [ ] **`LTV-Pn`** — `feat(lifecycle): complete LifecycleScheme + manifest/version`.
-  Fill in the `LifecycleScheme` pipeline methods (population→sim→render→tasks);
-  add `n_customers` + lifecycle config (windows, early-tenure, observation
-  anchor) to `GenerationConfig`; record `generation_scheme` + `observation_date`
-  + windows in the manifest; bump `BUNDLE_SCHEMA_VERSION` 5 → 6 (D5); teach the
-  task-split writer the continuous-target path. Extend `CLAUDE.md` hard
-  constraints with the lifecycle snapshot-safety clause + the schemes/ layout.
-  - **Layering cleanup (carried debt, see `Known deferred cleanups` below):**
-    generalise `build_manifest` (drop the lead-scoring `world_graph` param) and
-    `apply_exposure` (stop hard-coding the lead-scoring hidden graph + latent
-    registry) so they are scheme-agnostic; with that done, remove the
-    `core.models` / `render.relational` **TYPE_CHECKING** back-references to
-    `leadforge.schemes.lead_scoring.*` introduced in `LTV-Pf.1` (a core→scheme
-    layering inversion), and lift the shared render orchestration out of each
-    scheme's `write_bundle` (the decomposition deferred in `LTV-Pe`).
-  - Tests: dispatch, lead-scoring path unaffected, manifest fields, regression
-    split writer, exposure filtering for new tables.
+`LTV-Pn` was too large for one reviewable, byte-identity-guarded PR (envelope
+generalization + 3 carried cleanups + config + task model + the lifecycle
+pipeline + schema bump).  Split into four sub-PRs in dependency order:
+
+- [x] **`LTV-Pn.1`** — `refactor(render): scheme-agnostic build_manifest +
+  schema v6` (**PR #121**).  `build_manifest` no longer takes the lead-scoring
+  `world_graph`: it takes `generation_scheme: str`, `motif_family: str | None`,
+  and an `extra_fields` mapping for scheme-specific keys.  Every manifest now
+  records `generation_scheme`; `BUNDLE_SCHEMA_VERSION` bumped 5 → 6.  Removes
+  the `manifests.py` → `lead_scoring.structure.graph` TYPE_CHECKING back-ref
+  (part of cleanup #3).  **Lead-scoring data files byte-identical** (tables/,
+  tasks/); only `manifest.json` changes (new field + version).  Schema
+  contract test renamed v5 → v6.
+  - Labels: `type: refactor`, `layer: render`
+- [ ] **`LTV-Pn.2`** — `refactor: scheme-agnostic WorldBundle + exposure hook +
+  shared bundle orchestrator`.  Generalise `WorldBundle` to hold scheme-owned
+  artifacts (finishing cleanup #3: drop the `core.models` / `render` →
+  `lead_scoring.*` back-refs); make `apply_exposure` / `write_metadata_dir`
+  scheme-agnostic via a hidden-truth hook (cleanup #2); lift a shared bundle
+  orchestrator with scheme render hooks out of `write_bundle` (cleanup #1).
+  Lead-scoring bundle byte-identical (full SHA-256 harness).
+  - Labels: `type: refactor`, `layer: api`, `layer: core`, `layer: render`
+- [ ] **`LTV-Pn.3`** — `feat: lifecycle config + regression task model`.  Add
+  `n_customers` + lifecycle config (forward windows, early-tenure, observation
+  anchor) to `GenerationConfig` (validated); add a regression `task_type`
+  (`regression` | `classification`) to `TaskManifest` + a continuous-target
+  split writer (the `LTV-Pc` / `LTV-Pl` / `LTV-Pm` deferral).  No e2e yet.
+  - Labels: `type: feature`, `layer: api`, `layer: schema`, `layer: render`
+- [ ] **`LTV-Pn.4`** — `feat(lifecycle): complete LifecycleScheme + e2e bundle`.
+  Implement `LifecycleScheme.build_world` (population → sim) and `write_bundle`
+  (lifecycle relational tables; both regime snapshots → two task families ×
+  3 windows + secondary churn; dataset card; manifest `observation_date` +
+  windows via `extra_fields`).  First end-to-end lifecycle bundle (programmatic;
+  recipe wiring is `LTV-Po`).  Extend `CLAUDE.md` hard constraints with the
+  lifecycle snapshot-safety clause + the `schemes/` layout.  Carries the
+  LTV-Pp validation flags: early-regime degenerate-column exemptions; the
+  dtype-preserving missingness opt-in.
   - Labels: `type: feature`, `layer: api`, `layer: render`
 - [ ] **`LTV-Po`** — `feat(recipes): b2b_saas_ltv_v1 recipe assets`. The three
   recipe YAMLs (`scheme: lifecycle`); register in the recipe registry;
@@ -329,7 +349,7 @@ Total: ~19 PRs across 9 milestones.
 
 The peer-schemes reorg deliberately defers a few cleanups to keep each M2 PR
 byte-identical and reviewable. They are tracked here and discharged in
-**`LTV-Pn`** (M6), where the manifest/exposure generalization makes them clean:
+**`LTV-Pn.1`/`LTV-Pn.2`** (M6), where the manifest/exposure generalization makes them clean:
 
 1. **Shared render orchestration** — `LTV-Pe` left each scheme owning its full
    `write_bundle`; only `write_relational_tables` is shared. A shared bundle
@@ -341,9 +361,11 @@ byte-identical and reviewable. They are tracked here and discharged in
 3. **core→scheme layering inversion** — `LTV-Pf.1` introduced
    `TYPE_CHECKING`-only imports of `leadforge.schemes.lead_scoring.*` in
    `core.models` (`WorldBundle.world_graph: WorldGraph | None`) and
-   `render.relational`. Harmless at runtime (no eager import), but `core`/shared
-   `render` should not reference a scheme. Remove once (2) makes
-   `WorldBundle` hold scheme-agnostic artifacts.
+   `render.*`. Harmless at runtime (no eager import), but `core`/shared
+   `render` should not reference a scheme. **Partly discharged in `LTV-Pn.1`**
+   (removed the `render.manifests` → `lead_scoring.structure.graph` back-ref);
+   the `core.models.WorldBundle` back-refs follow in `LTV-Pn.2` once
+   `WorldBundle` holds scheme-agnostic artifacts.
 
 ---
 

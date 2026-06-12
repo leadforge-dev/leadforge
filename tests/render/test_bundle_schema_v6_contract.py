@@ -1,4 +1,4 @@
-"""Schema contract test for ``bundle_schema_version == "5"``.
+"""Schema contract test for ``bundle_schema_version == "6"``.
 
 The constants below are an *intentional* duplication of the column /
 table sets the bundle writer produces.  The duplication is the point:
@@ -19,6 +19,12 @@ tables are filtered per-lead to ``lead_created_at + snapshot_day``.
 ``manifest.relational_snapshot_safe`` records the contract so the
 bundle is self-describing.  ``research_instructor`` bundles keep the
 full-horizon export.
+
+v6 vs v5: the lead-scoring published *shape* (columns, tables,
+snapshot-safe contract) is **unchanged**.  v6 adds a top-level
+``manifest.generation_scheme`` field (``lead_scoring`` here) recording
+which peer generation scheme produced the bundle.  The pinned column /
+table sets below therefore carry over from v5 verbatim.
 
 Task split column SET is unchanged from v4 — the structural fix lives
 in ``tables/``, not the snapshot.
@@ -173,12 +179,23 @@ def _leads_cols(bundle: Path) -> frozenset[str]:
     return _table_cols(bundle, "leads")
 
 
-def test_manifest_declares_v5(student_bundle: Path, instructor_bundle: Path) -> None:
+def test_manifest_declares_v6(student_bundle: Path, instructor_bundle: Path) -> None:
     for b in (student_bundle, instructor_bundle):
         manifest = json.loads((b / "manifest.json").read_text())
-        assert manifest["bundle_schema_version"] == "5", (
+        assert manifest["bundle_schema_version"] == "6", (
             f"{b.name}: bundle_schema_version is {manifest['bundle_schema_version']!r}, "
-            "expected '5'"
+            "expected '6'"
+        )
+
+
+def test_manifest_records_generation_scheme(student_bundle: Path, instructor_bundle: Path) -> None:
+    """v6 contract: every manifest records which peer generation scheme produced
+    the bundle.  Both fixtures come from the lead-scoring recipe."""
+    for b in (student_bundle, instructor_bundle):
+        manifest = json.loads((b / "manifest.json").read_text())
+        assert manifest["generation_scheme"] == "lead_scoring", (
+            f"{b.name}: generation_scheme is {manifest.get('generation_scheme')!r}, "
+            "expected 'lead_scoring'"
         )
 
 

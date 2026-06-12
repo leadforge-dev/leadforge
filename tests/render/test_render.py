@@ -360,7 +360,8 @@ class TestBuildManifest:
 
         manifest = build_manifest(
             config=config,
-            world_graph=world_graph,
+            generation_scheme="lead_scoring",
+            motif_family=world_graph.motif_family,
             table_row_counts=table_row_counts,
             task_row_counts={"converted_within_90_days": task_counts},
             bundle_root=tmp_path,

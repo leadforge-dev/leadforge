@@ -6,7 +6,7 @@ route ``tables/`` through
 (the structural fix against the alpha-bundle reconstruction paths
 A-E), ``research_instructor`` bundles keep the full-horizon export,
 and the manifest is self-describing via ``relational_snapshot_safe``,
-``structural_redactions``, and ``bundle_schema_version == "5"``.
+``structural_redactions``, and ``bundle_schema_version == "6"``.
 
 Tests fall into three groups:
 

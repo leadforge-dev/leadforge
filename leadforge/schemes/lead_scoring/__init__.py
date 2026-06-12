@@ -265,7 +265,8 @@ class LeadScoringScheme:
         # ------------------------------------------------------------------
         manifest = build_manifest(
             config=config,
-            world_graph=world_graph,
+            generation_scheme=self.name,
+            motif_family=world_graph.motif_family,
             table_row_counts=table_row_counts,
             task_row_counts={task.task_id: task_row_counts},
             bundle_root=root,
