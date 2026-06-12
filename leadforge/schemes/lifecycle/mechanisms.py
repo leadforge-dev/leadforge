@@ -133,11 +133,17 @@ class LifecycleMechanismAssignment:
 # Per-motif parameter tables
 # ---------------------------------------------------------------------------
 
-# Churn hazard base weekly rates.  Calibrated so annual churn rates at a
-# neutral latent score (0.50) sit inside the difficulty-profile bands:
-#   intro [0.10, 0.20] / intermediate [0.20, 0.35] / advanced [0.30, 0.50].
-# These base rates target the intermediate tier; difficulty scaling is applied
-# by the engine on top of them.
+# Churn hazard base weekly rates.
+# IMPORTANT — the per-motif "% annual" figures below are the BASE-RATE-ONLY
+# equivalents (1 - (1-r)^52) at neutral latents.  The hazard functions in
+# hazards.py add material churn mass on top: the onboarding elevation
+# contributes ~6.8 x base_rate of extra first-year mass and each renewal spike
+# adds (multiplier - 1) x base_rate, so true first-year churn runs roughly
+# 5-14 points above these figures (e.g. churner_dominated ~52%, not 37.5%).
+# Final calibration against the difficulty-profile bands
+#   intro [0.10, 0.20] / intermediate [0.20, 0.35] / advanced [0.30, 0.50]
+# happens in the engine tests (LTV-Pk), where these base rates are expected to
+# be tuned DOWN to land inside the bands once the full tenure shape applies.
 _CHURN_BASE_WEEKLY: dict[str, float] = {
     # Exact annual equivalent: 1 - (1-r)^52.
     "product_led_retention": 0.0042,  # 19.7% annual
