@@ -52,6 +52,10 @@ def inspect(
 
     typer.echo(f"Bundle: {root}")
     typer.echo(f"  Recipe:        {manifest.get('recipe_id', '?')}")
+    # v6+ field: which peer generation scheme produced the bundle.  Conditional
+    # so pre-v6 bundles render without a "?" placeholder row.
+    if "generation_scheme" in manifest:
+        typer.echo(f"  Scheme:        {manifest['generation_scheme']}")
     typer.echo(f"  Seed:          {manifest.get('seed', '?')}")
     typer.echo(f"  Mode:          {manifest.get('exposure_mode', '?')}")
     typer.echo(f"  Difficulty:    {manifest.get('difficulty', '?')}")
@@ -82,7 +86,7 @@ def inspect(
                 names = ", ".join(cols[:3]) + ", ..."
             typer.echo(f"  Redactions:    {len(cols)} {noun} [{names}]")
 
-    typer.echo(f"  Motif family:  {manifest.get('motif_family', '?')}")
+    typer.echo(f"  Motif family:  {manifest.get('motif_family') or '?'}")
 
     typer.echo("")
     typer.echo("Tables:")
