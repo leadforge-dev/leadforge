@@ -328,3 +328,31 @@ class TestBoostLeakageTrap:
         result = boost_leakage_trap(df, seed=42)
         after_mean = result.loc[result["converted"] == 1, INSTRUCTOR_TRAP_COL].mean()
         assert after_mean > before_mean
+
+
+class TestGenerateBundleArtifactsPath:
+    """Regression guard (LTV-Pn.2): the v6 builder reads the simulation result
+    and population through ``bundle.artifacts``.  The pipeline-helper tests above
+    never touch ``generate_bundle``, so a WorldBundle field rename slips past
+    them and past ``mypy leadforge`` (scripts are not type-checked).  Run the
+    real generate path once, small, to catch that class of break.  The other
+    build_v*_snapshot scripts share this exact access pattern.
+    """
+
+    def test_generate_bundle_reads_via_artifacts(self) -> None:
+        import importlib.util
+        from pathlib import Path
+
+        script = Path(__file__).resolve().parents[2] / "scripts" / "build_v6_snapshot.py"
+        spec = importlib.util.spec_from_file_location("build_v6_snapshot", script)
+        assert spec is not None
+        assert spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        snapshot, bundle = module.generate_bundle(seed=42, n_leads=40)
+        # The access pattern under guard: artifacts carries sim result + population.
+        assert bundle.artifacts is not None
+        assert bundle.artifacts.simulation_result is not None
+        assert bundle.artifacts.population is not None
+        assert len(snapshot) > 0

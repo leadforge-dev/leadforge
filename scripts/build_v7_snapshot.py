@@ -56,8 +56,8 @@ def generate_bundle(seed: int = SEED, n_leads: int = N_LEADS):
     )
     bundle = gen.generate(latent_touch_intensity=True)
     snapshot = build_snapshot(
-        bundle.simulation_result,
-        bundle.population,
+        bundle.artifacts.simulation_result,
+        bundle.artifacts.population,
         snapshot_day=SNAPSHOT_DAY,
     )
     return snapshot, bundle
@@ -74,10 +74,10 @@ def build_v7_datasets(seed: int = SEED) -> tuple[pd.DataFrame, pd.DataFrame]:
     )
 
     # Compute post-snapshot touches from event timeline (purely causal, no boost)
-    lead_dates = {lead.lead_id: lead.lead_created_at for lead in bundle.population.leads}
+    lead_dates = {lead.lead_id: lead.lead_created_at for lead in bundle.artifacts.population.leads}
     trap_series = compute_post_snapshot_touches(
         snapshot,
-        bundle.simulation_result.touches,
+        bundle.artifacts.simulation_result.touches,
         lead_dates,
         snapshot_day=SNAPSHOT_DAY,
     )
