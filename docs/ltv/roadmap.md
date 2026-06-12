@@ -157,13 +157,13 @@ Total: ~19 PRs across 9 milestones.
 
 > Built directly under `schemes/lifecycle/`.
 
-- [ ] **`LTV-Ph`** — `feat(lifecycle): customer population builder` (**PR #113**). Customer
+- [x] **`LTV-Ph`** — `feat(lifecycle): customer population builder` (**PR #113**). Customer
   entities, 5 new latent traits, **staggered start dates** ending at the
   absolute `observation_date` (D4); seam for future chained generation (D3).
   - Tests: determinism, latent distributions, staggered-start spread, FK
     integrity, acquisition-window boundary.
   - Labels: `type: feature`, `layer: simulation`
-- [ ] **`LTV-Pi`** — `feat(lifecycle): motif families + mechanism policies`. 5
+- [ ] **`LTV-Pi`** — `feat(lifecycle): motif families + mechanism policies` (**PR #116**). 5
   retention motif families; `assign_lifecycle_mechanisms()` mapping motif →
   churn/expansion/payment params.
   - Tests: per-motif param tables, dispatch, determinism.
