@@ -83,11 +83,25 @@ def apply_difficulty_distortions(
     ]
     # Post-noise physical-range clamps, derived from FeatureSpec.non_negative
     # so the lists stay in sync automatically when features are added/renamed.
+    # Targets and exempt columns are excluded like the distortion lists above:
+    # they never receive noise, so clamping them was always a no-op — but the
+    # "targets are never distorted" contract should hold by construction, not
+    # by coincidence.
     nonneg_float_cols = frozenset(
-        f.name for f in feature_specs if f.dtype in _FLOAT_DTYPES and f.non_negative
+        f.name
+        for f in feature_specs
+        if f.dtype in _FLOAT_DTYPES
+        and f.non_negative
+        and not f.is_target
+        and f.name not in exempt_cols
     )
     nonneg_int_cols = frozenset(
-        f.name for f in feature_specs if f.dtype in ("Int64", "int64") and f.non_negative
+        f.name
+        for f in feature_specs
+        if f.dtype in ("Int64", "int64")
+        and f.non_negative
+        and not f.is_target
+        and f.name not in exempt_cols
     )
 
     df = df.copy()

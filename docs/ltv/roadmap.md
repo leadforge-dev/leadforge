@@ -225,6 +225,12 @@ Total: ~19 PRs across 9 milestones.
   - **Deferred to `LTV-Pn` (difficulty wiring):** the design.md §7 secondary
     advanced-tier trap `last_health_signal_post_obs` — it is tier-conditional,
     so it belongs with the difficulty-profile plumbing, not the builder.
+  - **Deferred to `LTV-Pn` (bundle writer):** an opt-in dtype-preserving
+    missingness mode for `render/distortions.py` (`pd.NA` into nullable
+    `Int64` instead of the Float64 conversion) — the lead-scoring default is
+    byte-identity-locked, but the lifecycle scheme has no shipped bundles yet
+    and can pick the cleaner semantics when its parquet schemas are fixed
+    (Copilot review suggestion on #119).
   - Labels: `type: feature`, `layer: render`
 - [ ] **`LTV-Pm`** — `feat(lifecycle): early-pLTV (tenure-anchored) task family`.
   Reuse the snapshot builder with a per-customer relative cutoff
