@@ -45,7 +45,7 @@ protocol + registry, with the package physically reorganized into
 | `LTV-M2` | Generation-scheme architecture + physical reorg | `LTV-Pd`, `LTV-Pe`, `LTV-Pf`, `LTV-Pg` | #107 (Pd), #108 (Pe), #109 (Pf.1), #110 (Pf.2), #111 (Pg.1), #112 (Pg.2) |
 | `LTV-M3` | Customer population + lifecycle world | `LTV-Ph`, `LTV-Pi` | #113 (Ph) |
 | `LTV-M4` | Lifecycle simulation engine | `LTV-Pj`, `LTV-Pk` | #117 (Pj), #118 (Pk) |
-| `LTV-M5` | Customer snapshots + pLTV targets (both regimes) | `LTV-Pl`, `LTV-Pm` | #119 (Pl) |
+| `LTV-M5` | Customer snapshots + pLTV targets (both regimes) | `LTV-Pl`, `LTV-Pm` | #119 (Pl), #120 (Pm) |
 | `LTV-M6` | Register LifecycleScheme + recipe + manifest/version | `LTV-Pn`, `LTV-Po` | |
 | `LTV-M7` | Validation + regression-metric calibration | `LTV-Pp` | |
 | `LTV-M8` | CLI, notebooks, publish | `LTV-Pq`, `LTV-Pr`, `LTV-Ps` | |
@@ -232,12 +232,36 @@ Total: ~19 PRs across 9 milestones.
     and can pick the cleaner semantics when its parquet schemas are fixed
     (Copilot review suggestion on #119).
   - Labels: `type: feature`, `layer: render`
-- [ ] **`LTV-Pm`** — `feat(lifecycle): early-pLTV (tenure-anchored) task family`.
-  Reuse the snapshot builder with a per-customer relative cutoff
-  (`customer_start + early_tenure_weeks`) to emit the cold-start snapshot +
-  recomputed targets (D8); separate task directory.
-  - Tests: per-customer cutoff correctness, short-tenure sparsity, target parity,
-    no post-cutoff leakage.
+- [x] **`LTV-Pm`** — `feat(lifecycle): early-pLTV (tenure-anchored) snapshot`
+  (**PR #120**). `build_early_pltv_snapshot(early_tenure_weeks=…)` in
+  `schemes/lifecycle/snapshots.py`: per-customer relative cutoff at
+  `customer_start + early_tenure_weeks` (D8).  The calendar and early builders
+  now share one per-customer-cutoff core (`_assemble_snapshot` + cutoff-map
+  aggregation helpers), so feature derivations, the trap, target attribution,
+  and distortions are defined once; the calendar regime's output is unchanged
+  (LTV-Pl tests pass as-is).  Eligibility = survival to the anchor (drops
+  onboarding churners, keeps late starters / post-anchor churners); forward
+  windows are fully simulated relative to each customer's own start, so the
+  anchor may legitimately land after `observation_date`.
+  - Tests (19): tenure constant at the anchor; eligibility = survival to
+    anchor; cohort difference vs calendar (post-anchor pre-obs churners);
+    per-customer censoring leakage probe; targets recomputed per-customer
+    cutoff vs the invoice table; cold-start sparsity (NPS all-null at 4w);
+    anchor-validation (`>= 1`, `<= sim.early_tenure_weeks`), short-window /
+    mismatch / missing-obs guards; distortions leave targets + trap intact.
+  - **Known degenerate columns at a short anchor (deferred to `LTV-Pp`
+    validation):** by cadence math, several catalog columns are structurally
+    dead in the early table — `tenure_weeks` (constant = anchor),
+    `renewal_count` (0 for anchor < 52w), `last_nps_score` (all-null for
+    anchor < 13w), and near-degenerate `weeks_since_last_payment_failure`.
+    The catalog is shared with the calendar regime by design, so the
+    no-zero-variance / no-all-null checks must exempt these for the early task
+    family; whether to drop them from the early feature set instead is open for
+    `LTV-Pn`.
+  - **Deferred to `LTV-Pn` (bundle/task writer):** the actual early-pLTV
+    *task directory* + train/valid/test split export (`render/tasks.py`,
+    design.md §536) — this PR delivers the snapshot + recomputed targets only,
+    matching how `LTV-Pl` deferred the calendar task-split writer.
   - Labels: `type: feature`, `layer: render`
 
 ---
