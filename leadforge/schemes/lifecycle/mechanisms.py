@@ -133,24 +133,23 @@ class LifecycleMechanismAssignment:
 # Per-motif parameter tables
 # ---------------------------------------------------------------------------
 
-# Churn hazard base weekly rates.
-# IMPORTANT — the per-motif "% annual" figures below are the BASE-RATE-ONLY
-# equivalents (1 - (1-r)^52) at neutral latents.  The hazard functions in
-# hazards.py add material churn mass on top: the onboarding elevation
-# contributes ~6.8 x base_rate of extra first-year mass and each renewal spike
-# adds (multiplier - 1) x base_rate, so true first-year churn runs roughly
-# 5-14 points above these figures (e.g. churner_dominated ~52%, not 37.5%).
-# Final calibration against the difficulty-profile bands
-#   intro [0.10, 0.20] / intermediate [0.20, 0.35] / advanced [0.30, 0.50]
-# happens in the engine tests (LTV-Pk), where these base rates are expected to
-# be tuned DOWN to land inside the bands once the full tenure shape applies.
+# Churn hazard base weekly rates — ENGINE-CALIBRATED (LTV-Pk).
+# These are NOT meant to be read as standalone annual equivalents: the full
+# tenure shape (onboarding elevation, renewal spikes) and dunning write-off
+# churn add mass on top of the base rate.  The values below were tuned by
+# running simulate_lifecycle() on motif-biased populations (n=600, multiple
+# seed pairs) until simulated FIRST-YEAR churn landed at the per-motif targets:
+#   product_led ~20% | relationship_led ~27% | expansion_led ~15%
+#   payment_fragile ~33-39% (mostly write-off-driven) | churner_dominated ~42%
+# The engine calibration test (tests/schemes/lifecycle/test_engine.py) guards
+# these with wide bands; difficulty-tier scaling on top arrives in LTV-M6.
 _CHURN_BASE_WEEKLY: dict[str, float] = {
     # Exact annual equivalent: 1 - (1-r)^52.
-    "product_led_retention": 0.0042,  # 19.7% annual
-    "relationship_led_retention": 0.0055,  # 24.9% annual
-    "expansion_led_growth": 0.0028,  # 13.6% annual (lowest — high-fit customers)
-    "payment_fragile": 0.0060,  # 26.9% annual (high base; mostly payment-driven)
-    "churner_dominated": 0.0090,  # 37.5% annual
+    "product_led_retention": 0.0034,
+    "relationship_led_retention": 0.0042,
+    "expansion_led_growth": 0.0026,  # lowest — high-fit customers
+    "payment_fragile": 0.0018,  # low base; churn is mostly payment-driven
+    "churner_dominated": 0.0046,
 }
 
 # Latent-trait weights for the background churn hazard.
@@ -263,11 +262,11 @@ _EXPANSION_MRR_FRAC: dict[str, tuple[float, float]] = {
 
 # Payment-failure base monthly rates.
 _PAYMENT_FAILURE_BASE_MONTHLY: dict[str, float] = {
-    "product_led_retention": 0.015,
-    "relationship_led_retention": 0.020,
-    "expansion_led_growth": 0.012,
-    "payment_fragile": 0.080,  # high — financial fragility is the defining trait
-    "churner_dominated": 0.030,
+    "product_led_retention": 0.012,
+    "relationship_led_retention": 0.013,
+    "expansion_led_growth": 0.010,
+    "payment_fragile": 0.027,  # high — financial fragility is the defining trait
+    "churner_dominated": 0.012,
 }
 
 # Latent weights for payment failure.
@@ -307,8 +306,8 @@ _RECOVERY_RATE: dict[str, float] = {
     "product_led_retention": 0.70,
     "relationship_led_retention": 0.65,
     "expansion_led_growth": 0.75,
-    "payment_fragile": 0.40,  # low — these accounts are genuinely fragile
-    "churner_dominated": 0.50,
+    "payment_fragile": 0.64,  # lowest — these accounts are genuinely fragile
+    "churner_dominated": 0.65,
 }
 
 # Fallback values for unknown motif families.
