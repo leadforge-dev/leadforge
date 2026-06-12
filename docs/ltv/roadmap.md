@@ -212,11 +212,19 @@ Total: ~19 PRs across 9 milestones.
   `current_plan` (no plan-change mechanism → exact duplicate of
   `initial_plan`) and `downgrade_count` (no downgrade mechanism →
   zero-variance); re-add only with the mechanism.
-  - Tests (39): censoring-based leakage probe (features identical when all
+  - Tests (43): censoring-based leakage probe (features identical when all
     post-cutoff events are deleted); target derivation vs the invoice table;
     failed/written-off exclusion (D7); ZILN target shape; trap-divergence
     invariant; trap + targets exempt from distortion; weeks_to_next_renewal
     agrees with `is_renewal_week`.
+  - Self-review hardening: `LifecycleSimulationResult` records its
+    `forward_window_days`/`early_tenure_weeks` and the builder rejects sims
+    whose horizon cannot cover the 730d/180d target windows (silent-censoring
+    guard); anniversary boundary single-sourced via public
+    `hazards.next_renewal_week`; population/sim mismatch raises a real error.
+  - **Deferred to `LTV-Pn` (difficulty wiring):** the design.md §7 secondary
+    advanced-tier trap `last_health_signal_post_obs` — it is tier-conditional,
+    so it belongs with the difficulty-profile plumbing, not the builder.
   - Labels: `type: feature`, `layer: render`
 - [ ] **`LTV-Pm`** — `feat(lifecycle): early-pLTV (tenure-anchored) task family`.
   Reuse the snapshot builder with a per-customer relative cutoff

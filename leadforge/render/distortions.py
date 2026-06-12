@@ -7,6 +7,12 @@ catalog.  Extracted from the lead-scoring snapshot builder (verbatim op order
 and RNG substream, so existing outputs stay byte-identical) so the lifecycle
 scheme can share it.
 
+Known wart (inherited, locked by byte-identity with shipped lead-scoring
+bundles): missingness injection converts an Int64 column to Float64 **only if
+at least one of its cells is masked**, so the post-distortion dtype of integer
+columns varies with seed and missing_rate.  Consumers must not rely on
+integer dtypes surviving distortion.
+
 Column eligibility is derived from the feature catalog rather than runtime
 dtype sniffing — categoricals, booleans, IDs, and target columns are never
 distorted even if their runtime dtype happens to be numeric.  Callers exempt

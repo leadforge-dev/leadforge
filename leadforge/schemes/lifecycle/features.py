@@ -22,6 +22,13 @@ pLTV targets, inflate it.  ``leakage_risk=True`` but never redacted: it is a
 deliberate pedagogical trap, retained in all modes and exempt from difficulty
 distortions.
 
+Semantic nulls vs. injected missingness: ``last_nps_score`` and
+``weeks_since_last_payment_failure`` are null *by meaning* (no survey response
+yet / never failed).  Difficulty-tier MCAR missingness stacks on top of these,
+so at distorted tiers a null no longer distinguishes "never happened" from
+"not recorded" — deliberate (real CRM exports have both kinds of missingness)
+and to be documented in the feature dictionary at publication (LTV-M6).
+
 Deliberately absent (vs. design.md §8's draft list):
 
 - ``current_plan`` — the engine has no plan-change mechanism; the column

@@ -34,14 +34,17 @@ counts toward the window it was issued in.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import date, timedelta
-from typing import TYPE_CHECKING
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
 
 from leadforge.render.distortions import apply_difficulty_distortions
 from leadforge.schemes.lifecycle.features import CUSTOMER_SNAPSHOT_FEATURES
+from leadforge.schemes.lifecycle.hazards import next_renewal_week
 
 if TYPE_CHECKING:
     from leadforge.core.models import DifficultyParams
@@ -64,8 +67,6 @@ HEALTH_WINDOW_WEEKS = 12
 
 # Invoice terminal statuses that count as collected gross revenue (D7).
 _REVENUE_STATUSES = frozenset({"paid", "recovered"})
-
-_WEEKS_PER_MONTH = 52.0 / 12.0
 
 _SNAPSHOT_COLUMNS = [f.name for f in CUSTOMER_SNAPSHOT_FEATURES]
 _SNAPSHOT_DTYPES = {f.name: f.dtype for f in CUSTOMER_SNAPSHOT_FEATURES}
@@ -119,8 +120,23 @@ def build_customer_snapshot(
             f"{population.observation_date}; forward-window targets would be censored"
         )
 
+    required_days = max(*FORWARD_WINDOWS_DAYS, CHURN_WINDOW_DAYS)
+    if sim.forward_window_days < required_days:
+        raise ValueError(
+            f"sim was run with forward_window_days={sim.forward_window_days}, which "
+            f"cannot cover the {required_days}-day target windows; the ltv/churn "
+            "targets would be silently censored"
+        )
+
     accounts = {a.account_id: a for a in population.accounts}
     subscriptions = {s.customer_id: s for s in sim.subscriptions}
+    missing = [c.customer_id for c in population.customers if c.customer_id not in subscriptions]
+    if missing:
+        raise ValueError(
+            f"sim result lacks subscriptions for {len(missing)} of "
+            f"{len(population.customers)} population customers (e.g. {missing[0]}); "
+            "population/sim mismatch"
+        )
 
     # Eligibility: started at or before the cutoff, still active at it.
     eligible = []
@@ -144,8 +160,8 @@ def build_customer_snapshot(
     for customer, sub, start in eligible:
         account = accounts[customer.account_id]
         tenure_weeks = (cutoff - start).days // 7
-        ev = events.get(customer.customer_id, _EMPTY_EVENT_AGG)
-        hl = health.get(customer.customer_id, _EMPTY_HEALTH_AGG)
+        ev: Mapping[str, Any] = events.get(customer.customer_id, _EMPTY_EVENT_AGG)
+        hl: Mapping[str, Any] = health.get(customer.customer_id, _EMPTY_HEALTH_AGG)
         rv = revenue.get(customer.customer_id, {})
 
         current_mrr = customer.initial_mrr + ev["mrr_delta"]
@@ -166,8 +182,8 @@ def build_customer_snapshot(
                 "renewal_count": ev["renewal_count"],
                 "expansion_count": ev["expansion_count"],
                 "contract_term_months": customer.contract_term_months,
-                "weeks_to_next_renewal": _weeks_to_next_renewal(
-                    tenure_weeks, customer.contract_term_months
+                "weeks_to_next_renewal": (
+                    next_renewal_week(tenure_weeks, customer.contract_term_months) - tenure_weeks
                 ),
                 "avg_active_users_l12w": hl["avg_active_users"],
                 "active_user_trend_l12w": hl["trend"],
@@ -212,21 +228,28 @@ def build_customer_snapshot(
 # Per-table aggregation helpers
 # ---------------------------------------------------------------------------
 
-_EMPTY_EVENT_AGG: dict = {
-    "mrr_delta": 0,
-    "renewal_count": 0,
-    "expansion_count": 0,
-    "payment_failure_count": 0,
-    "last_failure_date": None,
-}
+# Frozen (MappingProxyType): these are handed out as shared fallbacks for
+# customers with no events/signals — mutating one would corrupt every
+# subsequent row, so accidental writes must raise.
+_EMPTY_EVENT_AGG: Mapping[str, Any] = MappingProxyType(
+    {
+        "mrr_delta": 0,
+        "renewal_count": 0,
+        "expansion_count": 0,
+        "payment_failure_count": 0,
+        "last_failure_date": None,
+    }
+)
 
-_EMPTY_HEALTH_AGG: dict = {
-    "avg_active_users": None,
-    "trend": None,
-    "avg_depth": None,
-    "tickets": 0,
-    "last_nps": None,
-}
+_EMPTY_HEALTH_AGG: Mapping[str, Any] = MappingProxyType(
+    {
+        "avg_active_users": None,
+        "trend": None,
+        "avg_depth": None,
+        "tickets": 0,
+        "last_nps": None,
+    }
+)
 
 
 def _event_aggregates(sim: LifecycleSimulationResult, cutoff: date) -> dict[str, dict]:
@@ -318,20 +341,6 @@ def _forward_revenue(sim: LifecycleSimulationResult, cutoff: date) -> dict[str, 
             if ts <= bound:
                 sums[window] += invoice.amount_usd
     return out
-
-
-def _weeks_to_next_renewal(tenure_weeks: int, contract_term_months: int) -> int:
-    """Weeks from the cutoff to the next contract anniversary.
-
-    Anniversaries fall at ``round(k · term · 52/12)`` weeks — the same
-    boundary :func:`~leadforge.schemes.lifecycle.hazards.is_renewal_week`
-    uses, so the feature and the hazard spike agree exactly.
-    """
-    term_weeks = contract_term_months * _WEEKS_PER_MONTH
-    k = 1
-    while round(k * term_weeks) <= tenure_weeks:
-        k += 1
-    return round(k * term_weeks) - tenure_weeks
 
 
 def _empty_snapshot() -> pd.DataFrame:

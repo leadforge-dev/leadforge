@@ -118,6 +118,22 @@ def test_rejects_population_without_observation_date(population, sim) -> None:
         build_customer_snapshot(broken, sim)
 
 
+def test_rejects_sim_with_short_forward_window(population, sim) -> None:
+    """Regression: a sim run with a shorter horizon than the target windows
+    must be rejected, not silently produce censored ltv_revenue_* values."""
+    short = replace(sim, forward_window_days=365)
+    with pytest.raises(ValueError, match="forward_window_days"):
+        build_customer_snapshot(population, short)
+
+
+def test_rejects_population_sim_mismatch(population, sim) -> None:
+    """Regression: a sim missing subscriptions for population customers must
+    fail with a diagnostic, not a bare KeyError mid-build."""
+    mismatched = replace(sim, subscriptions=sim.subscriptions[1:])
+    with pytest.raises(ValueError, match="population/sim mismatch"):
+        build_customer_snapshot(population, mismatched)
+
+
 # ---------------------------------------------------------------------------
 # Snapshot safety: features must not see past the cutoff
 # ---------------------------------------------------------------------------

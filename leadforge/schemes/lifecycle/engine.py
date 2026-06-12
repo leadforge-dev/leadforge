@@ -116,6 +116,11 @@ class LifecycleSimulationResult:
     subscription_events: list[SubscriptionEventRow] = field(default_factory=list)
     health_signals: list[HealthSignalRow] = field(default_factory=list)
     invoices: list[InvoiceRow] = field(default_factory=list)
+    # Horizon the simulation was run with, recorded so downstream builders can
+    # verify their forward-window targets are fully covered (D6) instead of
+    # silently emitting censored values.
+    forward_window_days: int = 730
+    early_tenure_weeks: int = 4
 
 
 # ---------------------------------------------------------------------------
@@ -190,7 +195,11 @@ def simulate_lifecycle(
     acct_latents = population.latent_state.account_latents
     cust_latents = population.latent_state.customer_latents
 
-    result = LifecycleSimulationResult(subscriptions=[])
+    result = LifecycleSimulationResult(
+        subscriptions=[],
+        forward_window_days=forward_window_days,
+        early_tenure_weeks=early_tenure_weeks,
+    )
     # Event ID counters are global across customers (population order), so IDs
     # stay deterministic and dense.
     counters = {"subscription_event": 0, "health_signal": 0, "invoice": 0}
