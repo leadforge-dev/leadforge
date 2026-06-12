@@ -44,7 +44,7 @@ protocol + registry, with the package physically reorganized into
 | `LTV-M1` | Lifecycle schema foundation | `LTV-Pb`, `LTV-Pc` | #104 (Pb) |
 | `LTV-M2` | Generation-scheme architecture + physical reorg | `LTV-Pd`, `LTV-Pe`, `LTV-Pf`, `LTV-Pg` | #107 (Pd), #108 (Pe), #109 (Pf.1), #110 (Pf.2), #111 (Pg.1), #112 (Pg.2) |
 | `LTV-M3` | Customer population + lifecycle world | `LTV-Ph`, `LTV-Pi` | #113 (Ph) |
-| `LTV-M4` | Lifecycle simulation engine | `LTV-Pj`, `LTV-Pk` | #NNN (Pj) |
+| `LTV-M4` | Lifecycle simulation engine | `LTV-Pj`, `LTV-Pk` | #117 (Pj) |
 | `LTV-M5` | Customer snapshots + pLTV targets (both regimes) | `LTV-Pl`, `LTV-Pm` | |
 | `LTV-M6` | Register LifecycleScheme + recipe + manifest/version | `LTV-Pn`, `LTV-Po` | |
 | `LTV-M7` | Validation + regression-metric calibration | `LTV-Pp` | |
@@ -173,7 +173,7 @@ Total: ~19 PRs across 9 milestones.
 
 ## `LTV-M4` — Lifecycle simulation engine
 
-- [ ] **`LTV-Pj`** — `feat(lifecycle): churn / expansion / payment hazards` (**PR #NNN**).
+- [ ] **`LTV-Pj`** — `feat(lifecycle): churn / expansion / payment hazards` (**PR #117**).
   Weibull churn hazard with renewal-date spike, expansion propensity (the
   heavy-tail generator for pLTV), payment failure + dunning.
   - Tests: hazard shape over tenure, renewal spike, dunning escalation,
