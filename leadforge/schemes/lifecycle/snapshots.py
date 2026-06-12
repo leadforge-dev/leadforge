@@ -1,26 +1,39 @@
-"""Customer snapshot builder — flatten the lifecycle simulation into an
-ML-ready pLTV table.
+"""Customer snapshot builders — flatten the lifecycle simulation into ML-ready
+pLTV tables, one per observation regime (design.md §3.1).
 
-:func:`build_customer_snapshot` produces one row per customer **active at the
-cutoff**, containing the features defined in
-:data:`~leadforge.schemes.lifecycle.features.CUSTOMER_SNAPSHOT_FEATURES`.
+Two public entry points, both producing the same
+:data:`~leadforge.schemes.lifecycle.features.CUSTOMER_SNAPSHOT_FEATURES`
+columns from the same simulated world, differing only in the **cutoff** each
+customer is anchored at:
+
+- :func:`build_customer_snapshot` — **calendar-anchored** (standard) regime: a
+  single absolute ``cutoff`` (the world ``observation_date``) shared by every
+  customer.  Tenure at cutoff varies from cold to mature.
+- :func:`build_early_pltv_snapshot` — **tenure-anchored** (early-pLTV) regime
+  (D8): a per-customer relative cutoff at
+  ``customer_start + early_tenure_weeks``.  Every row is observed at the same
+  short tenure — the genuine cold-start case (only a few weeks of health
+  signal exist at the cutoff).
+
+Both delegate to one per-customer-cutoff core (:func:`_assemble_snapshot`), so
+feature derivations, the leakage trap, target attribution, and difficulty
+distortions are defined exactly once.
 
 Snapshot-safety contract (design.md §5): every feature column is computed
-exclusively from events at or before the cutoff — with one deliberate
+exclusively from events at or before that row's cutoff — with one deliberate
 exception, the ``mrr_change_full_period`` leakage trap (design.md §7), which
 reads the end-of-simulation MRR.  The targets (``ltv_revenue_{90,365,730}d``,
 ``churned_within_180d``) are forward-window aggregates by construction and are
 never published as features.
 
-Cutoff semantics
-----------------
-The calendar-anchored regime (this PR, LTV-Pl) snapshots every customer at the
-shared absolute ``observation_date``.  The tenure-anchored early-pLTV regime
-(LTV-Pm) will reuse the same per-customer machinery with a relative cutoff.
-The cutoff must not exceed the population's ``observation_date``: the engine
-only guarantees full forward-window simulation up to
-``observation_date + forward_window_days`` (D6), so a later cutoff would
-silently censor the targets.
+Cutoff coverage
+---------------
+Forward-window targets are only meaningful if the simulation ran long enough to
+fill them.  The engine (D6) simulates each customer through
+``max(observation_date, start + early_tenure_weeks) + forward_window_days`` and
+records that horizon on the result; both builders refuse to run unless the
+recorded horizon covers the 730d/180d target windows, rather than silently
+emitting censored targets.
 
 Revenue attribution (D7)
 ------------------------
@@ -49,13 +62,19 @@ from leadforge.schemes.lifecycle.hazards import next_renewal_week
 if TYPE_CHECKING:
     from leadforge.core.models import DifficultyParams
     from leadforge.schemes.lifecycle.engine import LifecycleSimulationResult
+    from leadforge.schemes.lifecycle.entities import (
+        CustomerLifecycleRow,
+        SubscriptionLifecycleRow,
+    )
     from leadforge.schemes.lifecycle.population import CustomerPopulationResult
 
 __all__ = [
     "CHURN_WINDOW_DAYS",
+    "DEFAULT_EARLY_TENURE_WEEKS",
     "FORWARD_WINDOWS_DAYS",
     "HEALTH_WINDOW_WEEKS",
     "build_customer_snapshot",
+    "build_early_pltv_snapshot",
 ]
 
 # pLTV forward windows (D6) and the secondary churn-label window (D9).
@@ -64,6 +83,9 @@ CHURN_WINDOW_DAYS = 180
 
 # Look-back window for the health aggregates (*_l12w columns).
 HEALTH_WINDOW_WEEKS = 12
+
+# Default tenure anchor for the early-pLTV regime (design.md §3.1: "e.g. 4w").
+DEFAULT_EARLY_TENURE_WEEKS = 4
 
 # Invoice terminal statuses that count as collected gross revenue (D7).
 _REVENUE_STATUSES = frozenset({"paid", "recovered"})
@@ -75,6 +97,14 @@ _SNAPSHOT_DTYPES = {f.name: f.dtype for f in CUSTOMER_SNAPSHOT_FEATURES}
 # total_touches_all trap): noise/missingness on it would muddy the lesson.
 _DISTORTION_EXEMPT_COLS: frozenset[str] = frozenset({"mrr_change_full_period"})
 
+# One eligible customer plus the cutoff its row is anchored at.
+_Eligible = tuple["CustomerLifecycleRow", "SubscriptionLifecycleRow", date]
+
+
+# ---------------------------------------------------------------------------
+# Public entry points
+# ---------------------------------------------------------------------------
+
 
 def build_customer_snapshot(
     population: CustomerPopulationResult,
@@ -84,7 +114,9 @@ def build_customer_snapshot(
     difficulty_params: DifficultyParams | None = None,
     seed: int = 42,
 ) -> pd.DataFrame:
-    """Build the calendar-anchored customer snapshot table.
+    """Build the **calendar-anchored** customer snapshot table.
+
+    Every customer is anchored at the same absolute ``cutoff``.
 
     Args:
         population: Output of
@@ -102,16 +134,14 @@ def build_customer_snapshot(
 
     Returns:
         One row per customer active at the cutoff (started at or before it,
-        not yet churned), with columns in catalog order.  Customers who
-        started after the cutoff or churned at/before it are excluded.
+        not yet churned), with columns in catalog order.
 
     Raises:
-        ValueError: if the population lacks an ``observation_date`` or the
-            cutoff exceeds it.
+        ValueError: if the population lacks an ``observation_date``, the cutoff
+            exceeds it, the sim horizon cannot cover the target windows, or the
+            population and sim do not match.
     """
-    if not population.observation_date:
-        raise ValueError("population.observation_date is not set")
-    obs_date = date.fromisoformat(population.observation_date)
+    obs_date, accounts, subscriptions = _validate_inputs(population, sim)
     if cutoff is None:
         cutoff = obs_date
     elif cutoff > obs_date:
@@ -119,6 +149,109 @@ def build_customer_snapshot(
             f"cutoff {cutoff.isoformat()} is after observation_date "
             f"{population.observation_date}; forward-window targets would be censored"
         )
+
+    eligible: list[_Eligible] = []
+    for customer in population.customers:
+        start = date.fromisoformat(customer.customer_start_at)
+        if start > cutoff:
+            continue
+        sub = subscriptions[customer.customer_id]
+        if sub.churn_at is not None and date.fromisoformat(sub.churn_at) <= cutoff:
+            continue
+        eligible.append((customer, sub, start))
+
+    cutoffs = {customer.customer_id: cutoff for customer, _, _ in eligible}
+    return _assemble_snapshot(sim, accounts, eligible, cutoffs, difficulty_params, seed)
+
+
+def build_early_pltv_snapshot(
+    population: CustomerPopulationResult,
+    sim: LifecycleSimulationResult,
+    *,
+    early_tenure_weeks: int = DEFAULT_EARLY_TENURE_WEEKS,
+    difficulty_params: DifficultyParams | None = None,
+    seed: int = 42,
+) -> pd.DataFrame:
+    """Build the **tenure-anchored** early-pLTV snapshot table (D8).
+
+    Each customer is anchored at ``customer_start + early_tenure_weeks`` — a
+    per-customer relative cutoff — so every row is observed at the same fixed,
+    short tenure.  This is the cold-start regime: only a few weeks of health
+    signal exist at the cutoff, and ``last_nps_score`` is null for the whole
+    cohort when ``early_tenure_weeks`` precedes the first quarterly survey.
+
+    Because the cutoff is constant *in tenure*, ``tenure_weeks`` is constant
+    across the whole table (= ``early_tenure_weeks``).  That is the defining
+    property of the regime, not a feature — the published-bundle
+    no-zero-variance check must exempt ``tenure_weeks`` for this task family
+    (handled in the validation harness, LTV-Pp).
+
+    Eligibility does **not** require the cutoff to fall on or before
+    ``observation_date``: each customer's forward windows are fully simulated
+    relative to its own start (the engine runs through
+    ``max(obs, start + early_tenure_weeks) + forward_window_days``), so a
+    late-starting customer whose tenure cutoff lands after ``observation_date``
+    still has complete targets.  The cohort therefore differs from the
+    calendar regime's (it drops onboarding churners but keeps late starters).
+
+    Args:
+        population: Customer population.
+        sim: Simulation result for the same population.
+        early_tenure_weeks: Tenure (whole weeks) at which every customer is
+            observed.  Must not exceed the sim's recorded ``early_tenure_weeks``
+            (otherwise the per-customer forward windows are not fully covered).
+        difficulty_params: Optional difficulty knobs (see
+            :func:`build_customer_snapshot`).
+        seed: Seed for the distortion RNG substream.
+
+    Returns:
+        One row per customer that survived to ``early_tenure_weeks`` of tenure.
+
+    Raises:
+        ValueError: on the same input problems as
+            :func:`build_customer_snapshot`, plus a non-positive
+            ``early_tenure_weeks`` or one exceeding the sim's recorded anchor.
+    """
+    if early_tenure_weeks < 1:
+        raise ValueError(f"early_tenure_weeks must be >= 1, got {early_tenure_weeks}")
+    _obs_date, accounts, subscriptions = _validate_inputs(population, sim)
+    if early_tenure_weeks > sim.early_tenure_weeks:
+        raise ValueError(
+            f"early_tenure_weeks={early_tenure_weeks} exceeds the sim's recorded "
+            f"early_tenure_weeks={sim.early_tenure_weeks}; the per-customer forward "
+            "windows would be censored"
+        )
+
+    eligible: list[_Eligible] = []
+    cutoffs: dict[str, date] = {}
+    for customer in population.customers:
+        start = date.fromisoformat(customer.customer_start_at)
+        cutoff = start + timedelta(weeks=early_tenure_weeks)
+        sub = subscriptions[customer.customer_id]
+        if sub.churn_at is not None and date.fromisoformat(sub.churn_at) <= cutoff:
+            continue
+        eligible.append((customer, sub, start))
+        cutoffs[customer.customer_id] = cutoff
+
+    return _assemble_snapshot(sim, accounts, eligible, cutoffs, difficulty_params, seed)
+
+
+# ---------------------------------------------------------------------------
+# Shared assembly (per-customer cutoff)
+# ---------------------------------------------------------------------------
+
+
+def _validate_inputs(
+    population: CustomerPopulationResult, sim: LifecycleSimulationResult
+) -> tuple[date, dict[str, Any], dict[str, Any]]:
+    """Shared precondition checks for both regimes.
+
+    Returns the parsed ``observation_date``, an ``account_id -> AccountRow``
+    index, and a ``customer_id -> SubscriptionLifecycleRow`` index.
+    """
+    if not population.observation_date:
+        raise ValueError("population.observation_date is not set")
+    obs_date = date.fromisoformat(population.observation_date)
 
     required_days = max(*FORWARD_WINDOWS_DAYS, CHURN_WINDOW_DAYS)
     if sim.forward_window_days < required_days:
@@ -137,34 +270,34 @@ def build_customer_snapshot(
             f"{len(population.customers)} population customers (e.g. {missing[0]}); "
             "population/sim mismatch"
         )
+    return obs_date, accounts, subscriptions
 
-    # Eligibility: started at or before the cutoff, still active at it.
-    eligible = []
-    for customer in population.customers:
-        start = date.fromisoformat(customer.customer_start_at)
-        if start > cutoff:
-            continue
-        sub = subscriptions[customer.customer_id]
-        if sub.churn_at is not None and date.fromisoformat(sub.churn_at) <= cutoff:
-            continue
-        eligible.append((customer, sub, start))
 
+def _assemble_snapshot(
+    sim: LifecycleSimulationResult,
+    accounts: dict[str, Any],
+    eligible: list[_Eligible],
+    cutoffs: dict[str, date],
+    difficulty_params: DifficultyParams | None,
+    seed: int,
+) -> pd.DataFrame:
+    """Build the snapshot frame from a per-customer ``customer_id -> cutoff`` map."""
     if not eligible:
         return _empty_snapshot()
 
-    events = _event_aggregates(sim, cutoff)
-    health = _health_aggregates(sim, cutoff)
-    revenue = _forward_revenue(sim, cutoff)
+    events = _event_aggregates(sim, cutoffs)
+    health = _health_aggregates(sim, cutoffs)
+    revenue = _forward_revenue(sim, cutoffs)
 
     records: list[dict[str, object]] = []
     for customer, sub, start in eligible:
+        cutoff = cutoffs[customer.customer_id]
         account = accounts[customer.account_id]
         tenure_weeks = (cutoff - start).days // 7
         ev: Mapping[str, Any] = events.get(customer.customer_id, _EMPTY_EVENT_AGG)
         hl: Mapping[str, Any] = health.get(customer.customer_id, _EMPTY_HEALTH_AGG)
         rv = revenue.get(customer.customer_id, {})
 
-        current_mrr = customer.initial_mrr + ev["mrr_delta"]
         churn_date = date.fromisoformat(sub.churn_at) if sub.churn_at else None
         records.append(
             {
@@ -177,7 +310,7 @@ def build_customer_snapshot(
                 "tenure_weeks": tenure_weeks,
                 "initial_plan": customer.initial_plan,
                 "initial_mrr": customer.initial_mrr,
-                "current_mrr": current_mrr,
+                "current_mrr": customer.initial_mrr + ev["mrr_delta"],
                 "mrr_change_at_snapshot": ev["mrr_delta"],
                 "renewal_count": ev["renewal_count"],
                 "expansion_count": ev["expansion_count"],
@@ -225,7 +358,7 @@ def build_customer_snapshot(
 
 
 # ---------------------------------------------------------------------------
-# Per-table aggregation helpers
+# Per-table aggregation helpers (per-customer cutoff)
 # ---------------------------------------------------------------------------
 
 # Frozen (MappingProxyType): these are handed out as shared fallbacks for
@@ -252,13 +385,15 @@ _EMPTY_HEALTH_AGG: Mapping[str, Any] = MappingProxyType(
 )
 
 
-def _event_aggregates(sim: LifecycleSimulationResult, cutoff: date) -> dict[str, dict]:
-    """Aggregate subscription events at or before *cutoff*, per customer."""
+def _event_aggregates(sim: LifecycleSimulationResult, cutoffs: dict[str, date]) -> dict[str, dict]:
+    """Aggregate each customer's subscription events at or before its cutoff."""
+    cutoffs_iso = {cid: c.isoformat() for cid, c in cutoffs.items()}
     out: dict[str, dict] = {}
-    cutoff_iso = cutoff.isoformat()
     for event in sim.subscription_events:
+        cutoff_iso = cutoffs_iso.get(event.customer_id)
         # ISO dates compare correctly as strings — avoids per-event parsing.
-        if event.event_timestamp > cutoff_iso:
+        # A None cutoff means the customer is not eligible (skip entirely).
+        if cutoff_iso is None or event.event_timestamp > cutoff_iso:
             continue
         agg = out.setdefault(event.customer_id, dict(_EMPTY_EVENT_AGG))
         if event.event_type == "expansion":
@@ -272,36 +407,39 @@ def _event_aggregates(sim: LifecycleSimulationResult, cutoff: date) -> dict[str,
     return out
 
 
-def _health_aggregates(sim: LifecycleSimulationResult, cutoff: date) -> dict[str, dict]:
+def _health_aggregates(sim: LifecycleSimulationResult, cutoffs: dict[str, date]) -> dict[str, dict]:
     """Aggregate health signals into the last-12-week window features.
 
     ``last_nps_score`` looks back over the customer's whole history (NPS is
     quarterly — a 12-week window would miss most customers' latest response
-    purely by phase), while the ``*_l12w`` aggregates use the
+    purely by phase), while the ``*_l12w`` aggregates use each customer's
     ``(cutoff - 12w, cutoff]`` window.
     """
-    window_start_iso = (cutoff - timedelta(weeks=HEALTH_WINDOW_WEEKS)).isoformat()
-    cutoff_iso = cutoff.isoformat()
+    cutoffs_iso = {cid: c.isoformat() for cid, c in cutoffs.items()}
+    window_start_iso = {
+        cid: (c - timedelta(weeks=HEALTH_WINDOW_WEEKS)).isoformat() for cid, c in cutoffs.items()
+    }
 
     users: dict[str, list[tuple[str, int]]] = {}
     depths: dict[str, list[float]] = {}
     tickets: dict[str, int] = {}
     last_nps: dict[str, int] = {}
     for signal in sim.health_signals:
-        ts = signal.period_start
-        if ts > cutoff_iso:
+        cutoff_iso = cutoffs_iso.get(signal.customer_id)
+        if cutoff_iso is None or signal.period_start > cutoff_iso:
             continue
         if signal.nps_score is not None:
             # Signals are chronological per customer — last write wins.
             last_nps[signal.customer_id] = signal.nps_score
-        if ts <= window_start_iso:
+        if signal.period_start <= window_start_iso[signal.customer_id]:
             continue
-        users.setdefault(signal.customer_id, []).append((ts, signal.active_users))
+        users.setdefault(signal.customer_id, []).append((signal.period_start, signal.active_users))
         depths.setdefault(signal.customer_id, []).append(signal.feature_depth_score)
         tickets[signal.customer_id] = tickets.get(signal.customer_id, 0) + signal.support_tickets
 
     out: dict[str, dict] = {}
     for customer_id, points in users.items():
+        cutoff = cutoffs[customer_id]
         weeks = [(date.fromisoformat(ts) - cutoff).days / 7.0 for ts, _ in points]
         counts = [n for _, n in points]
         if len(points) >= 2:
@@ -315,29 +453,33 @@ def _health_aggregates(sim: LifecycleSimulationResult, cutoff: date) -> dict[str
             "tickets": tickets[customer_id],
             "last_nps": last_nps.get(customer_id),
         }
-    # Customers with an NPS response but no in-window signals cannot occur
-    # (an active customer always has signals in the trailing window), but a
+    # Customers with an NPS response but no in-window signals cannot occur for
+    # an active customer (it always has a signal in the trailing window), but a
     # defensive merge keeps last_nps consistent if eligibility ever widens.
     for customer_id, nps in last_nps.items():
         out.setdefault(customer_id, dict(_EMPTY_HEALTH_AGG))["last_nps"] = nps
     return out
 
 
-def _forward_revenue(sim: LifecycleSimulationResult, cutoff: date) -> dict[str, dict[int, int]]:
+def _forward_revenue(
+    sim: LifecycleSimulationResult, cutoffs: dict[str, date]
+) -> dict[str, dict[int, int]]:
     """Sum collected gross revenue per customer per forward window (D7)."""
-    bounds = {
-        window: (cutoff + timedelta(days=window)).isoformat() for window in FORWARD_WINDOWS_DAYS
+    cutoffs_iso = {cid: c.isoformat() for cid, c in cutoffs.items()}
+    bounds_iso = {
+        cid: {window: (c + timedelta(days=window)).isoformat() for window in FORWARD_WINDOWS_DAYS}
+        for cid, c in cutoffs.items()
     }
-    cutoff_iso = cutoff.isoformat()
     out: dict[str, dict[int, int]] = {}
     for invoice in sim.invoices:
-        if invoice.payment_status not in _REVENUE_STATUSES:
+        cutoff_iso = cutoffs_iso.get(invoice.customer_id)
+        if cutoff_iso is None or invoice.payment_status not in _REVENUE_STATUSES:
             continue
         ts = invoice.invoice_date
         if ts <= cutoff_iso:
             continue
         sums = out.setdefault(invoice.customer_id, dict.fromkeys(FORWARD_WINDOWS_DAYS, 0))
-        for window, bound in bounds.items():
+        for window, bound in bounds_iso[invoice.customer_id].items():
             if ts <= bound:
                 sums[window] += invoice.amount_usd
     return out
