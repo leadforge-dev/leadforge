@@ -327,6 +327,13 @@ class TestInspectCommand:
         assert str(manifest["snapshot_day"]) in output
         assert "Redactions:" in output
 
+    def test_inspect_shows_generation_scheme(self, bundle_dir: Path) -> None:
+        """v6: inspect surfaces the generation_scheme manifest field."""
+        result = runner.invoke(app, ["inspect", str(bundle_dir)])
+        assert result.exit_code == 0
+        assert "Scheme:" in result.output
+        assert "lead_scoring" in result.output
+
     def test_inspect_pre_existing_header_order_unchanged(self, bundle_dir: Path) -> None:
         """Regression guard: the 8 pre-v4 header rows stay in the same order."""
         result = runner.invoke(app, ["inspect", str(bundle_dir)])

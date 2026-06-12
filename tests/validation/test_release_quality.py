@@ -460,7 +460,7 @@ def _write_minimal_bundle(
     test.to_parquet(task_dir / "test.parquet", index=False)
 
     manifest = {
-        "bundle_schema_version": "5",
+        "bundle_schema_version": "6",
         "package_version": "1.0.0",
         "recipe_id": "b2b_saas_procurement_v1",
         "seed": seed,

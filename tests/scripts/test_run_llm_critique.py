@@ -94,7 +94,7 @@ def _write_minimal_release(tmp_path: Path, *, tier: str = "intermediate") -> Pat
         "# Method\n", encoding="utf-8"
     )
     (bundle_dir / "manifest.json").write_text(
-        json.dumps({"bundle_schema_version": "5", "exposure_mode": "student_public"}),
+        json.dumps({"bundle_schema_version": "6", "exposure_mode": "student_public"}),
         encoding="utf-8",
     )
     (bundle_dir / "feature_dictionary.csv").write_text(

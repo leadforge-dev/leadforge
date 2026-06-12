@@ -94,7 +94,7 @@ def _write_minimal_release(
     (bundle_dir / "manifest.json").write_text(
         json.dumps(
             {
-                "bundle_schema_version": "5",
+                "bundle_schema_version": "6",
                 "package_version": "1.0.0",
                 "recipe_id": "b2b_saas_procurement_v1",
                 "seed": 42,
