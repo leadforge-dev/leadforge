@@ -76,3 +76,44 @@ def test_write_metadata_rejects_unpopulated_bundle(tmp_path) -> None:
 def test_lifecycle_metadata_hook_is_stubbed(tmp_path) -> None:
     with pytest.raises(NotImplementedError):
         get_scheme("lifecycle").write_metadata(WorldBundle(), tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# apply_exposure starts from a clean metadata/ (Copilot review on #122)
+# ---------------------------------------------------------------------------
+
+
+def test_apply_exposure_clears_stale_metadata(tmp_path) -> None:
+    """A reused output path must not retain hidden-truth files that the current
+    bundle did not write — critical once a different scheme (with a different
+    file set) regenerates over the same path."""
+    from leadforge.core.enums import ExposureMode
+    from leadforge.exposure.modes import apply_exposure
+
+    bundle = _populated_bundle()
+
+    # Pre-seed a stale metadata/ with a file no scheme writes.
+    meta = tmp_path / "metadata"
+    meta.mkdir()
+    stale = meta / "stale_graph.graphml"
+    stale.write_text("<orphan/>")
+
+    apply_exposure(bundle, tmp_path, ExposureMode.research_instructor)
+
+    assert not stale.exists(), "stale metadata file survived the rewrite"
+    # The current bundle's hidden-truth files are present.
+    assert (meta / "graph.json").exists()
+    assert (meta / "world_spec.json").exists()
+
+
+def test_apply_exposure_student_public_removes_metadata(tmp_path) -> None:
+    from leadforge.core.enums import ExposureMode
+    from leadforge.exposure.modes import apply_exposure
+
+    bundle = _populated_bundle()
+    meta = tmp_path / "metadata"
+    meta.mkdir()
+    (meta / "graph.json").write_text("{}")
+
+    apply_exposure(bundle, tmp_path, ExposureMode.student_public)
+    assert not meta.exists(), "student_public must not retain a metadata/ dir"

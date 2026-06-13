@@ -152,15 +152,14 @@ class LeadScoringScheme:
         factored out (``write_relational_tables``); the rest is intentionally
         *not* yet shared.
 
-        The deeper envelope/scheme decomposition (a shared bundle orchestrator
-        with scheme render hooks) is deferred to ``LTV-M6``: it requires
-        generalising ``build_manifest`` (today it takes the lead-scoring
-        ``world_graph``) and ``apply_exposure`` (today it writes the
-        lead-scoring hidden graph + latent registry), and is best designed with
-        a second scheme in hand.  Until then ``LifecycleScheme.write_bundle``
-        will reuse ``write_relational_tables`` + the leaf helpers
-        (``build_manifest`` / ``apply_exposure`` / ``get_filter``) but
-        orchestrate them itself.
+        ``build_manifest`` (``LTV-Pn.1``) and ``apply_exposure`` (``LTV-Pn.2``)
+        are now scheme-agnostic: ``apply_exposure`` writes the generic
+        ``world_spec.json`` and delegates this scheme's hidden-truth files
+        (graph, latent registry, mechanism summary) to
+        :meth:`write_metadata`.  The remaining shared-orchestrator decomposition
+        (a bundle orchestrator with scheme render hooks lifted out of each
+        ``write_bundle``) is deferred to ``LTV-Pn.4``, once the lifecycle
+        ``write_bundle`` exists to reveal the real shared shape.
         """
         from pathlib import Path
 

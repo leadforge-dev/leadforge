@@ -43,9 +43,13 @@ def apply_exposure(bundle: WorldBundle, bundle_root: Path, mode: ExposureMode) -
 
     filt = get_filter(mode)
     meta_dir = bundle_root / "metadata"
+    # Always start from a clean metadata/ so its contents exactly match the
+    # current bundle.  Reusing an output path across runs — or across schemes,
+    # which emit different hidden-truth file sets — must not leave stale files
+    # behind (the non-writing branch below clears it for the same reason).
+    if meta_dir.exists():
+        shutil.rmtree(meta_dir)
     if filt.write_metadata:
-        meta_dir.mkdir(exist_ok=True)
+        meta_dir.mkdir(parents=True)
         write_world_spec_json(bundle.spec, meta_dir)
         get_scheme(bundle.spec.scheme).write_metadata(bundle, meta_dir)
-    elif meta_dir.exists():
-        shutil.rmtree(meta_dir)
