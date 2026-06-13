@@ -40,6 +40,8 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from leadforge.core.exceptions import LeadforgeError
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from leadforge.core.models import GenerationConfig, WorldBundle
     from leadforge.narrative.spec import NarrativeSpec
 
@@ -89,6 +91,17 @@ class GenerationScheme(Protocol):
         :func:`leadforge.render.relational.write_relational_tables`.  A shared
         orchestrator with scheme render hooks lands in ``LTV-M6`` once
         ``build_manifest`` / ``apply_exposure`` are scheme-agnostic.
+        """
+        ...
+
+    def write_metadata(self, bundle: WorldBundle, meta_dir: Path) -> None:
+        """Write the scheme's hidden-truth files into an existing *meta_dir*.
+
+        Called by :func:`leadforge.exposure.modes.apply_exposure` for modes
+        that publish hidden truth (e.g. ``research_instructor``), after the
+        shared, scheme-agnostic ``world_spec.json`` is written.  A scheme emits
+        whatever latent truth it has — for lead scoring the world graph, latent
+        registry, and mechanism summary; other schemes emit their own.
         """
         ...
 

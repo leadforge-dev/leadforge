@@ -50,8 +50,8 @@ def generate_bundle(seed: int = SEED, n_leads: int = N_LEADS) -> pd.DataFrame:
     )
     bundle = gen.generate()
     return build_snapshot(
-        bundle.simulation_result,
-        bundle.population,
+        bundle.artifacts.simulation_result,
+        bundle.artifacts.population,
         snapshot_day=SNAPSHOT_DAY,
     )
 

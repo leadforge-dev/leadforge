@@ -66,8 +66,9 @@ def test_generate_returns_world_bundle() -> None:
     gen = Generator.from_recipe("b2b_saas_procurement_v1", seed=42)
     bundle = gen.generate(n_leads=30, n_accounts=15, n_contacts=45)
     assert isinstance(bundle, WorldBundle)
-    assert bundle.simulation_result is not None
-    assert bundle.population is not None
+    assert bundle.artifacts is not None
+    assert bundle.artifacts.simulation_result is not None
+    assert bundle.artifacts.population is not None
 
 
 def test_generate_respects_recipe_difficulty_when_not_overridden() -> None:

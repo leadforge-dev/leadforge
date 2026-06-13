@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING, Any
 from leadforge.schemes.base import register_scheme
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from leadforge.core.models import GenerationConfig, WorldBundle
     from leadforge.narrative.spec import NarrativeSpec
 
@@ -43,6 +45,9 @@ class LifecycleScheme:
         path: str,
         generation_timestamp: str | None = None,
     ) -> None:
+        raise NotImplementedError(_NOT_IMPLEMENTED)
+
+    def write_metadata(self, bundle: WorldBundle, meta_dir: Path) -> None:
         raise NotImplementedError(_NOT_IMPLEMENTED)
 
 

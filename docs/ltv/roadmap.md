@@ -46,7 +46,7 @@ protocol + registry, with the package physically reorganized into
 | `LTV-M3` | Customer population + lifecycle world | `LTV-Ph`, `LTV-Pi` | #113 (Ph) |
 | `LTV-M4` | Lifecycle simulation engine | `LTV-Pj`, `LTV-Pk` | #117 (Pj), #118 (Pk) |
 | `LTV-M5` | Customer snapshots + pLTV targets (both regimes) | `LTV-Pl`, `LTV-Pm` | #119 (Pl), #120 (Pm) |
-| `LTV-M6` | Register LifecycleScheme + recipe + manifest/version | `LTV-Pn.1…4`, `LTV-Po` | #121 (Pn.1) |
+| `LTV-M6` | Register LifecycleScheme + recipe + manifest/version | `LTV-Pn.1…4`, `LTV-Po` | #121 (Pn.1), #122 (Pn.2) |
 | `LTV-M7` | Validation + regression-metric calibration | `LTV-Pp` | |
 | `LTV-M8` | CLI, notebooks, publish | `LTV-Pq`, `LTV-Pr`, `LTV-Ps` | |
 
@@ -282,13 +282,20 @@ pipeline + schema bump).  Split into four sub-PRs in dependency order:
   tasks/); only `manifest.json` changes (new field + version).  Schema
   contract test renamed v5 → v6.
   - Labels: `type: refactor`, `layer: render`
-- [ ] **`LTV-Pn.2`** — `refactor: scheme-agnostic WorldBundle + exposure hook +
-  shared bundle orchestrator`.  Generalise `WorldBundle` to hold scheme-owned
-  artifacts (finishing cleanup #3: drop the `core.models` / `render` →
-  `lead_scoring.*` back-refs); make `apply_exposure` / `write_metadata_dir`
-  scheme-agnostic via a hidden-truth hook (cleanup #2); lift a shared bundle
-  orchestrator with scheme render hooks out of `write_bundle` (cleanup #1).
-  Lead-scoring bundle byte-identical (full SHA-256 harness).
+- [x] **`LTV-Pn.2`** — `refactor: scheme-agnostic WorldBundle + exposure hook`
+  (**PR #122**).  `WorldBundle` now holds only `spec` + an opaque
+  `artifacts: Any` (scheme-owned; lead-scoring stores `LeadScoringArtifacts`),
+  finishing cleanup #3 — the `core.models` lead-scoring type imports are gone.
+  `apply_exposure` is scheme-agnostic: it writes the generic `world_spec.json`
+  and dispatches hidden-truth files to the producing scheme's new
+  `GenerationScheme.write_metadata` hook (cleanup #2); the lead-scoring graph /
+  latent registry / mechanism summary writers moved out of `exposure/` into the
+  lead-scoring scheme.  Lead-scoring bundle **byte-identical** across both
+  exposure modes (full SHA-256 harness).
+  - **Re-scoped:** the shared bundle orchestrator (cleanup #1) moves to
+    `LTV-Pn.4` — per this file's own note it is best designed *with the second
+    scheme's `write_bundle` in hand*; building it now against one scheme would
+    guess the hook shape.
   - Labels: `type: refactor`, `layer: api`, `layer: core`, `layer: render`
 - [ ] **`LTV-Pn.3`** — `feat: lifecycle config + regression task model`.  Add
   `n_customers` + lifecycle config (forward windows, early-tenure, observation
@@ -300,7 +307,10 @@ pipeline + schema bump).  Split into four sub-PRs in dependency order:
   Implement `LifecycleScheme.build_world` (population → sim) and `write_bundle`
   (lifecycle relational tables; both regime snapshots → two task families ×
   3 windows + secondary churn; dataset card; manifest `observation_date` +
-  windows via `extra_fields`).  First end-to-end lifecycle bundle (programmatic;
+  windows via `extra_fields`; lifecycle `write_metadata` hidden-truth hook).
+  With both schemes' `write_bundle` in hand, **lift the shared bundle
+  orchestrator with scheme render hooks** out of the two implementations
+  (carried cleanup #1).  First end-to-end lifecycle bundle (programmatic;
   recipe wiring is `LTV-Po`).  Extend `CLAUDE.md` hard constraints with the
   lifecycle snapshot-safety clause + the `schemes/` layout.  Carries the
   LTV-Pp validation flags: early-regime degenerate-column exemptions; the
@@ -353,19 +363,16 @@ byte-identical and reviewable. They are tracked here and discharged in
 
 1. **Shared render orchestration** — `LTV-Pe` left each scheme owning its full
    `write_bundle`; only `write_relational_tables` is shared. A shared bundle
-   orchestrator with scheme render hooks lands once there are two schemes.
-2. **`build_manifest` / `apply_exposure` are lead-scoring-coupled** —
-   `build_manifest` takes a `world_graph`; `apply_exposure` writes the
-   lead-scoring hidden graph + latent registry. Generalize both to be
-   scheme-agnostic.
-3. **core→scheme layering inversion** — `LTV-Pf.1` introduced
-   `TYPE_CHECKING`-only imports of `leadforge.schemes.lead_scoring.*` in
-   `core.models` (`WorldBundle.world_graph: WorldGraph | None`) and
-   `render.*`. Harmless at runtime (no eager import), but `core`/shared
-   `render` should not reference a scheme. **Partly discharged in `LTV-Pn.1`**
-   (removed the `render.manifests` → `lead_scoring.structure.graph` back-ref);
-   the `core.models.WorldBundle` back-refs follow in `LTV-Pn.2` once
-   `WorldBundle` holds scheme-agnostic artifacts.
+   orchestrator with scheme render hooks lands in **`LTV-Pn.4`**, once the
+   lifecycle `write_bundle` exists to reveal the real shared shape.
+2. ~~**`build_manifest` / `apply_exposure` are lead-scoring-coupled**~~ —
+   **Done** (`build_manifest` in `LTV-Pn.1`; `apply_exposure` in `LTV-Pn.2` via
+   the `write_metadata` scheme hook).
+3. ~~**core→scheme layering inversion**~~ — **Done.** `LTV-Pn.1` removed the
+   `render.manifests` back-ref; `LTV-Pn.2` removed the `core.models.WorldBundle`
+   lead-scoring type imports (it now holds an opaque `artifacts: Any`).  Only a
+   `DEFAULT_SCHEME = "lead_scoring"` string default and doc-comment
+   cross-references remain — neither is an import/type inversion.
 
 ---
 

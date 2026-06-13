@@ -57,7 +57,7 @@ def test_write_bundle_unknown_scheme_raises(tmp_path: Path) -> None:
 def test_write_bundle_unpopulated_raises(tmp_path: Path) -> None:
     # Default bundle has spec.scheme == "lead_scoring" → dispatches, then the
     # lead-scoring write_bundle rejects the unpopulated bundle.
-    with pytest.raises(RuntimeError, match="not fully populated"):
+    with pytest.raises(RuntimeError, match="not populated with lead-scoring artifacts"):
         write_bundle(WorldBundle(), str(tmp_path))
 
 

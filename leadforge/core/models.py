@@ -11,9 +11,6 @@ from leadforge.version import __version__
 
 if TYPE_CHECKING:
     from leadforge.narrative.spec import NarrativeSpec
-    from leadforge.schemes.lead_scoring.simulation.engine import SimulationResult
-    from leadforge.schemes.lead_scoring.simulation.population import PopulationResult
-    from leadforge.schemes.lead_scoring.structure.graph import WorldGraph
 
 
 # Default generation scheme when a recipe/world does not declare one.  Kept here
@@ -165,15 +162,16 @@ class WorldBundle:
 
     Attributes:
         spec: Fully resolved world specification (config + narrative).
-        population: Generated accounts, contacts, leads, and latent state.
-        simulation_result: Simulated event tables and final lead outcomes.
-        world_graph: Sampled hidden world graph used during simulation.
+        artifacts: The producing scheme's in-memory result (e.g.
+            :class:`~leadforge.schemes.lead_scoring.artifacts.LeadScoringArtifacts`).
+            Opaque to the shared core layer — typed ``Any`` so ``core`` never
+            references a scheme.  Each scheme stores and unwraps its own
+            container; ``None`` until :meth:`~leadforge.api.generator.Generator.generate`
+            populates it.
     """
 
     spec: WorldSpec = field(default_factory=WorldSpec)
-    population: PopulationResult | None = None
-    simulation_result: SimulationResult | None = None
-    world_graph: WorldGraph | None = None
+    artifacts: Any = None
 
     def save(self, path: str, generation_timestamp: str | None = None) -> None:
         """Write the full output bundle to *path*.
@@ -195,8 +193,7 @@ class WorldBundle:
                 Pass a fixed value to produce byte-identical manifests.
 
         Raises:
-            RuntimeError: if :attr:`simulation_result`, :attr:`population`,
-                or :attr:`world_graph` have not been populated (i.e. if
+            RuntimeError: if :attr:`artifacts` has not been populated (i.e. if
                 :meth:`~leadforge.api.generator.Generator.generate` was not
                 called).
         """
