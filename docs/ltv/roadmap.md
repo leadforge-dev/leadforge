@@ -46,7 +46,7 @@ protocol + registry, with the package physically reorganized into
 | `LTV-M3` | Customer population + lifecycle world | `LTV-Ph`, `LTV-Pi` | #113 (Ph) |
 | `LTV-M4` | Lifecycle simulation engine | `LTV-Pj`, `LTV-Pk` | #117 (Pj), #118 (Pk) |
 | `LTV-M5` | Customer snapshots + pLTV targets (both regimes) | `LTV-Pl`, `LTV-Pm` | #119 (Pl), #120 (Pm) |
-| `LTV-M6` | Register LifecycleScheme + recipe + manifest/version | `LTV-Pn.1…4`, `LTV-Po` | #121 (Pn.1), #122 (Pn.2) |
+| `LTV-M6` | Register LifecycleScheme + recipe + manifest/version | `LTV-Pn.1…4`, `LTV-Po` | #121 (Pn.1), #122 (Pn.2), #124 (Pn.3) |
 | `LTV-M7` | Validation + regression-metric calibration | `LTV-Pp` | |
 | `LTV-M8` | CLI, notebooks, publish | `LTV-Pq`, `LTV-Pr`, `LTV-Ps` | |
 
@@ -72,7 +72,7 @@ Total: ~19 PRs across 9 milestones.
   Lead-scoring catalog untouched. (These rows relocate into
   `schemes/lifecycle/` during `LTV-M2`.)
   - Labels: `type: feature`, `layer: schema`
-- [~] **`LTV-Pc`** — `feat(schema): pLTV feature spec + regression task specs`.
+- [x] **`LTV-Pc`** — `feat(schema): pLTV feature spec + regression task specs`.
   **Feature-catalog half discharged in `LTV-Pl` (#119):**
   `CUSTOMER_SNAPSHOT_FEATURES` (three `ltv_revenue_{90,365,730}d` targets, the
   secondary `churned_within_180d`, the `mrr_change_full_period` trap) is
@@ -81,7 +81,8 @@ Total: ~19 PRs across 9 milestones.
   scope (folds into `LTV-Pn`):** regression task specs + a `task_type`
   (`regression` | `classification`) on the task model — they belong with the
   task-split writer's continuous-target path.
-  - Tests: feature-spec invariants ✓ (#119); regression task-spec shape → `LTV-Pn`.
+  - Tests: feature-spec invariants ✓ (#119); regression task-spec shape ✓
+    (#124, `LTV-Pn.3`).  **`LTV-Pc` fully discharged.**
   - Labels: `type: feature`, `layer: schema`
 
 ---
@@ -297,11 +298,19 @@ pipeline + schema bump).  Split into four sub-PRs in dependency order:
     scheme's `write_bundle` in hand*; building it now against one scheme would
     guess the hook shape.
   - Labels: `type: refactor`, `layer: api`, `layer: core`, `layer: render`
-- [ ] **`LTV-Pn.3`** — `feat: lifecycle config + regression task model`.  Add
-  `n_customers` + lifecycle config (forward windows, early-tenure, observation
-  anchor) to `GenerationConfig` (validated); add a regression `task_type`
-  (`regression` | `classification`) to `TaskManifest` + a continuous-target
-  split writer (the `LTV-Pc` / `LTV-Pl` / `LTV-Pm` deferral).  No e2e yet.
+- [x] **`LTV-Pn.3`** — `feat: lifecycle config + regression task model`
+  (**PR #124**).  `GenerationConfig` gains validated lifecycle fields
+  (`n_customers`, `forward_windows_days`, `early_tenure_weeks`,
+  `observation_date`).  `TaskManifest` gains a validated `task_type`
+  (`VALID_TASK_TYPES = {binary_classification, regression}`) and target-agnostic
+  docs.  The deterministic split writer is lifted to the shared envelope
+  (`leadforge/render/tasks.py`, byte-identical; lead-scoring delegates) so it
+  serves continuous pLTV targets.  `schemes/lifecycle/tasks.py` defines the
+  per-regime task families (3 `pltv_revenue_*` regression + `churned_within_180d`
+  classification, `early_`-prefixed for the tenure regime) — **completing the
+  `LTV-Pc` regression-task-spec deferral**.  Data definitions only; wiring is
+  Pn.4.  Lead-scoring data byte-identical (only `world_spec.json` gains the new
+  config fields, by design).
   - Labels: `type: feature`, `layer: api`, `layer: schema`, `layer: render`
 - [ ] **`LTV-Pn.4`** — `feat(lifecycle): complete LifecycleScheme + e2e bundle`.
   Implement `LifecycleScheme.build_world` (population → sim) and `write_bundle`

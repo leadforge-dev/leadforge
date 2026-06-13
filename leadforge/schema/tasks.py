@@ -47,22 +47,38 @@ class SplitSpec:
             raise ValueError(f"SplitSpec fractions must sum to 1.0, got {total:.6f}")
 
 
+#: ML task types a :class:`TaskManifest` may declare.  ``binary_classification``
+#: covers the lead-scoring ``converted_within_90_days`` label and the lifecycle
+#: secondary churn label; ``regression`` covers the continuous pLTV
+#: ``ltv_revenue_*`` targets (D1).
+VALID_TASK_TYPES: frozenset[str] = frozenset({"binary_classification", "regression"})
+
+
 @dataclass(frozen=True)
 class TaskManifest:
     """Immutable descriptor for one ML task exported from a bundle.
 
+    Serves both classification and regression tasks; ``task_type`` distinguishes
+    them and ``label_column`` names the target either way.
+
     Attributes:
-        task_id: Machine-readable task identifier.
-        label_column: Column name in the task Parquet files that holds the
-            binary label.
-        label_window_days: Number of days after the snapshot anchor date
-            within which the target event counts as positive.
+        task_id: Machine-readable task identifier (also the task directory name,
+            so it must be unique within a bundle).
+        label_column: Column in the task Parquet files holding the target — a
+            binary label for ``binary_classification`` or a continuous value
+            for ``regression``.
+        label_window_days: Forward window in days that defines the target — the
+            positive-event window for a classification label, or the
+            revenue-accumulation horizon for a pLTV regression target.
         primary_table: The relational table the snapshot rows are derived
-            from (usually ``"leads"``).
+            from (e.g. ``"leads"`` / ``"customers"``).
         split: Train/valid/test proportions.
-        task_type: ML task type string (``"binary_classification"`` for v1).
+        task_type: One of :data:`VALID_TASK_TYPES`.
         description: Human-readable description of the task, suitable for
             display in dataset cards and documentation.
+
+    Raises:
+        ValueError: if ``task_type`` is not in :data:`VALID_TASK_TYPES`.
     """
 
     task_id: str
@@ -72,6 +88,12 @@ class TaskManifest:
     split: SplitSpec
     task_type: str = "binary_classification"
     description: str = ""
+
+    def __post_init__(self) -> None:
+        if self.task_type not in VALID_TASK_TYPES:
+            raise ValueError(
+                f"task_type must be one of {sorted(VALID_TASK_TYPES)}, got {self.task_type!r}"
+            )
 
     def to_dict(self) -> dict[str, object]:
         """Return a JSON-serializable representation."""

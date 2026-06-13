@@ -26,7 +26,11 @@ _MOVED = [
         "leadforge.render.relational_snapshot_safe",
         "leadforge.schemes.lead_scoring.render.relational_snapshot_safe",
     ),
-    ("leadforge.render.tasks", "leadforge.schemes.lead_scoring.render.tasks"),
+    # NOTE: ``leadforge.render.tasks`` was vacated by LTV-Pf.2 but deliberately
+    # *repopulated* in LTV-Pn.3 as the shared, scheme-agnostic split writer
+    # (see test_render_envelope_package_stays).  It is therefore no longer an
+    # "old path is gone" case — the lead-scoring writer at
+    # ``schemes.lead_scoring.render.tasks`` is now a thin wrapper over it.
 ]
 
 
@@ -55,8 +59,15 @@ def test_render_envelope_package_stays() -> None:
     # relational.py assembler).
     import leadforge.render.manifests  # noqa: F401
     import leadforge.render.relational_io as shared_writer
+    import leadforge.render.tasks as shared_tasks
 
     assert hasattr(shared_writer, "write_relational_tables")
+    # LTV-Pn.3: the scheme-agnostic task-split writer lives in the shared
+    # envelope; the lead-scoring module is a thin wrapper that defaults the task.
+    assert hasattr(shared_tasks, "write_task_splits")
+    import leadforge.schemes.lead_scoring.render.tasks as ls_tasks
+
+    assert hasattr(ls_tasks, "write_task_splits")
 
 
 def test_relational_split_to_dataframes_moved_to_scheme() -> None:
