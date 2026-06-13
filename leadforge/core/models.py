@@ -79,6 +79,16 @@ class GenerationConfig:
     # ``snapshot_day`` do for lead-scoring) so recipe/CLI resolution stays
     # uniform across schemes.  A nested per-scheme config is a possible future
     # refactor; kept flat here to match the existing precedent.
+    #
+    # NOTE: these are not threaded into the lifecycle pipeline yet — that wiring
+    # is LTV-Pn.4, at which point this config becomes the source of truth and
+    # overrides the scheme's module-level defaults.  Until then the scheme's own
+    # constants are authoritative.  ``forward_windows_days`` / ``early_tenure_weeks``
+    # intentionally duplicate ``schemes.lifecycle.snapshots.FORWARD_WINDOWS_DAYS``
+    # / ``DEFAULT_EARLY_TENURE_WEEKS`` (core must not import a scheme — see the
+    # LTV-Pn.2 layering cleanup), so a cross-layer test
+    # (tests/schemes/lifecycle/test_config_consistency.py) pins the defaults
+    # equal to guard against drift.
     n_customers: int = 1500
     # pLTV forward-window targets, in days (D6): ltv_revenue_{90,365,730}d.
     forward_windows_days: tuple[int, ...] = (90, 365, 730)
