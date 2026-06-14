@@ -73,6 +73,32 @@ class GenerationConfig:
     package_version: str = field(default_factory=lambda: __version__)
     difficulty_params: DifficultyParams | None = None
 
+    # --- lifecycle scheme (b2b_saas_ltv_v1) config -------------------------
+    # Consumed only by the lifecycle generation scheme; the lead-scoring scheme
+    # ignores these.  They live on the shared config (like ``n_leads`` /
+    # ``snapshot_day`` do for lead-scoring) so recipe/CLI resolution stays
+    # uniform across schemes.  A nested per-scheme config is a possible future
+    # refactor; kept flat here to match the existing precedent.
+    #
+    # NOTE: these are not threaded into the lifecycle pipeline yet — that wiring
+    # is LTV-Pn.4, at which point this config becomes the source of truth and
+    # overrides the scheme's module-level defaults.  Until then the scheme's own
+    # constants are authoritative.  ``forward_windows_days`` / ``early_tenure_weeks``
+    # intentionally duplicate ``schemes.lifecycle.snapshots.FORWARD_WINDOWS_DAYS``
+    # / ``DEFAULT_EARLY_TENURE_WEEKS`` (core must not import a scheme — see the
+    # LTV-Pn.2 layering cleanup), so a cross-layer test
+    # (tests/schemes/lifecycle/test_config_consistency.py) pins the defaults
+    # equal to guard against drift.
+    n_customers: int = 1500
+    # pLTV forward-window targets, in days (D6): ltv_revenue_{90,365,730}d.
+    forward_windows_days: tuple[int, ...] = (90, 365, 730)
+    # Tenure anchor (whole weeks) for the early-pLTV regime (D8).
+    early_tenure_weeks: int = 4
+    # Absolute calendar observation anchor (ISO date) for the calendar regime
+    # (D4).  ``None`` lets the population builder derive it from the world
+    # calendar.
+    observation_date: str | None = None
+
     def __post_init__(self) -> None:
         if isinstance(self.seed, bool) or not isinstance(self.seed, int):
             raise InvalidConfigError(f"seed must be an int, got {type(self.seed).__name__!r}")
@@ -134,6 +160,44 @@ class GenerationConfig:
                 raise InvalidConfigError(
                     f"difficulty has invalid value {self.difficulty!r}. "
                     f"Valid values: {[d.value for d in DifficultyProfile]}"
+                ) from exc
+        self._validate_lifecycle_fields()
+
+    def _validate_lifecycle_fields(self) -> None:
+        """Validate the lifecycle-scheme config fields.
+
+        Kept separate from the main body for readability; these constrain only
+        the lifecycle fields and never touch the lead-scoring path.
+        """
+        _require_positive_int(self.n_customers, "n_customers")
+        _require_positive_int(self.early_tenure_weeks, "early_tenure_weeks")
+
+        windows = self.forward_windows_days
+        if not isinstance(windows, tuple) or not windows:
+            raise InvalidConfigError(
+                f"forward_windows_days must be a non-empty tuple, got {windows!r}"
+            )
+        for w in windows:
+            _require_positive_int(w, "forward_windows_days entry")
+        if list(windows) != sorted(set(windows)):
+            raise InvalidConfigError(
+                f"forward_windows_days must be strictly increasing and unique, got {windows!r}"
+            )
+
+        if self.observation_date is not None:
+            if not isinstance(self.observation_date, str):
+                raise InvalidConfigError(
+                    f"observation_date must be an ISO date string or None, "
+                    f"got {type(self.observation_date).__name__!r}"
+                )
+            from datetime import date
+
+            try:
+                date.fromisoformat(self.observation_date)
+            except ValueError as exc:
+                raise InvalidConfigError(
+                    f"observation_date must be an ISO date (YYYY-MM-DD), "
+                    f"got {self.observation_date!r}"
                 ) from exc
 
 

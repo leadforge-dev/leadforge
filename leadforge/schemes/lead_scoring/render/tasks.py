@@ -1,20 +1,26 @@
-"""Task export — deterministic train/valid/test split and Parquet output.
+"""Lead-scoring task export — thin wrapper over the shared split writer.
 
-:func:`write_task_splits` takes the lead snapshot DataFrame, shuffles it
-deterministically, splits it according to the task manifest ratios, and
-writes the three Parquet files plus a ``task_manifest.json`` into the
-tasks directory.
+The deterministic shuffle/split/write logic is scheme-agnostic and lives in
+:func:`leadforge.render.tasks.write_task_splits` (lifted there in LTV-Pn.3,
+byte-identical for this scheme).  This wrapper preserves the lead-scoring
+default task so existing call sites are unchanged.
 """
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 
-import pandas as pd
+from leadforge.render.tasks import write_task_splits as _write_task_splits
+from leadforge.schemes.lead_scoring.tasks import CONVERTED_WITHIN_90_DAYS
 
-from leadforge.core.rng import RNGRoot
-from leadforge.schemes.lead_scoring.tasks import CONVERTED_WITHIN_90_DAYS, TaskManifest
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    import pandas as pd
+
+    from leadforge.schema.tasks import TaskManifest
+
+__all__ = ["write_task_splits"]
 
 
 def write_task_splits(
@@ -24,54 +30,8 @@ def write_task_splits(
     seed: int,
     task: TaskManifest = CONVERTED_WITHIN_90_DAYS,
 ) -> dict[str, int]:
-    """Shuffle, split, and write snapshot Parquet files for *task*.
+    """Write lead-scoring task splits (see :func:`leadforge.render.tasks.write_task_splits`).
 
-    Files written under ``out_dir / task.task_id /``::
-
-        train.parquet
-        valid.parquet
-        test.parquet
-        task_manifest.json
-
-    Args:
-        snapshot: Lead snapshot DataFrame from
-            :func:`~leadforge.schemes.lead_scoring.render.snapshots.build_snapshot`.
-        out_dir: Parent directory for task outputs (typically
-            ``bundle_root / "tasks"``).
-        seed: Seed used for deterministic row shuffle.
-        task: Task manifest describing the split ratios and label column.
-
-    Returns:
-        Dict mapping split name (``"train"``, ``"valid"``, ``"test"``) to
-        the number of rows written.
+    Defaults ``task`` to :data:`CONVERTED_WITHIN_90_DAYS` for this scheme.
     """
-    task_dir = out_dir / task.task_id
-    task_dir.mkdir(parents=True, exist_ok=True)
-
-    # Deterministic shuffle via the project's RNG substream system.
-    rng = RNGRoot(seed).child("task_split_shuffle")
-    indices = list(range(len(snapshot)))
-    rng.shuffle(indices)
-    shuffled = snapshot.iloc[indices].reset_index(drop=True)
-
-    n = len(shuffled)
-    n_train = int(n * task.split.train)
-    n_valid = int(n * task.split.valid)
-
-    splits: dict[str, pd.DataFrame] = {
-        "train": shuffled.iloc[:n_train],
-        "valid": shuffled.iloc[n_train : n_train + n_valid],
-        "test": shuffled.iloc[n_train + n_valid :],  # remainder avoids rounding off-by-one
-    }
-
-    row_counts: dict[str, int] = {}
-    for split_name, df in splits.items():
-        path = task_dir / f"{split_name}.parquet"
-        df.to_parquet(path, index=False, engine="pyarrow")
-        row_counts[split_name] = len(df)
-
-    # Write task_manifest.json alongside the Parquet files.
-    manifest_path = task_dir / "task_manifest.json"
-    manifest_path.write_text(json.dumps(task.to_dict(), indent=2))
-
-    return row_counts
+    return _write_task_splits(snapshot, out_dir, seed=seed, task=task)
