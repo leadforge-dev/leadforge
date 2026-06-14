@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from leadforge.core.models import GenerationConfig, WorldBundle
     from leadforge.narrative.spec import NarrativeSpec
 
+
 def _sample_motif_family(rng: random.Random) -> str:
     """Deterministically pick a retention motif family for this world.
 
@@ -68,11 +69,26 @@ class LifecycleScheme:
           ``narrative.yaml`` will not drive them until ``LTV-Po`` decides
           whether the lifecycle scheme should consume the narrative spec.
         """
+        from leadforge.core.exceptions import InvalidConfigError
         from leadforge.core.models import WorldBundle, WorldSpec
         from leadforge.core.rng import RNGRoot
         from leadforge.schemes.lifecycle.artifacts import LifecycleArtifacts
         from leadforge.schemes.lifecycle.engine import simulate_lifecycle
         from leadforge.schemes.lifecycle.population import build_customer_population
+        from leadforge.schemes.lifecycle.snapshots import FORWARD_WINDOWS_DAYS
+
+        # config.forward_windows_days is not yet threaded into the snapshot
+        # builder, which exports the fixed FORWARD_WINDOWS_DAYS targets.  Reject
+        # an override now (clear, early) rather than emit a bundle whose manifest
+        # disagrees with its task dirs, or under-simulate and fail opaquely later.
+        # Threading config-driven windows through is tracked for a later step.
+        if tuple(config.forward_windows_days) != tuple(FORWARD_WINDOWS_DAYS):
+            raise InvalidConfigError(
+                f"config.forward_windows_days={tuple(config.forward_windows_days)} differs "
+                f"from the lifecycle scheme's exported windows {tuple(FORWARD_WINDOWS_DAYS)}; "
+                "config-driven forward windows are not yet supported (the snapshot builder "
+                "exports the fixed set).  Use the default until that wiring lands."
+            )
 
         motif_rng = RNGRoot(config.seed).child("lifecycle_motif")
         motif_family = _sample_motif_family(motif_rng)
@@ -138,6 +154,7 @@ class LifecycleScheme:
         from leadforge.schemes.lifecycle.render.dataset_card import render_lifecycle_dataset_card
         from leadforge.schemes.lifecycle.render.relational import to_dataframes
         from leadforge.schemes.lifecycle.snapshots import (
+            FORWARD_WINDOWS_DAYS,
             build_customer_snapshot,
             build_early_pltv_snapshot,
         )
@@ -228,7 +245,9 @@ class LifecycleScheme:
             generation_timestamp=generation_timestamp,
             extra_fields={
                 "observation_date": population.observation_date,
-                "forward_windows_days": list(config.forward_windows_days),
+                # The actual exported target windows (source of truth), not
+                # config.forward_windows_days — build_world rejects any mismatch.
+                "forward_windows_days": list(FORWARD_WINDOWS_DAYS),
                 "early_tenure_weeks": config.early_tenure_weeks,
             },
         )

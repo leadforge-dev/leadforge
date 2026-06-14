@@ -113,6 +113,7 @@ def test_manifest_records_scheme_and_lifecycle_fields(tmp_path) -> None:
         "payment_fragile",
         "churner_dominated",
     }
+    # Records the ACTUAL exported windows (COPILOT-1), not config's copy.
     assert m["forward_windows_days"] == list(FORWARD_WINDOWS_DAYS)
     assert m["observation_date"]  # non-empty ISO date
     assert set(m["tasks"]) == _EXPECTED_TASK_IDS

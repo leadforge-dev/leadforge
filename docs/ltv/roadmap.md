@@ -342,7 +342,6 @@ methods, then public-safety, then the carried orchestrator cleanup:
     coupled (applies lead-scoring FK/table/task checks) and errors on a
     lifecycle bundle; scheme-aware validation is `LTV-Pp`.
   - Labels: `type: feature`, `layer: api`, `layer: render`
-  - Labels: `type: feature`, `layer: api`, `layer: render`
 - [ ] **`LTV-Pn.4c`** — `feat(lifecycle): student_public snapshot-safety`.
   Public relational filtering (event tables ≤ cutoff; drop terminal
   `churn_at`/`churn_reason`/`subscription_end_at`; no target columns); the
