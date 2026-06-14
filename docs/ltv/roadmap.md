@@ -46,7 +46,7 @@ protocol + registry, with the package physically reorganized into
 | `LTV-M3` | Customer population + lifecycle world | `LTV-Ph`, `LTV-Pi` | #113 (Ph) |
 | `LTV-M4` | Lifecycle simulation engine | `LTV-Pj`, `LTV-Pk` | #117 (Pj), #118 (Pk) |
 | `LTV-M5` | Customer snapshots + pLTV targets (both regimes) | `LTV-Pl`, `LTV-Pm` | #119 (Pl), #120 (Pm) |
-| `LTV-M6` | Register LifecycleScheme + recipe + manifest/version | `LTV-Pn.1…4`, `LTV-Po` | #121 (Pn.1), #122 (Pn.2), #124 (Pn.3) |
+| `LTV-M6` | Register LifecycleScheme + recipe + manifest/version | `LTV-Pn.1…4`, `LTV-Po` | #121 (Pn.1), #122 (Pn.2), #124 (Pn.3), #125 (Pn.4a) |
 | `LTV-M7` | Validation + regression-metric calibration | `LTV-Pp` | |
 | `LTV-M8` | CLI, notebooks, publish | `LTV-Pq`, `LTV-Pr`, `LTV-Ps` | |
 
@@ -312,25 +312,56 @@ pipeline + schema bump).  Split into four sub-PRs in dependency order:
   Pn.4.  Lead-scoring data byte-identical (only `world_spec.json` gains the new
   config fields, by design).
   - Labels: `type: feature`, `layer: api`, `layer: schema`, `layer: render`
-- [ ] **`LTV-Pn.4`** — `feat(lifecycle): complete LifecycleScheme + e2e bundle`.
-  Implement `LifecycleScheme.build_world` (population → sim) and `write_bundle`
-  (lifecycle relational tables; both regime snapshots → two task families ×
-  3 windows + secondary churn; dataset card; manifest `observation_date` +
-  windows via `extra_fields`; lifecycle `write_metadata` hidden-truth hook).
-  With both schemes' `write_bundle` in hand, **lift the shared bundle
-  orchestrator with scheme render hooks** out of the two implementations
-  (carried cleanup #1).  First end-to-end lifecycle bundle (programmatic;
-  recipe wiring is `LTV-Po`).  Extend `CLAUDE.md` hard constraints with the
-  lifecycle snapshot-safety clause + the `schemes/` layout.  Carries the
-  LTV-Pp validation flags: early-regime degenerate-column exemptions; the
-  dtype-preserving missingness opt-in.
+`LTV-Pn.4` is the largest sub-PR — split along the two `GenerationScheme`
+methods, then public-safety, then the carried orchestrator cleanup:
+
+- [ ] **`LTV-Pn.4a`** — `feat(lifecycle): build_world + relational tables`.
+  `LifecycleScheme.build_world`: deterministically sample a motif family from
+  the seed (honouring the "vary by motif family" invariant), build the customer
+  population, simulate, and wrap a new `LifecycleArtifacts` on the bundle.  New
+  `schemes/lifecycle/render/relational.py` `to_dataframes` (accounts + the 5
+  lifecycle tables).  Consumes the Pn.3 config fields (`n_customers`,
+  `forward_windows_days`, `early_tenure_weeks`, `observation_date`).
+  `write_bundle` still stubbed.
+  - Tests: determinism, cross-seed motif variability, FK integrity, table shapes.
   - Labels: `type: feature`, `layer: api`, `layer: render`
+- [ ] **`LTV-Pn.4b`** — `feat(lifecycle): write_bundle (instructor) + tasks`.
+  Instructor-mode `write_bundle`: relational tables; both regime snapshots →
+  8 task dirs (3 pLTV regression + churn, × 2 regimes) via the shared writer;
+  dataset card; feature dictionary; manifest with `generation_scheme` +
+  `observation_date` + windows (`extra_fields`); lifecycle `write_metadata`
+  hidden-truth hook (latent registry + mechanism summary).  First on-disk
+  lifecycle bundle.  **Must resolve `difficulty_params` from the active profile
+  and thread it into `build_customer_snapshot` (Pn.4a's `build_world` does not —
+  without this the snapshot distortions never fire and every tier is identical).**
+  - Labels: `type: feature`, `layer: api`, `layer: render`
+- [ ] **`LTV-Pn.4c`** — `feat(lifecycle): student_public snapshot-safety`.
+  Public relational filtering (event tables ≤ cutoff; drop terminal
+  `churn_at`/`churn_reason`/`subscription_end_at`; no target columns); the
+  early-regime degenerate-column + dtype-preserving-missingness flags from
+  LTV-Pm.  Extend `CLAUDE.md` hard constraints with the lifecycle
+  snapshot-safety clause + the `schemes/` layout.
+  - Labels: `type: feature`, `layer: exposure`, `layer: render`, `layer: docs`
+- [ ] **`LTV-Pn.4d`** — `refactor: shared bundle orchestrator`.  With both
+  schemes' `write_bundle` in hand, lift the shared orchestrator (mkdir →
+  relational → tasks → card → dict → exposure → manifest) with scheme render
+  hooks out of the two implementations (carried cleanup #1).  Both bundles
+  byte-identical.
+  - Labels: `type: refactor`, `layer: render`, `layer: api`
 - [ ] **`LTV-Po`** — `feat(recipes): b2b_saas_ltv_v1 recipe assets`. The three
   recipe YAMLs (`scheme: lifecycle`); register in the recipe registry;
   end-to-end `Generator.from_recipe("b2b_saas_ltv_v1").generate()` smoke test.
+  **Decide narrative consumption:** the lifecycle population hardcodes its
+  firmographics and `build_world` ignores `narrative` (Pn.4a) — either wire the
+  recipe's `narrative.yaml` into the population builder or document the
+  firmographics as scheme-internal.
   - Tests: recipe loads, full round-trip, determinism, all task splits (3
     windows × 2 regimes + secondary churn), public/instructor split.
   - Labels: `type: feature`, `layer: recipes`
+- **Deferred (flagged in Pn.4a):** simulation-level difficulty scaling for the
+  lifecycle engine — making `advanced` a genuinely harder world (not just
+  noisier snapshots).  Currently the motif-calibrated rates are difficulty-
+  agnostic; revisit alongside `LTV-Pp` difficulty-band validation.
 
 ---
 

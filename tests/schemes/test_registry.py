@@ -35,14 +35,14 @@ def test_lifecycle_scheme_registered() -> None:
     assert LIFECYCLE_SCHEME.name == "lifecycle"
 
 
-def test_lifecycle_scheme_is_a_stub() -> None:
-    # Pipeline not implemented yet (built across LTV-M3…M6); calling it must
-    # fail loudly rather than silently doing nothing.
+def test_lifecycle_write_path_is_stubbed() -> None:
+    # build_world is implemented (LTV-Pn.4a); the on-disk write path lands in
+    # Pn.4b–c and must fail loudly until then rather than silently no-op.
     sch = get_scheme("lifecycle")
     with pytest.raises(NotImplementedError):
-        sch.build_world(None, None)  # type: ignore[arg-type]
-    with pytest.raises(NotImplementedError):
         sch.write_bundle(None, "out")  # type: ignore[arg-type]
+    with pytest.raises(NotImplementedError):
+        sch.write_metadata(None, None)  # type: ignore[arg-type]
 
 
 def test_lead_scoring_scheme_name() -> None:
