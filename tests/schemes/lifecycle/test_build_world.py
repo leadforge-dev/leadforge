@@ -65,6 +65,24 @@ def test_motif_varies_across_seeds() -> None:
     assert motifs <= set(LIFECYCLE_MOTIF_FAMILIES)
 
 
+def test_difficulty_not_yet_differentiating() -> None:
+    """Tracked-gap guard (LTV-Pn.4a): build_world does not yet consume
+    config.difficulty, so every tier yields the same world.  When Pn.4b wires
+    difficulty in, this test must be updated to assert the tiers DIFFER —
+    flipping it is the reminder that the gap is closed.
+    """
+    intro = get_scheme("lifecycle").build_world(
+        GenerationConfig(seed=5, n_customers=60, difficulty="intro"), narrative=None
+    )
+    advanced = get_scheme("lifecycle").build_world(
+        GenerationConfig(seed=5, n_customers=60, difficulty="advanced"), narrative=None
+    )
+    assert intro.artifacts.motif_family == advanced.artifacts.motif_family
+    assert [s.to_dict() for s in intro.artifacts.simulation_result.subscriptions] == [
+        s.to_dict() for s in advanced.artifacts.simulation_result.subscriptions
+    ]
+
+
 def test_narrative_is_optional() -> None:
     # The lifecycle population builder generates its own firmographics; build_world
     # accepts narrative for protocol parity but must not require it.

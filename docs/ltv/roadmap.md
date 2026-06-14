@@ -331,7 +331,9 @@ methods, then public-safety, then the carried orchestrator cleanup:
   dataset card; feature dictionary; manifest with `generation_scheme` +
   `observation_date` + windows (`extra_fields`); lifecycle `write_metadata`
   hidden-truth hook (latent registry + mechanism summary).  First on-disk
-  lifecycle bundle.
+  lifecycle bundle.  **Must resolve `difficulty_params` from the active profile
+  and thread it into `build_customer_snapshot` (Pn.4a's `build_world` does not —
+  without this the snapshot distortions never fire and every tier is identical).**
   - Labels: `type: feature`, `layer: api`, `layer: render`
 - [ ] **`LTV-Pn.4c`** — `feat(lifecycle): student_public snapshot-safety`.
   Public relational filtering (event tables ≤ cutoff; drop terminal
@@ -349,9 +351,17 @@ methods, then public-safety, then the carried orchestrator cleanup:
 - [ ] **`LTV-Po`** — `feat(recipes): b2b_saas_ltv_v1 recipe assets`. The three
   recipe YAMLs (`scheme: lifecycle`); register in the recipe registry;
   end-to-end `Generator.from_recipe("b2b_saas_ltv_v1").generate()` smoke test.
+  **Decide narrative consumption:** the lifecycle population hardcodes its
+  firmographics and `build_world` ignores `narrative` (Pn.4a) — either wire the
+  recipe's `narrative.yaml` into the population builder or document the
+  firmographics as scheme-internal.
   - Tests: recipe loads, full round-trip, determinism, all task splits (3
     windows × 2 regimes + secondary churn), public/instructor split.
   - Labels: `type: feature`, `layer: recipes`
+- **Deferred (flagged in Pn.4a):** simulation-level difficulty scaling for the
+  lifecycle engine — making `advanced` a genuinely harder world (not just
+  noisier snapshots).  Currently the motif-calibrated rates are difficulty-
+  agnostic; revisit alongside `LTV-Pp` difficulty-band validation.
 
 ---
 

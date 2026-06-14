@@ -7,6 +7,11 @@ lifecycle entity tables (``customers``, ``subscriptions``,
 lead-scoring :func:`~leadforge.schemes.lead_scoring.render.relational.to_dataframes`
 pattern: a table-source registry drives a uniform row → DataFrame conversion
 with dtypes from each entity's ``DTYPE_MAP``.
+
+The conversion loop is intentionally parallel to the lead-scoring one (only the
+table-source registry differs).  Unifying the two behind a shared
+``render``-layer helper is a candidate for ``LTV-Pn.4d`` (the shared bundle
+orchestrator), where the byte-identity surface is already under test.
 """
 
 from __future__ import annotations

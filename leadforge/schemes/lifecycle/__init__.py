@@ -57,9 +57,22 @@ class LifecycleScheme:
         substreams).  Consumes the lifecycle config fields: ``n_customers``,
         ``observation_date``, ``early_tenure_weeks``, and
         ``forward_windows_days`` (the engine simulates through the longest
-        window so every pLTV target is fully covered).  ``narrative`` is
-        accepted for protocol parity but unused — the lifecycle population
-        builder generates its own firmographics.
+        window so every pLTV target is fully covered).
+
+        Not yet applied (tracked, not silent):
+
+        - **Difficulty.**  ``config.difficulty`` / ``difficulty_params`` are
+          NOT consumed here, so every difficulty tier currently yields the same
+          world.  Two distinct pieces remain: resolving ``difficulty_params``
+          from the active profile and threading it into the snapshot
+          distortions (``LTV-Pn.4b``, where snapshots are built), and
+          simulation-level difficulty scaling that actually makes harder tiers
+          harder worlds (deferred — see ``mechanisms.py`` and the roadmap).
+        - **Narrative.**  ``narrative`` is accepted for protocol parity but
+          unused: the lifecycle population builder generates its own
+          firmographics from internal distributions, so the recipe's
+          ``narrative.yaml`` will not drive them until ``LTV-Po`` decides
+          whether the lifecycle scheme should consume the narrative spec.
         """
         from leadforge.core.models import WorldBundle, WorldSpec
         from leadforge.core.rng import RNGRoot
