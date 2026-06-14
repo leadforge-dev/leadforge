@@ -73,8 +73,10 @@ def test_write_metadata_rejects_unpopulated_bundle(tmp_path) -> None:
         get_scheme("lead_scoring").write_metadata(WorldBundle(), meta)
 
 
-def test_lifecycle_metadata_hook_is_stubbed(tmp_path) -> None:
-    with pytest.raises(NotImplementedError):
+def test_lifecycle_metadata_hook_rejects_unpopulated_bundle(tmp_path) -> None:
+    # Implemented in LTV-Pn.4b; an unpopulated bundle is rejected (full
+    # coverage in tests/schemes/lifecycle/test_write_bundle.py).
+    with pytest.raises(RuntimeError, match="lifecycle artifacts"):
         get_scheme("lifecycle").write_metadata(WorldBundle(), tmp_path)
 
 

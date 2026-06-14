@@ -46,7 +46,7 @@ protocol + registry, with the package physically reorganized into
 | `LTV-M3` | Customer population + lifecycle world | `LTV-Ph`, `LTV-Pi` | #113 (Ph) |
 | `LTV-M4` | Lifecycle simulation engine | `LTV-Pj`, `LTV-Pk` | #117 (Pj), #118 (Pk) |
 | `LTV-M5` | Customer snapshots + pLTV targets (both regimes) | `LTV-Pl`, `LTV-Pm` | #119 (Pl), #120 (Pm) |
-| `LTV-M6` | Register LifecycleScheme + recipe + manifest/version | `LTV-Pn.1…4`, `LTV-Po` | #121 (Pn.1), #122 (Pn.2), #124 (Pn.3), #125 (Pn.4a) |
+| `LTV-M6` | Register LifecycleScheme + recipe + manifest/version | `LTV-Pn.1…4`, `LTV-Po` | #121 (Pn.1), #122 (Pn.2), #124 (Pn.3), #125 (Pn.4a), #126 (Pn.4b) |
 | `LTV-M7` | Validation + regression-metric calibration | `LTV-Pp` | |
 | `LTV-M8` | CLI, notebooks, publish | `LTV-Pq`, `LTV-Pr`, `LTV-Ps` | |
 
@@ -325,15 +325,23 @@ methods, then public-safety, then the carried orchestrator cleanup:
   `write_bundle` still stubbed.
   - Tests: determinism, cross-seed motif variability, FK integrity, table shapes.
   - Labels: `type: feature`, `layer: api`, `layer: render`
-- [ ] **`LTV-Pn.4b`** — `feat(lifecycle): write_bundle (instructor) + tasks`.
-  Instructor-mode `write_bundle`: relational tables; both regime snapshots →
-  8 task dirs (3 pLTV regression + churn, × 2 regimes) via the shared writer;
-  dataset card; feature dictionary; manifest with `generation_scheme` +
-  `observation_date` + windows (`extra_fields`); lifecycle `write_metadata`
-  hidden-truth hook (latent registry + mechanism summary).  First on-disk
-  lifecycle bundle.  **Must resolve `difficulty_params` from the active profile
-  and thread it into `build_customer_snapshot` (Pn.4a's `build_world` does not —
-  without this the snapshot distortions never fire and every tier is identical).**
+- [x] **`LTV-Pn.4b`** — `feat(lifecycle): write_bundle (instructor) + tasks`
+  (**PR #126**).  Instructor-mode `write_bundle` produces the first on-disk
+  lifecycle bundle: six relational tables; both regime snapshots → 8 task dirs
+  (3 pLTV regression + churn, × 2 regimes) via the shared writer; a lifecycle
+  dataset card (`render/dataset_card.py` — the lead-scoring card is too
+  coupled to reuse); feature dictionary; manifest with `generation_scheme` +
+  `observation_date` + `forward_windows_days` (`extra_fields`); lifecycle
+  `write_metadata` hidden-truth hook (latent registry + mechanism summary;
+  no graph).  `config.difficulty_params` is **threaded** into both snapshot
+  builders (tested), so recipe-resolved difficulty will drive distortions;
+  recipe-driven *resolution* of `difficulty_params` lands in `LTV-Po`.
+  `student_public` is **refused** (raises) until `LTV-Pn.4c` adds the
+  snapshot-safe export — never emit an unsafe public bundle.
+  - **Flagged:** `validation.bundle_checks.validate_bundle` is lead-scoring-
+    coupled (applies lead-scoring FK/table/task checks) and errors on a
+    lifecycle bundle; scheme-aware validation is `LTV-Pp`.
+  - Labels: `type: feature`, `layer: api`, `layer: render`
   - Labels: `type: feature`, `layer: api`, `layer: render`
 - [ ] **`LTV-Pn.4c`** — `feat(lifecycle): student_public snapshot-safety`.
   Public relational filtering (event tables ≤ cutoff; drop terminal
