@@ -145,6 +145,32 @@ def test_metadata_files(tmp_path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Each task split is single-target (no cross-target leakage)
+# ---------------------------------------------------------------------------
+
+
+def test_each_task_split_has_only_its_own_target(tmp_path) -> None:
+    """A task's parquet must contain ONLY its own target among the target
+    columns — otherwise e.g. ltv_revenue_730d would leak ltv_revenue_90d.  The
+    deliberate mrr_change_full_period trap (leakage_risk, not a target) is kept.
+    """
+    from leadforge.schemes.lifecycle.features import CUSTOMER_SNAPSHOT_FEATURES
+
+    out = _write(tmp_path)
+    all_targets = {f.name for f in CUSTOMER_SNAPSHOT_FEATURES if f.is_target}
+    for td in (out / "tasks").iterdir():
+        manifest = json.loads((td / "task_manifest.json").read_text())
+        own = manifest["label_column"]
+        df = pd.read_parquet(td / "train.parquet")
+        present_targets = all_targets & set(df.columns)
+        assert present_targets == {own}, (
+            f"{td.name}: expected only target {own!r}, found {sorted(present_targets)}"
+        )
+        # The deliberate trap survives in every task.
+        assert "mrr_change_full_period" in df.columns
+
+
+# ---------------------------------------------------------------------------
 # Determinism
 # ---------------------------------------------------------------------------
 

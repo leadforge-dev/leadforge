@@ -184,11 +184,20 @@ class LifecycleScheme:
                 seed=config.seed,
             ),
         }
+        # Each task is a standalone single-target split: drop every OTHER
+        # target column so a task's parquet cannot leak the answer's siblings
+        # (e.g. ltv_revenue_730d ⊇ ltv_revenue_90d).  The deliberate
+        # mrr_change_full_period trap (leakage_risk but not a target) is kept.
+        all_target_cols = {f.name for f in CUSTOMER_SNAPSHOT_FEATURES if f.is_target}
         task_row_counts: dict[str, dict[str, int]] = {}
         all_tasks = []
         for regime, snapshot in snapshots.items():
             for task in lifecycle_task_manifests(regime):
-                counts = write_task_splits(snapshot, root / "tasks", seed=config.seed, task=task)
+                other_targets = [
+                    c for c in all_target_cols - {task.label_column} if c in snapshot.columns
+                ]
+                task_df = snapshot.drop(columns=other_targets)
+                counts = write_task_splits(task_df, root / "tasks", seed=config.seed, task=task)
                 task_row_counts[task.task_id] = counts
                 all_tasks.append(task)
 
