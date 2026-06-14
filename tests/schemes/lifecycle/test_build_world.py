@@ -83,6 +83,18 @@ def test_difficulty_not_yet_differentiating() -> None:
     ]
 
 
+def test_rejects_unsupported_forward_windows_override() -> None:
+    """COPILOT-1: config-driven forward windows aren't threaded into the
+    snapshot builder yet, so an override must be rejected early and clearly
+    rather than produce a manifest that disagrees with the task dirs (or
+    under-simulate and fail opaquely downstream)."""
+    from leadforge.core.exceptions import InvalidConfigError
+
+    cfg = GenerationConfig(seed=5, n_customers=40, forward_windows_days=(30, 90))
+    with pytest.raises(InvalidConfigError, match="forward_windows_days"):
+        get_scheme("lifecycle").build_world(cfg, narrative=None)
+
+
 def test_narrative_is_optional() -> None:
     # The lifecycle population builder generates its own firmographics; build_world
     # accepts narrative for protocol parity but must not require it.

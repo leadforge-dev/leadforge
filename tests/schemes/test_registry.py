@@ -35,14 +35,17 @@ def test_lifecycle_scheme_registered() -> None:
     assert LIFECYCLE_SCHEME.name == "lifecycle"
 
 
-def test_lifecycle_write_path_is_stubbed() -> None:
-    # build_world is implemented (LTV-Pn.4a); the on-disk write path lands in
-    # Pn.4b–c and must fail loudly until then rather than silently no-op.
+def test_lifecycle_write_path_rejects_bad_bundle() -> None:
+    # build_world + instructor write_bundle/write_metadata are implemented
+    # (LTV-Pn.4a/4b); they must reject a bundle lacking lifecycle artifacts
+    # rather than half-write.  Full bundle coverage is in test_write_bundle.py.
+    from leadforge.core.models import WorldBundle
+
     sch = get_scheme("lifecycle")
-    with pytest.raises(NotImplementedError):
-        sch.write_bundle(None, "out")  # type: ignore[arg-type]
-    with pytest.raises(NotImplementedError):
-        sch.write_metadata(None, None)  # type: ignore[arg-type]
+    with pytest.raises(RuntimeError, match="lifecycle artifacts"):
+        sch.write_bundle(WorldBundle(), "out")
+    with pytest.raises(RuntimeError, match="lifecycle artifacts"):
+        sch.write_metadata(WorldBundle(), None)  # type: ignore[arg-type]
 
 
 def test_lead_scoring_scheme_name() -> None:
