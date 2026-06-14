@@ -156,9 +156,3 @@ def test_empty_population_yields_typed_empty_tables() -> None:
     for name, df in dfs.items():
         assert list(df.columns), f"{name} has no columns"
 
-
-def test_write_bundle_still_stubbed(tmp_path) -> None:
-    # build_world works; the on-disk write path lands in Pn.4b.
-    bundle = _build()
-    with pytest.raises(NotImplementedError):
-        get_scheme("lifecycle").write_bundle(bundle, str(tmp_path))

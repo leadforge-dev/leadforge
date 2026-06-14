@@ -122,28 +122,30 @@ class LifecycleScheme:
         path: str,
         generation_timestamp: str | None = None,
     ) -> None:
-        """Serialise a lifecycle *bundle* to *path* (instructor mode).
+        """Serialise a lifecycle *bundle* to *path*.
 
         Writes the six relational tables, both observation regimes' snapshots
         split into 8 task directories (3 pLTV regression + 1 churn
         classification per regime, the early regime prefixed ``early_``), a
         dataset card, the feature dictionary, the hidden-truth ``metadata/``
-        (via :meth:`write_metadata`), and the manifest (recording
-        ``generation_scheme`` + ``observation_date`` + the forward windows).
+        (instructor only, via :meth:`write_metadata`), and the manifest
+        (``generation_scheme`` + ``observation_date`` + forward windows).
 
         ``config.difficulty_params`` is threaded into both snapshot builders —
         when set (LTV-Po resolves it from the recipe profile), it drives the
         snapshot distortions.
 
-        Only ``research_instructor`` mode is supported here.  The
-        ``student_public`` snapshot-safety projection (event-table cutoff
-        filtering, terminal-column drops, per-task target projection) lands in
-        LTV-Pn.4c; until then this refuses to write a public bundle rather than
-        emit one that is not snapshot-safe.
+        ``student_public`` bundles are projected snapshot-safe: the relational
+        event tables are filtered to ``<= observation_date`` and the
+        ``subscriptions`` table's stateful/terminal columns are dropped (see
+        :mod:`leadforge.schemes.lifecycle.render.relational_snapshot_safe`); no
+        ``metadata/`` is written; and the manifest records
+        ``relational_snapshot_safe`` + ``structural_redactions``.  The per-task
+        splits are single-target and cutoff-bounded by construction.
         """
         from pathlib import Path
 
-        from leadforge.core.enums import ExposureMode
+        from leadforge.exposure.filters import get_filter
         from leadforge.exposure.modes import apply_exposure
         from leadforge.render.manifests import build_manifest, write_manifest
         from leadforge.render.relational_io import write_relational_tables
@@ -153,6 +155,10 @@ class LifecycleScheme:
         from leadforge.schemes.lifecycle.features import CUSTOMER_SNAPSHOT_FEATURES
         from leadforge.schemes.lifecycle.render.dataset_card import render_lifecycle_dataset_card
         from leadforge.schemes.lifecycle.render.relational import to_dataframes
+        from leadforge.schemes.lifecycle.render.relational_snapshot_safe import (
+            LIFECYCLE_BANNED_SUBSCRIPTION_COLUMNS,
+            to_dataframes_snapshot_safe,
+        )
         from leadforge.schemes.lifecycle.snapshots import (
             FORWARD_WINDOWS_DAYS,
             build_customer_snapshot,
@@ -171,12 +177,7 @@ class LifecycleScheme:
                 "Call Generator.generate() / build_world() first."
             )
         config = bundle.spec.config
-        if config.exposure_mode is not ExposureMode.research_instructor:
-            raise NotImplementedError(
-                f"lifecycle write_bundle currently supports only "
-                f"research_instructor; {config.exposure_mode.value!r} (snapshot-safe "
-                "public export) lands in LTV-Pn.4c"
-            )
+        bundle_filter = get_filter(config.exposure_mode)
 
         population = artifacts.population
         sim = artifacts.simulation_result
@@ -184,7 +185,17 @@ class LifecycleScheme:
         root.mkdir(parents=True, exist_ok=True)
 
         # 1. Relational tables → tables/
+        #    student_public is projected snapshot-safe (event tables filtered to
+        #    <= observation_date; subscriptions' stateful/terminal columns
+        #    dropped).  research_instructor keeps the full-horizon shape.
         dfs = to_dataframes(sim, population)
+        structural_redactions: dict[str, object] | None = None
+        if bundle_filter.relational_snapshot_safe:
+            dfs = to_dataframes_snapshot_safe(dfs, cutoff=population.observation_date)
+            structural_redactions = {
+                "columns": {"subscriptions": sorted(LIFECYCLE_BANNED_SUBSCRIPTION_COLUMNS)},
+                "omitted_tables": [],
+            }
         table_row_counts = write_relational_tables(dfs, root / "tables")
 
         # 2. Both regime snapshots → 8 task directories.
@@ -250,6 +261,8 @@ class LifecycleScheme:
                 "forward_windows_days": list(FORWARD_WINDOWS_DAYS),
                 "early_tenure_weeks": config.early_tenure_weeks,
             },
+            relational_snapshot_safe=bundle_filter.relational_snapshot_safe,
+            structural_redactions=structural_redactions,
         )
         write_manifest(manifest, root)
 

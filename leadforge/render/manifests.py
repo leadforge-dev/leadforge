@@ -80,6 +80,7 @@ def build_manifest(
     relational_snapshot_safe: bool = False,
     motif_family: str | None = None,
     extra_fields: dict[str, Any] | None = None,
+    structural_redactions: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the bundle manifest dict.
 
@@ -116,6 +117,11 @@ def build_manifest(
         extra_fields: Optional scheme-specific top-level manifest keys merged
             into the result (e.g. the lifecycle scheme's ``observation_date``
             and forward windows).  Must not collide with a core manifest key.
+        structural_redactions: Optional scheme-supplied table-level redaction
+            record (``{"columns": {...}, "omitted_tables": [...]}``).  When
+            ``None`` the lead-scoring default is computed from the
+            snapshot-safe flag (back-compat); schemes with a different public
+            relational shape (e.g. lifecycle) pass their own.
 
     Returns:
         A JSON-serialisable dict ready to be written as ``manifest.json``.
@@ -164,7 +170,11 @@ def build_manifest(
         "motif_family": motif_family,
         "redacted_columns": redacted_columns_list,
         "relational_snapshot_safe": bool(relational_snapshot_safe),
-        "structural_redactions": _build_structural_redactions(bool(relational_snapshot_safe)),
+        "structural_redactions": (
+            structural_redactions
+            if structural_redactions is not None
+            else _build_structural_redactions(bool(relational_snapshot_safe))
+        ),
         "tables": tables,
         "tasks": tasks,
     }
