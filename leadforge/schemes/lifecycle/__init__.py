@@ -146,11 +146,7 @@ class LifecycleScheme:
         from pathlib import Path
 
         from leadforge.exposure.filters import get_filter
-        from leadforge.exposure.modes import apply_exposure
-        from leadforge.render.manifests import build_manifest, write_manifest
-        from leadforge.render.relational_io import write_relational_tables
-        from leadforge.render.tasks import write_task_splits
-        from leadforge.schema.dictionaries import write_feature_dictionary
+        from leadforge.render.bundle import TaskExport, write_bundle_envelope
         from leadforge.schemes.lifecycle.artifacts import LifecycleArtifacts
         from leadforge.schemes.lifecycle.features import CUSTOMER_SNAPSHOT_FEATURES
         from leadforge.schemes.lifecycle.render.dataset_card import render_lifecycle_dataset_card
@@ -178,16 +174,12 @@ class LifecycleScheme:
             )
         config = bundle.spec.config
         bundle_filter = get_filter(config.exposure_mode)
-
         population = artifacts.population
         sim = artifacts.simulation_result
-        root = Path(path)
-        root.mkdir(parents=True, exist_ok=True)
 
-        # 1. Relational tables → tables/
-        #    student_public is projected snapshot-safe (event tables filtered to
-        #    <= observation_date; subscriptions' stateful/terminal columns
-        #    dropped).  research_instructor keeps the full-horizon shape.
+        # Relational shape.  student_public is projected snapshot-safe (event
+        # tables filtered to <= observation_date; subscriptions' stateful /
+        # terminal columns dropped); research_instructor keeps full horizon.
         dfs = to_dataframes(sim, population)
         structural_redactions: dict[str, object] | None = None
         if bundle_filter.relational_snapshot_safe:
@@ -196,20 +188,15 @@ class LifecycleScheme:
                 "columns": {"subscriptions": sorted(LIFECYCLE_BANNED_SUBSCRIPTION_COLUMNS)},
                 "omitted_tables": [],
             }
-        table_row_counts = write_relational_tables(dfs, root / "tables")
+        table_counts = {name: len(df) for name, df in dfs.items()}
 
-        # 2. Regime snapshots → task directories.
-        #    difficulty_params (None until LTV-Po resolves it) drives distortions.
-        #
-        # The early-pLTV (tenure-anchored) family is OMITTED from snapshot-safe
-        # public bundles: its forward window (start + early_tenure_weeks + Nd)
-        # precedes the relational cutoff (observation_date), so its targets are
-        # reconstructible by joining the public event tables (invoices between
-        # the early cutoff and observation_date *are* the early target window).
-        # One observation_date-anchored relational export cannot serve both
-        # regimes; the early family stays instructor-only.  The calendar family
-        # is safe (its targets fall after observation_date, absent from the
-        # public relational tables).
+        # Regime snapshots → tasks.  The early-pLTV (tenure-anchored) family is
+        # OMITTED from snapshot-safe public bundles: its forward window precedes
+        # the relational cutoff (observation_date), so its targets would be
+        # reconstructible by joining the public event tables.  One
+        # observation_date-anchored relational export cannot serve both regimes;
+        # the early family stays instructor-only.  The calendar family is safe
+        # (its targets fall after observation_date).
         snapshots = {
             CALENDAR_REGIME: build_customer_snapshot(
                 population, sim, difficulty_params=config.difficulty_params, seed=config.seed
@@ -223,48 +210,37 @@ class LifecycleScheme:
                 difficulty_params=config.difficulty_params,
                 seed=config.seed,
             )
-        # Each task is a standalone single-target split: drop every OTHER
-        # target column so a task's parquet cannot leak the answer's siblings
-        # (e.g. ltv_revenue_730d ⊇ ltv_revenue_90d).  The deliberate
+        # Each task is a standalone single-target split: drop every OTHER target
+        # column so a task's parquet cannot leak the answer's siblings (e.g.
+        # ltv_revenue_730d ⊇ ltv_revenue_90d).  The deliberate
         # mrr_change_full_period trap (leakage_risk but not a target) is kept.
         all_target_cols = {f.name for f in CUSTOMER_SNAPSHOT_FEATURES if f.is_target}
-        task_row_counts: dict[str, dict[str, int]] = {}
-        all_tasks = []
+        tasks: list[TaskExport] = []
         for regime, snapshot in snapshots.items():
             for task in lifecycle_task_manifests(regime):
                 other_targets = [
                     c for c in all_target_cols - {task.label_column} if c in snapshot.columns
                 ]
-                task_df = snapshot.drop(columns=other_targets)
-                counts = write_task_splits(task_df, root / "tasks", seed=config.seed, task=task)
-                task_row_counts[task.task_id] = counts
-                all_tasks.append(task)
+                tasks.append(TaskExport(manifest=task, frame=snapshot.drop(columns=other_targets)))
 
-        # 3. Dataset card + feature dictionary
-        (root / "dataset_card.md").write_text(
-            render_lifecycle_dataset_card(
-                bundle.spec,
-                table_counts=table_row_counts,
-                tasks=tuple(all_tasks),
-                observation_date=population.observation_date,
-            )
-        )
-        write_feature_dictionary(
-            root / "feature_dictionary.csv", features=tuple(CUSTOMER_SNAPSHOT_FEATURES)
+        dataset_card = render_lifecycle_dataset_card(
+            bundle.spec,
+            table_counts=table_counts,
+            tasks=tuple(t.manifest for t in tasks),
+            observation_date=population.observation_date,
         )
 
-        # 4. Exposure metadata (delegates hidden truth to write_metadata)
-        apply_exposure(bundle, root, config.exposure_mode)
-
-        # 5. Manifest
-        manifest = build_manifest(
-            config=config,
+        write_bundle_envelope(
+            bundle,
+            Path(path),
+            relational=dfs,
+            tasks=tasks,
+            dataset_card=dataset_card,
+            feature_specs=CUSTOMER_SNAPSHOT_FEATURES,
             generation_scheme=self.name,
             motif_family=artifacts.motif_family,
-            table_row_counts=table_row_counts,
-            task_row_counts=task_row_counts,
-            bundle_root=root,
-            generation_timestamp=generation_timestamp,
+            relational_snapshot_safe=bundle_filter.relational_snapshot_safe,
+            structural_redactions=structural_redactions,
             extra_fields={
                 "observation_date": population.observation_date,
                 # The actual exported target windows (source of truth), not
@@ -272,10 +248,8 @@ class LifecycleScheme:
                 "forward_windows_days": list(FORWARD_WINDOWS_DAYS),
                 "early_tenure_weeks": config.early_tenure_weeks,
             },
-            relational_snapshot_safe=bundle_filter.relational_snapshot_safe,
-            structural_redactions=structural_redactions,
+            generation_timestamp=generation_timestamp,
         )
-        write_manifest(manifest, root)
 
     def write_metadata(self, bundle: WorldBundle, meta_dir: Path) -> None:
         """Write the lifecycle hidden-truth files into *meta_dir*.
