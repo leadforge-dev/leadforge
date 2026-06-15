@@ -155,4 +155,3 @@ def test_empty_population_yields_typed_empty_tables() -> None:
     assert len(dfs["customers"]) == 1
     for name, df in dfs.items():
         assert list(df.columns), f"{name} has no columns"
-

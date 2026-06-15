@@ -358,6 +358,15 @@ methods, then public-safety, then the carried orchestrator cleanup:
   per-task single-target splits + cutoff-bounded features (LTV-Pn.4b) already
   satisfy public task safety; the early-regime degenerate-column flags are
   documented (LTV-Pm).
+  - **Design decision (self-review):** the early-pLTV (tenure-anchored) task
+    family is **omitted from `student_public` bundles** — its forward window
+    precedes `observation_date`, so its target is exactly reconstructible by
+    joining the public event tables (verified: 52/60 customers).  One
+    `observation_date`-anchored relational export cannot serve both regimes, so
+    the early family is instructor-only for now.  Revisit if public early-pLTV
+    is wanted (would need per-regime relational exports or a relational-free
+    public early task) — flag for `LTV-Po`/design-doc update; tension noted
+    against D8's "first-class early-pLTV".
   - Labels: `type: feature`, `layer: exposure`, `layer: render`, `layer: docs`
 - [ ] **`LTV-Pn.4d`** — `refactor: shared bundle orchestrator`.  With both
   schemes' `write_bundle` in hand, lift the shared orchestrator (mkdir →

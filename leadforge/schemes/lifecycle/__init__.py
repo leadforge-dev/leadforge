@@ -198,20 +198,31 @@ class LifecycleScheme:
             }
         table_row_counts = write_relational_tables(dfs, root / "tables")
 
-        # 2. Both regime snapshots → 8 task directories.
+        # 2. Regime snapshots → task directories.
         #    difficulty_params (None until LTV-Po resolves it) drives distortions.
+        #
+        # The early-pLTV (tenure-anchored) family is OMITTED from snapshot-safe
+        # public bundles: its forward window (start + early_tenure_weeks + Nd)
+        # precedes the relational cutoff (observation_date), so its targets are
+        # reconstructible by joining the public event tables (invoices between
+        # the early cutoff and observation_date *are* the early target window).
+        # One observation_date-anchored relational export cannot serve both
+        # regimes; the early family stays instructor-only.  The calendar family
+        # is safe (its targets fall after observation_date, absent from the
+        # public relational tables).
         snapshots = {
             CALENDAR_REGIME: build_customer_snapshot(
                 population, sim, difficulty_params=config.difficulty_params, seed=config.seed
             ),
-            EARLY_REGIME: build_early_pltv_snapshot(
+        }
+        if not bundle_filter.relational_snapshot_safe:
+            snapshots[EARLY_REGIME] = build_early_pltv_snapshot(
                 population,
                 sim,
                 early_tenure_weeks=config.early_tenure_weeks,
                 difficulty_params=config.difficulty_params,
                 seed=config.seed,
-            ),
-        }
+            )
         # Each task is a standalone single-target split: drop every OTHER
         # target column so a task's parquet cannot leak the answer's siblings
         # (e.g. ltv_revenue_730d ⊇ ltv_revenue_90d).  The deliberate

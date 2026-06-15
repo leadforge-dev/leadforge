@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -119,6 +120,49 @@ def test_public_bundle_deterministic(tmp_path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Early-pLTV family is omitted from public (its target is relational-reconstructible)
+# ---------------------------------------------------------------------------
+
+
+def test_public_omits_early_pltv_family(tmp_path) -> None:
+    """The tenure-anchored early-pLTV tasks are NOT published in student_public:
+    their forward window precedes observation_date, so the public event tables
+    (<= observation_date) would let a join reconstruct the target."""
+    out, _ = _public_bundle(tmp_path)
+    task_dirs = {p.name for p in (out / "tasks").iterdir() if p.is_dir()}
+    assert not any(t.startswith("early_") for t in task_dirs), task_dirs
+    assert task_dirs == {
+        "pltv_revenue_90d",
+        "pltv_revenue_365d",
+        "pltv_revenue_730d",
+        "churned_within_180d",
+    }
+
+
+def test_published_calendar_target_not_reconstructible_from_public_relational(tmp_path) -> None:
+    """Leakage probe: the published pltv_revenue_90d target (revenue AFTER
+    observation_date) cannot be recovered from the public invoices table (which
+    is filtered to <= observation_date).  Customers with a nonzero target must
+    reconstruct to a strictly smaller value (typically 0)."""
+    out, obs = _public_bundle(tmp_path, n_customers=200)
+    invoices = pd.read_parquet(out / "tables" / "invoices.parquet")
+    paid = invoices[invoices.payment_status.isin(["paid", "recovered"])]
+    bound = (date.fromisoformat(obs) + timedelta(days=90)).isoformat()
+    task = pd.read_parquet(out / "tasks" / "pltv_revenue_90d" / "train.parquet")
+
+    nonzero = task[task["ltv_revenue_90d"] > 0]
+    assert len(nonzero) > 0, "fixture should have customers with forward revenue"
+    leaked = 0
+    for _, row in nonzero.head(60).iterrows():
+        inv = paid[paid.customer_id == row["customer_id"]]
+        # Everything reconstructible from public relational is <= obs < window.
+        recon = float(inv[(inv.invoice_date > obs) & (inv.invoice_date <= bound)].amount_usd.sum())
+        if abs(recon - float(row["ltv_revenue_90d"])) < 1e-6:
+            leaked += 1
+    assert leaked == 0, f"{leaked} calendar targets reconstructible from public relational"
+
+
+# ---------------------------------------------------------------------------
 # Instructor mode is unaffected
 # ---------------------------------------------------------------------------
 
@@ -135,6 +179,10 @@ def test_instructor_keeps_full_subscriptions_and_metadata(tmp_path) -> None:
     assert (out / "metadata").is_dir()
     m = json.loads((out / "manifest.json").read_text())
     assert m["relational_snapshot_safe"] is False
+    # Instructor keeps BOTH regimes — the early family is full-truth here.
+    task_dirs = {p.name for p in (out / "tasks").iterdir() if p.is_dir()}
+    assert sum(t.startswith("early_") for t in task_dirs) == 4
+    assert len(task_dirs) == 8
 
 
 # ---------------------------------------------------------------------------

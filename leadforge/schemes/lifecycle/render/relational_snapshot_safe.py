@@ -18,9 +18,14 @@ The public **task** parquets are already snapshot-safe by construction (their
 features are computed at/before the cutoff and each carries only its own
 target); this module only governs the relational ``tables/``.
 
-Caveat: the cutoff is the calendar regime's ``observation_date``.  The
-early-pLTV (tenure-anchored) task's snapshot-safe data is its own task
-parquet; relational-table feature engineering aligns with the calendar regime.
+The cutoff is the calendar regime's ``observation_date``.  The early-pLTV
+(tenure-anchored) task family is therefore **omitted from public bundles**
+(``LifecycleScheme.write_bundle``): its forward window precedes
+``observation_date``, so its targets would be reconstructible by joining the
+public event tables (the invoices between the early cutoff and
+``observation_date`` *are* the early target window).  A single
+``observation_date``-anchored relational export cannot serve both regimes; the
+early family stays instructor-only.
 
 ``research_instructor`` keeps the full-horizon
 :func:`~leadforge.schemes.lifecycle.render.relational.to_dataframes`.
