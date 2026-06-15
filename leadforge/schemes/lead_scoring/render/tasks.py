@@ -2,8 +2,13 @@
 
 The deterministic shuffle/split/write logic is scheme-agnostic and lives in
 :func:`leadforge.render.tasks.write_task_splits` (lifted there in LTV-Pn.3,
-byte-identical for this scheme).  This wrapper preserves the lead-scoring
-default task so existing call sites are unchanged.
+byte-identical for this scheme).  This wrapper is a convenience that defaults
+the task to :data:`CONVERTED_WITHIN_90_DAYS`.
+
+Since LTV-Pn.4d the lead-scoring ``write_bundle`` writes tasks through the
+shared bundle envelope (:func:`leadforge.render.bundle.write_bundle_envelope`,
+which calls the shared writer with an explicit task), so this wrapper is no
+longer on the write-bundle path; it remains as the scheme's default-task helper.
 """
 
 from __future__ import annotations
