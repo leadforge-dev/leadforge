@@ -46,7 +46,7 @@ protocol + registry, with the package physically reorganized into
 | `LTV-M3` | Customer population + lifecycle world | `LTV-Ph`, `LTV-Pi` | #113 (Ph) |
 | `LTV-M4` | Lifecycle simulation engine | `LTV-Pj`, `LTV-Pk` | #117 (Pj), #118 (Pk) |
 | `LTV-M5` | Customer snapshots + pLTV targets (both regimes) | `LTV-Pl`, `LTV-Pm` | #119 (Pl), #120 (Pm) |
-| `LTV-M6` | Register LifecycleScheme + recipe + manifest/version | `LTV-Pn.1…4`, `LTV-Po` | #121 (Pn.1), #122 (Pn.2), #124 (Pn.3), #125 (Pn.4a), #126 (Pn.4b) |
+| `LTV-M6` | Register LifecycleScheme + recipe + manifest/version | `LTV-Pn.1…4`, `LTV-Po` | #121 (Pn.1), #122 (Pn.2), #124 (Pn.3), #125 (Pn.4a), #126 (Pn.4b), #127 (Pn.4c) |
 | `LTV-M7` | Validation + regression-metric calibration | `LTV-Pp` | |
 | `LTV-M8` | CLI, notebooks, publish | `LTV-Pq`, `LTV-Pr`, `LTV-Ps` | |
 
@@ -342,12 +342,31 @@ methods, then public-safety, then the carried orchestrator cleanup:
     coupled (applies lead-scoring FK/table/task checks) and errors on a
     lifecycle bundle; scheme-aware validation is `LTV-Pp`.
   - Labels: `type: feature`, `layer: api`, `layer: render`
-- [ ] **`LTV-Pn.4c`** — `feat(lifecycle): student_public snapshot-safety`.
-  Public relational filtering (event tables ≤ cutoff; drop terminal
-  `churn_at`/`churn_reason`/`subscription_end_at`; no target columns); the
-  early-regime degenerate-column + dtype-preserving-missingness flags from
-  LTV-Pm.  Extend `CLAUDE.md` hard constraints with the lifecycle
-  snapshot-safety clause + the `schemes/` layout.
+- [x] **`LTV-Pn.4c`** — `feat(lifecycle): student_public snapshot-safety`
+  (**PR #127**).  New `schemes/lifecycle/render/relational_snapshot_safe.py`
+  projects the public relational tables: event tables filtered to
+  `<= observation_date`; `subscriptions` drops its stateful/terminal columns.
+  **Note:** design §5 named only the three terminal fields, but the four
+  *stateful* columns (`subscription_status`/`current_mrr`/`renewal_count`/
+  `expansion_count`) also hold end-of-sim values that leak the targets, so the
+  banned set (`leakage_probes.LIFECYCLE_BANNED_SUBSCRIPTION_COLUMNS`) extends
+  the spec.  `write_bundle` drops the public guard and wires the projection;
+  manifest records `relational_snapshot_safe` + `structural_redactions`
+  (`build_manifest` gained a pass-through `structural_redactions` param — the
+  last lead-scoring coupling in the manifest builder; lead-scoring byte-
+  identical).  `CLAUDE.md` gains the lifecycle snapshot-safety clause.  The
+  per-task single-target splits + cutoff-bounded features (LTV-Pn.4b) already
+  satisfy public task safety; the early-regime degenerate-column flags are
+  documented (LTV-Pm).
+  - **Design decision (self-review):** the early-pLTV (tenure-anchored) task
+    family is **omitted from `student_public` bundles** — its forward window
+    precedes `observation_date`, so its target is exactly reconstructible by
+    joining the public event tables (verified: 52/60 customers).  One
+    `observation_date`-anchored relational export cannot serve both regimes, so
+    the early family is instructor-only for now.  Revisit if public early-pLTV
+    is wanted (would need per-regime relational exports or a relational-free
+    public early task) — flag for `LTV-Po`/design-doc update; tension noted
+    against D8's "first-class early-pLTV".
   - Labels: `type: feature`, `layer: exposure`, `layer: render`, `layer: docs`
 - [ ] **`LTV-Pn.4d`** — `refactor: shared bundle orchestrator`.  With both
   schemes' `write_bundle` in hand, lift the shared orchestrator (mkdir →

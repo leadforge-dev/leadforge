@@ -103,6 +103,37 @@ SNAPSHOT_FILTERED_TABLES: Final[tuple[tuple[str, str], ...]] = (
     ("opportunities", "created_at"),
 )
 
+
+# ---------------------------------------------------------------------------
+# Lifecycle (pLTV) scheme snapshot-safety contract
+# ---------------------------------------------------------------------------
+
+#: Columns dropped from the public ``subscriptions`` table.  design.md §5 names
+#: the three terminal fields (``churn_at`` / ``churn_reason`` /
+#: ``subscription_end_at``); the four *stateful* columns below also hold
+#: end-of-simulation values that leak the pLTV / churn targets (current MRR
+#: reflects post-cutoff expansion; status reveals churn; the counts reveal
+#: future renewals/expansions), so they are dropped too.  The at-signing
+#: identity columns (subscription_id, customer_id, plan_name,
+#: subscription_start_at, contract_term_months) are retained.
+LIFECYCLE_BANNED_SUBSCRIPTION_COLUMNS: Final[tuple[str, ...]] = (
+    "churn_at",
+    "churn_reason",
+    "current_mrr",
+    "expansion_count",
+    "renewal_count",
+    "subscription_end_at",
+    "subscription_status",
+)
+
+#: Lifecycle event tables filtered to ``<= observation_date`` (the public
+#: calendar-anchored cutoff): every timestamp must be at or before the cutoff.
+LIFECYCLE_SNAPSHOT_FILTERED_TABLES: Final[tuple[tuple[str, str], ...]] = (
+    ("subscription_events", "event_timestamp"),
+    ("health_signals", "period_start"),
+    ("invoices", "invoice_date"),
+)
+
 #: Channel labels carried on :class:`LeakageFinding.channel`.  Constants
 #: rather than an enum because findings serialise straight to JSON.
 CHANNEL_BANNED_COLUMN: Final[str] = "banned_column"
@@ -1481,6 +1512,8 @@ __all__ = [
     "PROBE_REGISTRY",
     "ProbeSpec",
     "RelationalLeakageError",
+    "LIFECYCLE_BANNED_SUBSCRIPTION_COLUMNS",
+    "LIFECYCLE_SNAPSHOT_FILTERED_TABLES",
     "SNAPSHOT_FILTERED_TABLES",
     "deterministic_relational_reconstruction",
     "probe_banned_columns",

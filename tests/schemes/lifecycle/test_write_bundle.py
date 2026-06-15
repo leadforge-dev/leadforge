@@ -226,11 +226,12 @@ def test_difficulty_params_thread_into_snapshots(tmp_path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_student_public_refused_until_pn4c(tmp_path) -> None:
-    scheme = get_scheme("lifecycle")
-    bundle = scheme.build_world(_config(exposure_mode="student_public"), narrative=None)
-    with pytest.raises(NotImplementedError, match="LTV-Pn.4c"):
-        scheme.write_bundle(bundle, str(tmp_path / "public"), generation_timestamp=_TS)
+def test_student_public_writes_a_bundle(tmp_path) -> None:
+    # Public mode is implemented in LTV-Pn.4c (snapshot-safe); it must produce a
+    # bundle (full safety is asserted in test_public_snapshot_safety.py).
+    out = _write(tmp_path, config=_config(exposure_mode="student_public"))
+    assert (out / "manifest.json").is_file()
+    assert not (out / "metadata").exists()  # no hidden truth in public
 
 
 def test_unpopulated_bundle_refused(tmp_path) -> None:
