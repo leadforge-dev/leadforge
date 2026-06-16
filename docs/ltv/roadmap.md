@@ -46,7 +46,7 @@ protocol + registry, with the package physically reorganized into
 | `LTV-M3` | Customer population + lifecycle world | `LTV-Ph`, `LTV-Pi` | #113 (Ph) |
 | `LTV-M4` | Lifecycle simulation engine | `LTV-Pj`, `LTV-Pk` | #117 (Pj), #118 (Pk) |
 | `LTV-M5` | Customer snapshots + pLTV targets (both regimes) | `LTV-Pl`, `LTV-Pm` | #119 (Pl), #120 (Pm) |
-| `LTV-M6` | Register LifecycleScheme + recipe + manifest/version | `LTV-Pn.1…4`, `LTV-Po` | #121 (Pn.1), #122 (Pn.2), #124 (Pn.3), #125 (Pn.4a), #126 (Pn.4b), #127 (Pn.4c) |
+| `LTV-M6` | Register LifecycleScheme + recipe + manifest/version | `LTV-Pn.1…4`, `LTV-Po` | #121 (Pn.1), #122 (Pn.2), #124 (Pn.3), #125 (Pn.4a), #126 (Pn.4b), #127 (Pn.4c), #128 (Pn.4d) |
 | `LTV-M7` | Validation + regression-metric calibration | `LTV-Pp` | |
 | `LTV-M8` | CLI, notebooks, publish | `LTV-Pq`, `LTV-Pr`, `LTV-Ps` | |
 
@@ -368,11 +368,15 @@ methods, then public-safety, then the carried orchestrator cleanup:
     public early task) — flag for `LTV-Po`/design-doc update; tension noted
     against D8's "first-class early-pLTV".
   - Labels: `type: feature`, `layer: exposure`, `layer: render`, `layer: docs`
-- [ ] **`LTV-Pn.4d`** — `refactor: shared bundle orchestrator`.  With both
-  schemes' `write_bundle` in hand, lift the shared orchestrator (mkdir →
-  relational → tasks → card → dict → exposure → manifest) with scheme render
-  hooks out of the two implementations (carried cleanup #1).  Both bundles
-  byte-identical.
+- [x] **`LTV-Pn.4d`** — `refactor: shared bundle orchestrator` (**PR #128**).
+  New `render/bundle.py` `write_bundle_envelope` runs the shared on-disk
+  sequence (mkdir → relational → task splits → card → dict → exposure →
+  manifest) given each scheme's already-computed content (final dfs, a
+  `TaskExport(manifest, frame)` list, rendered card, visible features, manifest
+  params).  Both schemes' `write_bundle` now compute only their scheme-specific
+  content and delegate the I/O; carried cleanup #1 discharged.  **All four
+  bundles (lead_scoring + lifecycle × instructor + public) verified
+  byte-identical** via the full-bundle SHA-256 harness.
   - Labels: `type: refactor`, `layer: render`, `layer: api`
 - [ ] **`LTV-Po`** — `feat(recipes): b2b_saas_ltv_v1 recipe assets`. The three
   recipe YAMLs (`scheme: lifecycle`); register in the recipe registry;
@@ -427,10 +431,9 @@ The peer-schemes reorg deliberately defers a few cleanups to keep each M2 PR
 byte-identical and reviewable. They are tracked here and discharged in
 **`LTV-Pn.1`/`LTV-Pn.2`** (M6), where the manifest/exposure generalization makes them clean:
 
-1. **Shared render orchestration** — `LTV-Pe` left each scheme owning its full
-   `write_bundle`; only `write_relational_tables` is shared. A shared bundle
-   orchestrator with scheme render hooks lands in **`LTV-Pn.4`**, once the
-   lifecycle `write_bundle` exists to reveal the real shared shape.
+1. ~~**Shared render orchestration**~~ — **Done** (`LTV-Pn.4d`):
+   `render/bundle.py` `write_bundle_envelope` is the shared orchestrator; both
+   schemes delegate their bundle I/O to it.
 2. ~~**`build_manifest` / `apply_exposure` are lead-scoring-coupled**~~ —
    **Done** (`build_manifest` in `LTV-Pn.1`; `apply_exposure` in `LTV-Pn.2` via
    the `write_metadata` scheme hook).

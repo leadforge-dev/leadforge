@@ -164,11 +164,8 @@ class LeadScoringScheme:
         from pathlib import Path
 
         from leadforge.exposure.filters import get_filter
-        from leadforge.exposure.modes import apply_exposure
         from leadforge.narrative.dataset_card import render_dataset_card
-        from leadforge.render.manifests import build_manifest, write_manifest
-        from leadforge.render.relational_io import write_relational_tables
-        from leadforge.schema.dictionaries import write_feature_dictionary
+        from leadforge.render.bundle import TaskExport, write_bundle_envelope
         from leadforge.schemes.lead_scoring.artifacts import LeadScoringArtifacts
         from leadforge.schemes.lead_scoring.features import (
             LEAD_SNAPSHOT_FEATURES,
@@ -179,7 +176,6 @@ class LeadScoringScheme:
             to_dataframes_snapshot_safe,
         )
         from leadforge.schemes.lead_scoring.render.snapshots import build_snapshot
-        from leadforge.schemes.lead_scoring.render.tasks import write_task_splits
         from leadforge.schemes.lead_scoring.tasks import task_manifest_for_config
 
         artifacts = bundle.artifacts
@@ -189,30 +185,18 @@ class LeadScoringScheme:
                 "Call Generator.generate() first."
             )
 
-        root = Path(path)
-        root.mkdir(parents=True, exist_ok=True)
-
         config = bundle.spec.config
         result = artifacts.simulation_result
         population = artifacts.population
         world_graph = artifacts.world_graph
 
-        # The redaction set comes from the canonical feature spec — the same
-        # source of truth the validator uses.  It is applied uniformly to
-        # every published parquet file (relational tables AND task splits) so
-        # users doing feature engineering off the raw tables (per the
-        # README's "Option 3") cannot trivially reintroduce a redacted
-        # column by joining ``tables/leads.parquet`` to their feature set.
+        # The redaction set comes from the canonical feature spec — applied to
+        # every published parquet (relational tables AND task splits) so a user
+        # cannot reintroduce a redacted column by joining the raw tables.
         redacted = redacted_columns_for(config.exposure_mode)
         bundle_filter = get_filter(config.exposure_mode)
 
-        # ------------------------------------------------------------------
-        # 1. Relational tables → tables/
-        #
-        # The lead-scoring *shape* (9 tables; snapshot-safe projection for
-        # student_public) is decided here; the redaction-drop + parquet-write +
-        # row-count loop is the shared, scheme-agnostic envelope step.
-        # ------------------------------------------------------------------
+        # Relational shape (9 tables; snapshot-safe projection for public).
         dfs = to_dataframes(result, population)
         if bundle_filter.relational_snapshot_safe:
             if config.snapshot_day is None:
@@ -224,11 +208,11 @@ class LeadScoringScheme:
                     "pass it explicitly."
                 )
             dfs = to_dataframes_snapshot_safe(dfs, snapshot_day=config.snapshot_day)
-        table_row_counts = write_relational_tables(dfs, root / "tables", redacted=redacted)
+        # Row counts for the dataset card == write_relational_tables' counts
+        # (redaction drops columns, not rows).
+        table_counts = {name: len(df) for name, df in dfs.items()}
 
-        # ------------------------------------------------------------------
-        # 2. Snapshot + task splits → tasks/
-        # ------------------------------------------------------------------
+        # Lead snapshot + single task, redacted to the exposure mode.
         snapshot = build_snapshot(
             result,
             population,
@@ -242,43 +226,28 @@ class LeadScoringScheme:
             if drop_cols:
                 snapshot = snapshot.drop(columns=drop_cols)
         visible_features = tuple(f for f in LEAD_SNAPSHOT_FEATURES if f.name not in redacted)
-
         task = task_manifest_for_config(config.primary_task, config.label_window_days)
-        task_row_counts = write_task_splits(snapshot, root / "tasks", seed=config.seed, task=task)
 
-        # ------------------------------------------------------------------
-        # 3. Dataset card and feature dictionary
-        # ------------------------------------------------------------------
-        (root / "dataset_card.md").write_text(
-            render_dataset_card(
-                bundle.spec,
-                task_manifest=task,
-                table_counts=table_row_counts,
-                features=visible_features,
-            )
+        dataset_card = render_dataset_card(
+            bundle.spec,
+            task_manifest=task,
+            table_counts=table_counts,
+            features=visible_features,
         )
-        write_feature_dictionary(root / "feature_dictionary.csv", features=visible_features)
 
-        # ------------------------------------------------------------------
-        # 4. Exposure metadata (research_instructor only)
-        # ------------------------------------------------------------------
-        apply_exposure(bundle, root, config.exposure_mode)
-
-        # ------------------------------------------------------------------
-        # 5. Manifest
-        # ------------------------------------------------------------------
-        manifest = build_manifest(
-            config=config,
+        write_bundle_envelope(
+            bundle,
+            Path(path),
+            relational=dfs,
+            tasks=[TaskExport(manifest=task, frame=snapshot)],
+            dataset_card=dataset_card,
+            feature_specs=visible_features,
             generation_scheme=self.name,
+            redacted=redacted,
             motif_family=world_graph.motif_family,
-            table_row_counts=table_row_counts,
-            task_row_counts={task.task_id: task_row_counts},
-            bundle_root=root,
-            generation_timestamp=generation_timestamp,
-            redacted_columns=sorted(redacted),
             relational_snapshot_safe=bundle_filter.relational_snapshot_safe,
+            generation_timestamp=generation_timestamp,
         )
-        write_manifest(manifest, root)
 
     def write_metadata(self, bundle: WorldBundle, meta_dir: Path) -> None:
         """Write the lead-scoring hidden-truth files into *meta_dir*.
