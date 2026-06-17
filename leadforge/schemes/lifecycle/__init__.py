@@ -54,20 +54,15 @@ class LifecycleScheme:
         ``forward_windows_days`` (the engine simulates through the longest
         window so every pLTV target is fully covered).
 
-        Not yet applied (tracked, not silent):
+        ``narrative``, when provided, drives the population's firmographic
+        vocabularies (``market.icp_industries`` / ``market.geographies``); a
+        ``None`` narrative falls back to the built-in procurement-ICP defaults.
 
-        - **Difficulty.**  ``config.difficulty`` / ``difficulty_params`` are
-          NOT consumed here, so every difficulty tier currently yields the same
-          world.  Two distinct pieces remain: resolving ``difficulty_params``
-          from the active profile and threading it into the snapshot
-          distortions (``LTV-Pn.4b``, where snapshots are built), and
-          simulation-level difficulty scaling that actually makes harder tiers
-          harder worlds (deferred — see ``mechanisms.py`` and the roadmap).
-        - **Narrative.**  ``narrative`` is accepted for protocol parity but
-          unused: the lifecycle population builder generates its own
-          firmographics from internal distributions, so the recipe's
-          ``narrative.yaml`` will not drive them until ``LTV-Po`` decides
-          whether the lifecycle scheme should consume the narrative spec.
+        Difficulty (tracked, not silent): ``config.difficulty`` does not yet
+        scale the *simulation* — every tier yields the same world — so harder
+        tiers differ only in snapshot distortions (resolved from the recipe
+        profile in ``LTV-Po`` and threaded into the snapshot builders).
+        Simulation-level difficulty scaling is deferred (issue #129).
         """
         from leadforge.core.exceptions import InvalidConfigError
         from leadforge.core.models import WorldBundle, WorldSpec
@@ -98,6 +93,7 @@ class LifecycleScheme:
             config.seed,
             motif_family=motif_family,
             observation_date=config.observation_date,
+            narrative=narrative,
         )
         simulation_result = simulate_lifecycle(
             population,
