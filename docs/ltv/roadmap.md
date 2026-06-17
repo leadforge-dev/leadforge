@@ -395,6 +395,12 @@ methods, then public-safety, then the carried orchestrator cleanup:
   (mirroring lead-scoring `_resolve_difficulty`) so snapshot distortions fire
   per tier; end-to-end `Generator.from_recipe("b2b_saas_ltv_v1").generate()`
   round-trip.  Public mode stays calendar-only (Option A, locked).
+  **Constraint (flagged in Po.1 review):** the recipe `narrative.yaml` MUST
+  declare ≥2 `icp_industries` and ≥2 `geographies` — Po.1 makes these drive the
+  public `industry`/`region` columns, so a single-value vocab yields a
+  zero-variance firmographic feature (student_public invariant #6 violation).
+  Add a test asserting both columns have ≥2 distinct values in the public
+  bundle.
   - Tests: recipe loads, full round-trip, determinism, all task splits,
     public/instructor split, per-tier distortion.
   - Labels: `type: feature`, `layer: recipes`, `layer: api`
