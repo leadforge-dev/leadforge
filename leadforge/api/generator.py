@@ -51,6 +51,7 @@ class Generator:
         n_accounts: int | None = None,
         n_contacts: int | None = None,
         n_leads: int | None = None,
+        n_customers: int | None = None,
         horizon_days: int | None = None,
         primary_task: str | None = None,
         label_window_days: int | None = None,
@@ -107,6 +108,7 @@ class Generator:
             n_accounts=n_accounts,
             n_contacts=n_contacts,
             n_leads=n_leads,
+            n_customers=n_customers,
             horizon_days=horizon_days,
             primary_task=primary_task,
             label_window_days=label_window_days,
@@ -127,6 +129,7 @@ class Generator:
         n_accounts: int | None = None,
         n_contacts: int | None = None,
         n_leads: int | None = None,
+        n_customers: int | None = None,
         difficulty: str | DifficultyProfile = _MISSING,  # type: ignore[assignment]
         **kwargs: Any,
     ) -> WorldBundle:
@@ -163,6 +166,8 @@ class Generator:
             overrides["n_contacts"] = n_contacts
         if n_leads is not None:
             overrides["n_leads"] = n_leads
+        if n_customers is not None:
+            overrides["n_customers"] = n_customers
         if difficulty is not _MISSING:
             if not isinstance(difficulty, DifficultyProfile):
                 difficulty = DifficultyProfile(difficulty)  # type: ignore[arg-type]

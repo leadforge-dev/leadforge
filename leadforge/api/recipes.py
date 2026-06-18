@@ -155,6 +155,7 @@ class Recipe:
         n_accounts: int | None = None,
         n_contacts: int | None = None,
         n_leads: int | None = None,
+        n_customers: int | None = None,
         horizon_days: int | None = None,
         primary_task: str | None = None,
         label_window_days: int | None = None,
@@ -191,11 +192,17 @@ class Recipe:
             "primary_task": pkg["primary_task"],
             "label_window_days": pkg["label_window_days"],
             "snapshot_day": pkg["snapshot_day"],
+            # Lifecycle-scheme fields (ignored by lead-scoring).  forward_windows_days
+            # is intentionally NOT resolvable here — the lifecycle scheme locks it to
+            # its exported constant and rejects overrides.
+            "n_customers": pkg["n_customers"],
+            "early_tenure_weeks": pkg["early_tenure_weeks"],
+            "observation_date": pkg["observation_date"],
         }
 
         # Layer 3 — recipe defaults
         pop = self.default_population
-        for key in ("n_accounts", "n_contacts", "n_leads"):
+        for key in ("n_accounts", "n_contacts", "n_leads", "n_customers"):
             if key in pop:
                 resolved[key] = pop[key]
         resolved["horizon_days"] = self.horizon_days
@@ -219,6 +226,9 @@ class Recipe:
                 "output_path",
                 "exposure_mode",
                 "difficulty",
+                "n_customers",
+                "early_tenure_weeks",
+                "observation_date",
             ):
                 if key in override:
                     resolved[key] = override[key]
@@ -239,6 +249,8 @@ class Recipe:
             resolved["n_contacts"] = n_contacts
         if n_leads is not None:
             resolved["n_leads"] = n_leads
+        if n_customers is not None:
+            resolved["n_customers"] = n_customers
         if horizon_days is not None:
             resolved["horizon_days"] = horizon_days
         if primary_task is not None:
@@ -287,6 +299,9 @@ class Recipe:
             label_window_days=resolved["label_window_days"],
             snapshot_day=resolved["snapshot_day"],
             output_path=resolved["output_path"],
+            n_customers=resolved["n_customers"],
+            early_tenure_weeks=resolved["early_tenure_weeks"],
+            observation_date=resolved["observation_date"],
         )
 
     # ------------------------------------------------------------------ #

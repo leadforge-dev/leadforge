@@ -388,10 +388,21 @@ methods, then public-safety, then the carried orchestrator cleanup:
   vs `main`, both modes).  `build_world` threads `narrative` through.  Decision
   (locked): the recipe narrative **drives** firmographics (not scheme-internal).
   - Labels: `type: feature`, `layer: narrative`
-- [ ] **`LTV-Po.2`** — `feat(recipes): b2b_saas_ltv_v1 recipe assets + e2e`. The
-  three recipe YAMLs (`scheme: lifecycle`; `narrative.yaml` with the lifecycle
-  vertical's firmographics; `difficulty_profiles.yaml`); register in the recipe
-  registry; resolve `difficulty_params` from the active profile in `build_world`
+`LTV-Po.2` is split: the config-plumbing enabler, then the recipe + e2e.
+
+- [x] **`LTV-Po.2a`** — `refactor(api): resolve_config carries lifecycle config`
+  (**PR #131**).  `Recipe.resolve_config` + `Generator.from_recipe`/`generate`
+  now carry `n_customers` (from `default_population` / kwarg / override) and
+  `early_tenure_weeks` / `observation_date` (override) through to
+  `GenerationConfig`, so a `scheme: lifecycle` recipe can size its cohort.
+  `forward_windows_days` is intentionally **not** resolvable (the scheme locks
+  it).  Lead-scoring config resolution is byte-identical (the lifecycle fields
+  default-match; verified via full-bundle SHA-256 vs `main`, both modes).
+  - Labels: `type: refactor`, `layer: api`
+- [ ] **`LTV-Po.2b`** — `feat(recipes): b2b_saas_ltv_v1 recipe assets + e2e`. The
+  three recipe YAMLs (`scheme: lifecycle`; `narrative.yaml` with ≥2 industries +
+  ≥2 geographies; `difficulty_profiles.yaml`); register in the recipe registry;
+  resolve `difficulty_params` from the active profile in `build_world`
   (mirroring lead-scoring `_resolve_difficulty`) so snapshot distortions fire
   per tier; end-to-end `Generator.from_recipe("b2b_saas_ltv_v1").generate()`
   round-trip.  Public mode stays calendar-only (Option A, locked).
