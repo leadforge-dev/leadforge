@@ -33,11 +33,15 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass, field
 from datetime import date, timedelta
+from typing import TYPE_CHECKING
 
 from leadforge.core.ids import ID_PREFIXES, make_id
 from leadforge.core.rng import RNGRoot
 from leadforge.schema.entities import AccountRow
 from leadforge.schemes.lifecycle.entities import CustomerLifecycleRow
+
+if TYPE_CHECKING:
+    from leadforge.narrative.spec import NarrativeSpec
 
 # ---------------------------------------------------------------------------
 # Output types
@@ -174,6 +178,7 @@ def build_customer_population(
     n_accounts: int | None = None,
     observation_date: str | None = None,
     acquisition_window_weeks: int = _DEFAULT_ACQUISITION_WINDOW_WEEKS,
+    narrative: NarrativeSpec | None = None,
 ) -> CustomerPopulationResult:
     """Generate accounts and lifecycle customers with their latent states.
 
@@ -246,10 +251,26 @@ def build_customer_population(
     root = RNGRoot(seed)
     bias = _MOTIF_LATENT_BIAS.get(motif_family, {})
 
+    # Firmographic vocabularies come from the recipe narrative's market spec
+    # when provided; otherwise fall back to the built-in procurement-ICP
+    # defaults (so the no-narrative path is unchanged / byte-identical).
+    if narrative is not None:
+        industries = tuple(narrative.market.icp_industries)
+        geographies = tuple(narrative.market.geographies)
+        if not industries or not geographies:
+            raise ValueError(
+                "narrative.market must define non-empty icp_industries and geographies"
+            )
+    else:
+        industries = _ICP_INDUSTRIES
+        geographies = _GEOGRAPHIES
+
     accounts, acct_latents = _generate_accounts(
         n=n_accounts,
         bias=bias,
         rng=root.child("lifecycle_population_accounts"),
+        industries=industries,
+        geographies=geographies,
     )
 
     customers, cust_latents = _generate_customers(
@@ -282,6 +303,9 @@ def _generate_accounts(
     n: int,
     bias: dict[str, float],
     rng: random.Random,
+    *,
+    industries: tuple[str, ...] = _ICP_INDUSTRIES,
+    geographies: tuple[str, ...] = _GEOGRAPHIES,
 ) -> tuple[list[AccountRow], dict[str, dict[str, float]]]:
     """Generate *n* account entities with lifecycle-relevant latent traits.
 
@@ -297,8 +321,8 @@ def _generate_accounts(
 
     for i in range(1, n + 1):
         acct_id = make_id(ID_PREFIXES["account"], i)
-        industry = rng.choice(_ICP_INDUSTRIES)
-        region = rng.choice(_GEOGRAPHIES)
+        industry = rng.choice(industries)
+        region = rng.choice(geographies)
         employee_band = rng.choices(_EMPLOYEE_BANDS, weights=_EMPLOYEE_BAND_WEIGHTS, k=1)[0]
         revenue_band = rng.choices(_REVENUE_BANDS, weights=_REVENUE_BAND_WEIGHTS, k=1)[0]
         maturity_band = rng.choices(

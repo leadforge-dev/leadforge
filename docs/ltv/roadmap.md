@@ -378,20 +378,35 @@ methods, then public-safety, then the carried orchestrator cleanup:
   bundles (lead_scoring + lifecycle × instructor + public) verified
   byte-identical** via the full-bundle SHA-256 harness.
   - Labels: `type: refactor`, `layer: render`, `layer: api`
-- [ ] **`LTV-Po`** — `feat(recipes): b2b_saas_ltv_v1 recipe assets`. The three
-  recipe YAMLs (`scheme: lifecycle`); register in the recipe registry;
-  end-to-end `Generator.from_recipe("b2b_saas_ltv_v1").generate()` smoke test.
-  **Decide narrative consumption:** the lifecycle population hardcodes its
-  firmographics and `build_world` ignores `narrative` (Pn.4a) — either wire the
-  recipe's `narrative.yaml` into the population builder or document the
-  firmographics as scheme-internal.
-  - Tests: recipe loads, full round-trip, determinism, all task splits (3
-    windows × 2 regimes + secondary churn), public/instructor split.
-  - Labels: `type: feature`, `layer: recipes`
-- **Deferred (flagged in Pn.4a):** simulation-level difficulty scaling for the
+`LTV-Po` is split: narrative-wiring (prerequisite) then the recipe + e2e.
+
+- [x] **`LTV-Po.1`** — `feat(lifecycle): consume narrative firmographics`
+  (**PR #130**).  `build_customer_population(narrative=…)` reads the firmographic
+  vocabularies (`market.icp_industries` / `market.geographies`) from the recipe
+  narrative when given; a `None` narrative falls back to the built-in
+  procurement-ICP defaults, so the no-narrative path is byte-identical (verified
+  vs `main`, both modes).  `build_world` threads `narrative` through.  Decision
+  (locked): the recipe narrative **drives** firmographics (not scheme-internal).
+  - Labels: `type: feature`, `layer: narrative`
+- [ ] **`LTV-Po.2`** — `feat(recipes): b2b_saas_ltv_v1 recipe assets + e2e`. The
+  three recipe YAMLs (`scheme: lifecycle`; `narrative.yaml` with the lifecycle
+  vertical's firmographics; `difficulty_profiles.yaml`); register in the recipe
+  registry; resolve `difficulty_params` from the active profile in `build_world`
+  (mirroring lead-scoring `_resolve_difficulty`) so snapshot distortions fire
+  per tier; end-to-end `Generator.from_recipe("b2b_saas_ltv_v1").generate()`
+  round-trip.  Public mode stays calendar-only (Option A, locked).
+  **Constraint (flagged in Po.1 review):** the recipe `narrative.yaml` MUST
+  declare ≥2 `icp_industries` and ≥2 `geographies` — Po.1 makes these drive the
+  public `industry`/`region` columns, so a single-value vocab yields a
+  zero-variance firmographic feature (student_public invariant #6 violation).
+  Add a test asserting both columns have ≥2 distinct values in the public
+  bundle.
+  - Tests: recipe loads, full round-trip, determinism, all task splits,
+    public/instructor split, per-tier distortion.
+  - Labels: `type: feature`, `layer: recipes`, `layer: api`
+- **Deferred (issue #129):** simulation-level difficulty scaling for the
   lifecycle engine — making `advanced` a genuinely harder world (not just
-  noisier snapshots).  Currently the motif-calibrated rates are difficulty-
-  agnostic; revisit alongside `LTV-Pp` difficulty-band validation.
+  noisier snapshots).  Revisit alongside `LTV-Pp` difficulty-band validation.
 
 ---
 
