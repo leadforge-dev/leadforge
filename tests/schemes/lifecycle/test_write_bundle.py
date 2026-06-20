@@ -9,7 +9,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from leadforge.core.models import DifficultyParams, GenerationConfig
+from leadforge.core.models import GenerationConfig
 from leadforge.schemes import get_scheme
 from leadforge.schemes.lifecycle.snapshots import CHURN_WINDOW_DAYS, FORWARD_WINDOWS_DAYS
 
@@ -192,33 +192,26 @@ def test_bundle_deterministic(tmp_path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Difficulty threading (the LTV-Pn.4a pinned obligation)
+# Difficulty resolution (LTV-Po.2b): recipe difficulty → snapshot distortions
 # ---------------------------------------------------------------------------
 
 
-def test_difficulty_params_thread_into_snapshots(tmp_path) -> None:
-    """config.difficulty_params must reach the snapshot builders — with strong
-    distortion knobs the task features differ from an undistorted bundle.
-    (Recipe-driven resolution of difficulty_params lands in LTV-Po; this proves
-    the wiring so that resolution will take effect.)"""
-    params = DifficultyParams(
-        signal_strength=1.0,
-        noise_scale=1.0,
-        missing_rate=0.3,
-        outlier_rate=0.05,
-        conversion_rate_lo=0.02,
-        conversion_rate_hi=0.4,
-        committee_friction=0.5,
-    )
-    plain = _write(tmp_path / "plain")
-    distorted = _write(tmp_path / "distorted", config=_config(difficulty_params=params))
+def test_difficulty_tiers_produce_different_task_features(tmp_path) -> None:
+    """build_world resolves config.difficulty against the recipe's
+    difficulty_profiles.yaml (LTV-Po.2b) and threads the resulting
+    DifficultyParams into the snapshot builders.  Two tiers (intro vs advanced)
+    therefore yield different feature distortions — while the targets, which the
+    distortion helper exempts, stay identical."""
+    intro = _write(tmp_path / "intro", config=_config(difficulty="intro"))
+    advanced = _write(tmp_path / "advanced", config=_config(difficulty="advanced"))
 
-    plain_df = pd.read_parquet(plain / "tasks" / "pltv_revenue_365d" / "train.parquet")
-    dist_df = pd.read_parquet(distorted / "tasks" / "pltv_revenue_365d" / "train.parquet")
-    # A numeric feature column should differ once distortions are applied.
-    assert not plain_df["avg_active_users_l12w"].equals(dist_df["avg_active_users_l12w"])
-    # Targets are never distorted (the distortion helper excludes them).
-    assert plain_df["ltv_revenue_365d"].equals(dist_df["ltv_revenue_365d"])
+    intro_df = pd.read_parquet(intro / "tasks" / "pltv_revenue_365d" / "train.parquet")
+    adv_df = pd.read_parquet(advanced / "tasks" / "pltv_revenue_365d" / "train.parquet")
+    # A numeric feature column differs once the per-tier distortions are applied.
+    assert not intro_df["avg_active_users_l12w"].equals(adv_df["avg_active_users_l12w"])
+    # Targets are never distorted (the distortion helper excludes them), so the
+    # world being identical across tiers (issue #129) leaves them untouched.
+    assert intro_df["ltv_revenue_365d"].equals(adv_df["ltv_revenue_365d"])
 
 
 # ---------------------------------------------------------------------------

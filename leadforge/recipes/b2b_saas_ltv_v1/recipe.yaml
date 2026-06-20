@@ -1,0 +1,31 @@
+id: b2b_saas_ltv_v1
+title: "Mid-market B2B SaaS — Subscription Lifetime Value"
+vertical: mid_market_b2b_saas
+# Generation scheme this recipe runs (see leadforge.schemes).  This recipe runs
+# the customer-lifecycle / pLTV scheme rather than lead_scoring.
+scheme: lifecycle
+description: >
+  A mid-market B2B SaaS company selling subscription revenue-lifecycle
+  management software to 150–2,500 employee firms across the US, UK, and
+  Canada.  The simulated world tracks each signed customer through onboarding,
+  adoption, expansion, payment health, and churn so that predicted lifetime
+  value (pLTV over 90/365/730-day forward windows) and 180-day churn emerge
+  from simulated subscription events rather than being sampled directly.
+# The canonical pLTV regression target; the bundle also ships the 90d/730d
+# windows and a 180-day churn classification task (see the lifecycle scheme).
+primary_task: pltv_revenue_365d
+supported_modes:
+  - student_public
+  - research_instructor
+supported_difficulty:
+  - intro
+  - intermediate
+  - advanced
+default_population:
+  # The lifecycle scheme is customer-centric: it samples a customer population
+  # (each customer owns one account + one subscription) rather than leads.
+  n_customers: 1500
+# The longest forward pLTV window, in days (the engine simulates through it so
+# every target is fully covered).  Lifecycle forward windows are locked to the
+# scheme's exported constant (90/365/730); see LifecycleScheme.build_world.
+horizon_days: 730

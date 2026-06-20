@@ -1,0 +1,101 @@
+# Narrative defaults for b2b_saas_ltv_v1
+# ---------------------------------------------------------------------------
+# Baseline "story facts" for the mid-market B2B SaaS subscription-LTV vertical.
+# The lifecycle scheme's population builder consumes market.icp_industries and
+# market.geographies to drive each customer's firmographics; the remaining
+# sub-specs document the world for the dataset card and future mechanisms.
+#
+# INVARIANT (snapshot-safety / zero-variance): market.icp_industries and
+# market.geographies MUST each declare >= 2 values.  The public relational
+# export surfaces industry/region columns directly, so a single-value vocabulary
+# would yield a zero-variance public feature (student_public invariant #6).
+
+company:
+  name: "Northwind Revenue Cloud"
+  founded_year: 2016
+  hq_city: "Denver"
+  hq_country: "US"
+  stage: "Series C"
+  employee_range: [180, 320]
+
+product:
+  name: "Northwind Subscriptions"
+  category: "Subscription & Revenue Lifecycle Management"
+  deployment: "cloud_saas"
+  pricing_model: "per_seat_annual"
+  acv_range_usd: [12000, 90000]
+  contract_terms_months: [12, 24, 36]
+  free_trial_available: true
+  demo_available: true
+
+market:
+  icp_employee_range: [150, 2500]
+  icp_industries:
+    - saas
+    - fintech
+    - healthtech
+    - ecommerce
+  geographies: [US, UK, CA]
+  avg_deal_size_usd: 36000
+  avg_sales_cycle_days: 40
+
+gtm_motion:
+  channels:
+    - inbound_marketing
+    - sdr_outbound
+    - partner_referral
+  inbound_share: 0.50
+  outbound_share: 0.30
+  partner_share: 0.20
+
+personas:
+  - role: cfo
+    title_variants:
+      - "CFO"
+      - "Chief Financial Officer"
+      - "VP Finance"
+      - "Head of Finance"
+    decision_authority: economic_buyer
+    typical_involvement: late_stage
+
+  - role: revops_manager
+    title_variants:
+      - "RevOps Manager"
+      - "Revenue Operations Manager"
+      - "Director of Revenue Operations"
+      - "Head of RevOps"
+    decision_authority: champion
+    typical_involvement: full_cycle
+
+  - role: billing_admin
+    title_variants:
+      - "Billing Administrator"
+      - "Billing Operations Lead"
+      - "AR Manager"
+      - "Subscriptions Manager"
+    decision_authority: end_user
+    typical_involvement: full_cycle
+
+  - role: customer_success_lead
+    title_variants:
+      - "Customer Success Lead"
+      - "VP Customer Success"
+      - "Head of Customer Success"
+      - "Director of Customer Success"
+    decision_authority: technical_evaluator
+    typical_involvement: post_sale
+
+# Post-sale lifecycle stages (the subscription journey this scheme simulates).
+funnel_stages:
+  - name: onboarding
+    label: "Onboarding"
+  - name: activated
+    label: "Activated"
+  - name: adopted
+    label: "Adopted"
+  - name: expanded
+    label: "Expanded"
+  - name: renewed
+    label: "Renewed"
+  - name: churned
+    label: "Churned"

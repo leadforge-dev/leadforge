@@ -65,18 +65,33 @@ def test_motif_varies_across_seeds() -> None:
     assert motifs <= set(LIFECYCLE_MOTIF_FAMILIES)
 
 
-def test_difficulty_not_yet_differentiating() -> None:
-    """Tracked-gap guard (LTV-Pn.4a): build_world does not yet consume
-    config.difficulty, so every tier yields the same world.  When Pn.4b wires
-    difficulty in, this test must be updated to assert the tiers DIFFER —
-    flipping it is the reminder that the gap is closed.
+def test_difficulty_resolves_params_but_world_unchanged() -> None:
+    """LTV-Po.2b: build_world now resolves config.difficulty against the
+    recipe's difficulty_profiles.yaml and attaches the per-tier DifficultyParams
+    to the returned spec.config (consumed as snapshot distortions downstream).
+
+    The *simulation* itself is still tier-independent — every tier yields the
+    same world (simulation-level scaling is deferred, issue #129) — so the motif
+    and subscriptions stay identical across tiers; only difficulty_params differ.
     """
     intro = get_scheme("lifecycle").build_world(
-        GenerationConfig(seed=5, n_customers=60, difficulty="intro"), narrative=None
+        GenerationConfig(seed=5, n_customers=60, recipe_id="b2b_saas_ltv_v1", difficulty="intro"),
+        narrative=None,
     )
     advanced = get_scheme("lifecycle").build_world(
-        GenerationConfig(seed=5, n_customers=60, difficulty="advanced"), narrative=None
+        GenerationConfig(
+            seed=5, n_customers=60, recipe_id="b2b_saas_ltv_v1", difficulty="advanced"
+        ),
+        narrative=None,
     )
+    # Difficulty now resolves into distinct params per tier...
+    intro_params = intro.spec.config.difficulty_params
+    advanced_params = advanced.spec.config.difficulty_params
+    assert intro_params is not None
+    assert advanced_params is not None
+    assert intro_params != advanced_params
+    assert intro_params.noise_scale < advanced_params.noise_scale
+    # ...but the underlying world is unchanged (issue #129 still open).
     assert intro.artifacts.motif_family == advanced.artifacts.motif_family
     assert [s.to_dict() for s in intro.artifacts.simulation_result.subscriptions] == [
         s.to_dict() for s in advanced.artifacts.simulation_result.subscriptions
