@@ -46,7 +46,7 @@ protocol + registry, with the package physically reorganized into
 | `LTV-M3` | Customer population + lifecycle world | `LTV-Ph`, `LTV-Pi` | #113 (Ph) |
 | `LTV-M4` | Lifecycle simulation engine | `LTV-Pj`, `LTV-Pk` | #117 (Pj), #118 (Pk) |
 | `LTV-M5` | Customer snapshots + pLTV targets (both regimes) | `LTV-Pl`, `LTV-Pm` | #119 (Pl), #120 (Pm) |
-| `LTV-M6` | Register LifecycleScheme + recipe + manifest/version | `LTV-Pn.1…4`, `LTV-Po` | #121 (Pn.1), #122 (Pn.2), #124 (Pn.3), #125 (Pn.4a), #126 (Pn.4b), #127 (Pn.4c), #128 (Pn.4d) |
+| `LTV-M6` ✅ | Register LifecycleScheme + recipe + manifest/version | `LTV-Pn.1…4`, `LTV-Po` | #121 (Pn.1), #122 (Pn.2), #124 (Pn.3), #125 (Pn.4a), #126 (Pn.4b), #127 (Pn.4c), #128 (Pn.4d), #130 (Po.1), #131 (Po.2a), Po.2b |
 | `LTV-M7` | Validation + regression-metric calibration | `LTV-Pp` | |
 | `LTV-M8` | CLI, notebooks, publish | `LTV-Pq`, `LTV-Pr`, `LTV-Ps` | |
 
@@ -399,28 +399,34 @@ methods, then public-safety, then the carried orchestrator cleanup:
   it).  Lead-scoring config resolution is byte-identical (the lifecycle fields
   default-match; verified via full-bundle SHA-256 vs `main`, both modes).
   - Labels: `type: refactor`, `layer: api`
-- [ ] **`LTV-Po.2b`** — `feat(recipes): b2b_saas_ltv_v1 recipe assets + e2e`. The
-  three recipe YAMLs (`scheme: lifecycle`; `narrative.yaml` with ≥2 industries +
-  ≥2 geographies; `difficulty_profiles.yaml`); register in the recipe registry;
-  resolve `difficulty_params` from the active profile in `build_world`
-  (mirroring lead-scoring `_resolve_difficulty`) so snapshot distortions fire
-  per tier; end-to-end `Generator.from_recipe("b2b_saas_ltv_v1").generate()`
-  round-trip.  Public mode stays calendar-only (Option A, locked).
-  **Limitation (flagged in Po.2a review):** `early_tenure_weeks` /
-  `observation_date` are override-only — the `Recipe` schema has no field for
-  them, so the recipe.yaml CANNOT declare them; Po.2b uses the
-  `GenerationConfig` defaults (4 weeks; observation_date derived by the
-  population builder).  If the recipe must declare them, extend the `Recipe`
-  dataclass + `from_dict` + `resolve_config` recipe-defaults read (don't rely
-  on override).
-  **Constraint (flagged in Po.1 review):** the recipe `narrative.yaml` MUST
-  declare ≥2 `icp_industries` and ≥2 `geographies` — Po.1 makes these drive the
-  public `industry`/`region` columns, so a single-value vocab yields a
-  zero-variance firmographic feature (student_public invariant #6 violation).
-  Add a test asserting both columns have ≥2 distinct values in the public
-  bundle.
-  - Tests: recipe loads, full round-trip, determinism, all task splits,
-    public/instructor split, per-tier distortion.
+- [x] **`LTV-Po.2b`** — `feat(recipes): b2b_saas_ltv_v1 recipe assets + e2e`.
+  Created `leadforge/recipes/b2b_saas_ltv_v1/{recipe,narrative,difficulty_profiles}.yaml`
+  (`scheme: lifecycle`; `default_population: {n_customers: 1500}`; `narrative.yaml`
+  with 4 `icp_industries` + 3 `geographies`; per-tier difficulty profiles).  The
+  registry auto-discovers it (no manual registration).  `LifecycleScheme.build_world`
+  now resolves `difficulty_params` from the active profile via a new
+  `_resolve_difficulty` (mirroring lead-scoring, minus `category_latent_correlations`)
+  and carries it on the returned `spec.config`, so snapshot distortions fire per
+  tier.  End-to-end `Generator.from_recipe("b2b_saas_ltv_v1").generate()` +
+  `.save()` round-trip verified in both modes; public stays calendar-only
+  (Option A, locked).  **Completes `LTV-M6`.**
+  - The two existing tracked-gap guards flipped: `test_difficulty_not_yet_differentiating`
+    → `test_difficulty_resolves_params_but_world_unchanged` (params now differ per
+    tier; the *world* stays identical — issue #129 still open); the explicit-param
+    `test_difficulty_params_thread_into_snapshots` → tier-based
+    `test_difficulty_tiers_produce_different_task_features` (since `_resolve_difficulty`
+    always overwrites `difficulty_params` from the profile, an explicitly-passed
+    one would be clobbered).
+  - **Limitation (carried from Po.2a):** `early_tenure_weeks` / `observation_date`
+    remain override-only — the recipe.yaml does NOT declare them; the bundle uses
+    the `GenerationConfig` defaults (4 weeks; observation_date derived by the
+    population builder).
+  - **Constraint satisfied (Po.1 review):** `narrative.yaml` declares ≥2
+    `icp_industries` and ≥2 `geographies`; `test_public_industry_region_features_have_variance`
+    asserts both public columns carry ≥2 distinct values (student_public invariant #6).
+  - Tests: `tests/recipes/test_b2b_saas_ltv_v1.py` (discovery, asset shape, config
+    resolution, build_world round-trip, narrative-driven firmographics, determinism,
+    both-mode bundle round-trip, byte-determinism).
   - Labels: `type: feature`, `layer: recipes`, `layer: api`
 - **Deferred (issue #129):** simulation-level difficulty scaling for the
   lifecycle engine — making `advanced` a genuinely harder world (not just

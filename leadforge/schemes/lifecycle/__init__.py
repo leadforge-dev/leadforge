@@ -9,6 +9,7 @@ implemented; the ``student_public`` snapshot-safe export lands in LTV-Pn.4c.
 
 from __future__ import annotations
 
+import dataclasses
 import random
 from typing import TYPE_CHECKING, Any
 
@@ -58,11 +59,14 @@ class LifecycleScheme:
         vocabularies (``market.icp_industries`` / ``market.geographies``); a
         ``None`` narrative falls back to the built-in procurement-ICP defaults.
 
-        Difficulty (tracked, not silent): ``config.difficulty`` does not yet
-        scale the *simulation* — every tier yields the same world — so harder
-        tiers differ only in snapshot distortions (resolved from the recipe
-        profile in ``LTV-Po`` and threaded into the snapshot builders).
-        Simulation-level difficulty scaling is deferred (issue #129).
+        Difficulty: ``config.difficulty`` resolves (via :meth:`_resolve_difficulty`,
+        ``LTV-Po.2b``) into :class:`DifficultyParams` read from the recipe's
+        ``difficulty_profiles.yaml``, which the snapshot builders apply as
+        feature distortions (noise / missingness / outliers; targets exempt).
+        The resolved params ride on the returned bundle's ``spec.config`` so
+        :meth:`write_bundle` picks them up.  Difficulty does NOT yet scale the
+        *simulation* — every tier yields the same underlying world — so
+        simulation-level scaling remains deferred (issue #129).
         """
         from leadforge.core.exceptions import InvalidConfigError
         from leadforge.core.models import WorldBundle, WorldSpec
@@ -84,6 +88,10 @@ class LifecycleScheme:
                 "config-driven forward windows are not yet supported (the snapshot builder "
                 "exports the fixed set).  Use the default until that wiring lands."
             )
+
+        # Resolve difficulty → DifficultyParams (snapshot distortions) and carry
+        # them on config so the returned spec + write_bundle see them.
+        config = self._resolve_difficulty(config)
 
         motif_rng = RNGRoot(config.seed).child("lifecycle_motif")
         motif_family = _sample_motif_family(motif_rng)
@@ -111,6 +119,67 @@ class LifecycleScheme:
                 motif_family=motif_family,
             ),
         )
+
+    @staticmethod
+    def _resolve_difficulty(config: GenerationConfig) -> GenerationConfig:
+        """Attach :class:`DifficultyParams` from the active difficulty profile.
+
+        Mirrors :meth:`LeadScoringScheme._resolve_difficulty` (minus the
+        lead-scoring-only ``category_latent_correlations``): loads the recipe's
+        ``difficulty_profiles.yaml``, reads the profile for
+        ``config.difficulty``, and returns ``config`` with the resolved
+        :class:`DifficultyParams` attached.  The snapshot builders consume
+        ``noise_scale`` / ``missing_rate`` / ``outlier_rate``; the remaining
+        knobs are carried for forward-compatible simulation-level scaling
+        (issue #129).
+
+        Returns ``config`` unchanged when the recipe has no difficulty-profiles
+        file (e.g. an ad-hoc config whose recipe lacks one).
+        """
+        from leadforge.api.recipes import Recipe
+        from leadforge.core.models import DifficultyParams
+        from leadforge.recipes.registry import load_recipe
+
+        try:
+            raw = load_recipe(config.recipe_id)
+            recipe = Recipe.from_dict(raw)
+            profiles = recipe.load_difficulty_profiles()
+        except (FileNotFoundError, KeyError):
+            return config
+        if not profiles:
+            return config
+
+        profile = profiles.get(config.difficulty.value, {})
+
+        # All keys are required — a missing key indicates a malformed profile
+        # YAML and should fail loudly rather than silently defaulting.
+        required_keys = (
+            "signal_strength",
+            "noise_scale",
+            "missing_rate",
+            "outlier_rate",
+            "conversion_rate_range",
+            "committee_friction",
+        )
+        missing = [k for k in required_keys if k not in profile]
+        if missing:
+            from leadforge.core.exceptions import InvalidRecipeError
+
+            raise InvalidRecipeError(
+                f"Difficulty profile '{config.difficulty.value}' is missing "
+                f"required keys: {missing}"
+            )
+        cr_range = profile["conversion_rate_range"]
+        difficulty_params = DifficultyParams(
+            signal_strength=profile["signal_strength"],
+            noise_scale=profile["noise_scale"],
+            missing_rate=profile["missing_rate"],
+            outlier_rate=profile["outlier_rate"],
+            conversion_rate_lo=cr_range[0],
+            conversion_rate_hi=cr_range[1],
+            committee_friction=profile["committee_friction"],
+        )
+        return dataclasses.replace(config, difficulty_params=difficulty_params)
 
     def write_bundle(
         self,

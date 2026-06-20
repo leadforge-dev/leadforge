@@ -1,0 +1,52 @@
+# Difficulty profiles for b2b_saas_ltv_v1
+# ---------------------------------------------------------------------------
+# Each profile controls the signal/noise characteristics of the generated
+# pLTV dataset.  Higher difficulty = more realistic noise, missing data, and
+# outliers in the customer snapshot features, making the supervised task harder.
+#
+# Scope (LTV-Po.2b): difficulty is resolved into DifficultyParams and applied as
+# SNAPSHOT DISTORTIONS (noise_scale / missing_rate / outlier_rate perturb the
+# feature columns; targets are exempt).  Simulation-level scaling — letting
+# signal_strength / committee_friction / conversion_rate_range shape the
+# underlying world itself — is tracked but NOT yet wired (issue #129).  Those
+# knobs are carried here so the profiles are complete and forward-compatible.
+
+intro:
+  description: >
+    Clean signal, minimal noise.  Suitable for learning pLTV/regression basics
+    and verifying that a pipeline runs end to end.
+  # Probability that the true mechanism drives the outcome (vs. noise).
+  # (Carried for issue #129; not yet consumed.)
+  signal_strength: 0.90
+  # Scale multiplier applied to additive Gaussian noise in continuous features.
+  noise_scale: 0.10
+  # Fraction of feature values set to missing (NaN).
+  missing_rate: 0.02
+  # Fraction of rows perturbed into statistical outliers.
+  outlier_rate: 0.01
+  # Acceptable churn-positive-rate band. (Carried for issue #129; not yet consumed.)
+  conversion_rate_range: [0.10, 0.20]
+  # Strength of buying-committee-friction effects. (Carried for issue #129.)
+  committee_friction: 0.10
+
+intermediate:
+  description: >
+    Realistic signal-to-noise ratio.  Suitable for portfolio projects,
+    courses, and kaggle-style pLTV competitions.
+  signal_strength: 0.70
+  noise_scale: 0.30
+  missing_rate: 0.08
+  outlier_rate: 0.04
+  conversion_rate_range: [0.18, 0.30]
+  committee_friction: 0.30
+
+advanced:
+  description: >
+    High noise, realistic outliers, and significant missing data.  Suitable for
+    ML research and realistic pLTV benchmark construction.
+  signal_strength: 0.50
+  noise_scale: 0.55
+  missing_rate: 0.18
+  outlier_rate: 0.08
+  conversion_rate_range: [0.25, 0.40]
+  committee_friction: 0.55
